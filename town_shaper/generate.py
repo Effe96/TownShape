@@ -1,0 +1,39 @@
+import math
+from typing import Tuple
+
+from town_shaper.anchors import place_anchors
+from town_shaper.assignment import assign_residents
+from town_shaper.buildings import fill_district_buildings
+from town_shaper.districts import build_districts
+from town_shaper.households import generate_households
+from town_shaper.models import Town
+
+AREA_PER_RESIDENT = 150.0  # square map-units of town area assumed per resident
+
+
+def compute_town_bounds(target_population: int) -> Tuple[float, float, float, float]:
+    area = target_population * AREA_PER_RESIDENT
+    side = math.sqrt(area)
+    half = side / 2.0
+    return (-half, -half, half, half)
+
+
+def generate_town(seed, target_population: int) -> Town:
+    bounds = compute_town_bounds(target_population)
+
+    anchors = place_anchors(seed, target_population, bounds)
+    districts = build_districts(anchors, bounds)
+
+    next_building_id = 0
+    for district in districts:
+        buildings = fill_district_buildings(district, seed, next_building_id)
+        district.buildings = buildings
+        next_building_id += len(buildings)
+
+    households = generate_households(seed, target_population)
+    residents = assign_residents(seed, households, districts)
+
+    town = Town(seed=seed, target_population=target_population, bounds=bounds)
+    town.districts = districts
+    town.residents = residents
+    return town
