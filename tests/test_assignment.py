@@ -1,12 +1,18 @@
 from town_shaper.anchors import place_anchors
-from town_shaper.assignment import assign_residents
+from town_shaper.assignment import ZONE_TYPE_BY_SES, assign_residents
 from town_shaper.buildings import fill_district_buildings
 from town_shaper.districts import build_districts
+from town_shaper.generate import compute_town_bounds, generate_town
 from town_shaper.households import generate_households
+from town_shaper.models import Anchor, Building, District, Household, ZoneType
 
 
 def _build_town_pieces(seed, target_population=3000):
-    bounds = (-200.0, -200.0, 200.0, 200.0)
+    # Scale bounds with target_population the same way generate_town does,
+    # so building density calibration (BUILDING_DENSITY_PER_AREA) — tuned
+    # against real town-scale bounds — isn't starved by an undersized fixed
+    # test area.
+    bounds = compute_town_bounds(target_population)
     anchors = place_anchors(seed, target_population, bounds)
     districts = build_districts(anchors, bounds)
 
@@ -78,3 +84,53 @@ def test_assign_residents_children_never_get_a_workplace():
     for resident in residents:
         if resident.age_bracket == "child":
             assert resident.workplace_building_id is None
+
+
+def test_assign_residents_realizes_close_to_target_population():
+    seed = ("town", 1)
+    districts, households = _build_town_pieces(seed, target_population=3000)
+    residents = assign_residents(seed, households, districts)
+
+    target_total = sum(1 + (1 if h.has_spouse else 0) + h.child_count for h in households)
+    assert len(residents) >= 0.95 * target_total
+
+
+def test_assign_residents_no_household_is_partially_dropped_when_a_home_exists():
+    seed = ("town", 1)
+    anchor = Anchor(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, x=0.0, y=0.0)
+    polygon = [(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)]
+    district = District(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, anchor=anchor, polygon=polygon)
+    big_home = Building(
+        id=1, district_id=1, district_zone_type=ZoneType.POOR_RESIDENTIAL,
+        x=20.0, y=20.0, building_type="residence", capacity=8,
+    )
+    district.buildings = [big_home]
+
+    household = Household(id=1, has_spouse=True, child_count=4)
+    residents = assign_residents(seed, [household], [district])
+
+    assert len(residents) == 6  # 2 adults + 4 children
+    for resident in residents:
+        assert resident.home_building_id is not None
+
+
+def test_assign_residents_ses_drift_is_observable():
+    seed = ("town", 1)
+    town = generate_town(seed, target_population=3000)
+    districts = town.districts
+    residents = town.residents
+
+    building_by_id = {b.id: b for d in districts for b in d.buildings}
+    residents_with_homes = [r for r in residents if r.home_building_id is not None]
+
+    def is_drifted(resident):
+        zone = building_by_id[resident.home_building_id].district_zone_type
+        expected_zone = ZONE_TYPE_BY_SES[resident.ses]
+        if zone == expected_zone:
+            return False
+        if resident.ses.value == "poor" and zone == ZoneType.FARMLAND_EDGE:
+            return False
+        return True
+
+    drifted_count = sum(1 for r in residents_with_homes if is_drifted(r))
+    assert 0 < drifted_count < 0.15 * len(residents_with_homes)

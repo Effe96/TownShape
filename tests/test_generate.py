@@ -1,7 +1,7 @@
 import time
 
 from town_shaper.buildings import fill_district_buildings
-from town_shaper.generate import compute_town_bounds, generate_town
+from town_shaper.generate import BUILDING_ID_STRIDE, compute_town_bounds, generate_town
 from town_shaper.models import Town
 
 
@@ -38,9 +38,13 @@ def test_generate_town_single_district_matches_full_pipeline():
     seed = ("town", 1)
     town = generate_town(seed, target_population=3000)
 
-    target_district = town.districts[0]
-    next_id = target_district.buildings[0].id if target_district.buildings else 0
+    target_district = town.districts[min(2, len(town.districts) - 1)]
+    next_id = target_district.id * BUILDING_ID_STRIDE
     recomputed = fill_district_buildings(target_district, seed, next_building_id=next_id)
+
+    original_ids = [b.id for b in target_district.buildings]
+    recomputed_ids = [b.id for b in recomputed]
+    assert original_ids == recomputed_ids
 
     original_types = [b.building_type for b in target_district.buildings]
     recomputed_types = [b.building_type for b in recomputed]

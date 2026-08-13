@@ -11,21 +11,43 @@ ZONE_TYPE_BY_SES: Dict[SES, ZoneType] = {
     SES.POOR: ZoneType.POOR_RESIDENTIAL,
 }
 
-
 def _draw_household_ses(rng) -> SES:
-    base = SES.RICH if rng.random() < SES_PROPORTIONS[SES.RICH] else SES.POOR
-    if rng.random() < DRIFT_CHANCE:
-        return SES.POOR if base == SES.RICH else SES.RICH
-    return base
+    return SES.RICH if rng.random() < SES_PROPORTIONS[SES.RICH] else SES.POOR
 
 
-def _find_home_with_capacity(residential_buildings: List[Building], ses: SES) -> Optional[Building]:
-    preferred_zone = ZONE_TYPE_BY_SES[ses]
+def _preferred_zones(ses: SES, rng) -> List[ZoneType]:
+    """Zones a household of this SES tier would like to live in, in preference order.
+
+    Drift affects WHERE a household of a given SES lives, not the SES tier
+    itself (the tier recorded on ResidentSlot.ses is always the true, undrifted
+    value). Poor households that are not drifting also consider farmland-edge
+    as a secondary preferred zone.
+    """
+    drifted = rng.random() < DRIFT_CHANCE
+    if ses == SES.POOR:
+        if drifted:
+            return [ZONE_TYPE_BY_SES[SES.RICH]]
+        return [ZONE_TYPE_BY_SES[SES.POOR], ZoneType.FARMLAND_EDGE]
+    # ses == SES.RICH
+    if drifted:
+        return [ZONE_TYPE_BY_SES[SES.POOR], ZoneType.FARMLAND_EDGE]
+    return [ZONE_TYPE_BY_SES[SES.RICH]]
+
+
+def _find_home_with_capacity(
+    residential_buildings: List[Building], preferred_zones: List[ZoneType], needed: int
+) -> Optional[Building]:
+    """Find a building with at least `needed` free slots.
+
+    Tries each zone in `preferred_zones` in order first, then falls back to
+    any building (any zone) with enough room.
+    """
+    for zone in preferred_zones:
+        for building in residential_buildings:
+            if building.district_zone_type == zone and building.capacity - len(building.resident_ids) >= needed:
+                return building
     for building in residential_buildings:
-        if building.district_zone_type == preferred_zone and len(building.resident_ids) < building.capacity:
-            return building
-    for building in residential_buildings:
-        if len(building.resident_ids) < building.capacity:
+        if building.capacity - len(building.resident_ids) >= needed:
             return building
     return None
 
@@ -51,21 +73,15 @@ def assign_residents(town_seed, households: List[Household], districts: List[Dis
 
     for household in households:
         ses = _draw_household_ses(rng)
-        home = _find_home_with_capacity(residential_buildings, ses)
-        if home is None:
-            break
+        preferred_zones = _preferred_zones(ses, rng)
 
         member_specs = [("adult", True)]
         if household.has_spouse:
             member_specs.append(("adult", True))
         member_specs.extend([("child", False)] * household.child_count)
 
-        for age_bracket, is_working_age in member_specs:
-            if len(home.resident_ids) >= home.capacity:
-                # Household no longer fits in this home; remaining members go homeless
-                # for this pass rather than double-booking capacity.
-                break
-
+        def _place(age_bracket, is_working_age, home):
+            nonlocal resident_id
             resident = ResidentSlot(
                 id=resident_id,
                 household_id=household.id,
@@ -82,5 +98,22 @@ def assign_residents(town_seed, households: List[Household], districts: List[Dis
             residents.append(resident)
             home.resident_ids.append(resident.id)
             resident_id += 1
+
+        whole_household_home = _find_home_with_capacity(residential_buildings, preferred_zones, len(member_specs))
+        if whole_household_home is not None:
+            for age_bracket, is_working_age in member_specs:
+                _place(age_bracket, is_working_age, whole_household_home)
+            continue
+
+        # No single building has room for the whole household: place members
+        # one at a time, allowing the household to legitimately split across
+        # multiple buildings rather than being truncated.
+        for age_bracket, is_working_age in member_specs:
+            home = _find_home_with_capacity(residential_buildings, preferred_zones, 1)
+            if home is None:
+                # No building anywhere has any room left; this member is
+                # unhoused for this pass (expected end-of-capacity condition).
+                continue
+            _place(age_bracket, is_working_age, home)
 
     return residents

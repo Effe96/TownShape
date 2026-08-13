@@ -9,6 +9,7 @@ from town_shaper.households import generate_households
 from town_shaper.models import Town
 
 AREA_PER_RESIDENT = 150.0  # square map-units of town area assumed per resident
+BUILDING_ID_STRIDE = 100_000
 
 
 def compute_town_bounds(target_population: int) -> Tuple[float, float, float, float]:
@@ -24,11 +25,10 @@ def generate_town(seed, target_population: int) -> Town:
     anchors = place_anchors(seed, target_population, bounds)
     districts = build_districts(anchors, bounds)
 
-    next_building_id = 0
     for district in districts:
+        next_building_id = district.id * BUILDING_ID_STRIDE
         buildings = fill_district_buildings(district, seed, next_building_id)
         district.buildings = buildings
-        next_building_id += len(buildings)
 
     households = generate_households(seed, target_population)
     residents = assign_residents(seed, households, districts)

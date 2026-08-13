@@ -6,10 +6,10 @@ from town_shaper.models import Building, District, JobVacancy, ZoneType
 from town_shaper.seeding import rng_for
 
 BUILDING_DENSITY_PER_AREA: Dict[ZoneType, float] = {
-    ZoneType.CIVIC: 1 / 400,
-    ZoneType.MERCHANT: 1 / 150,
-    ZoneType.RICH_RESIDENTIAL: 1 / 300,
-    ZoneType.POOR_RESIDENTIAL: 1 / 100,
+    ZoneType.CIVIC: 1 / 550,
+    ZoneType.MERCHANT: 1 / 220,
+    ZoneType.RICH_RESIDENTIAL: 1 / 500,
+    ZoneType.POOR_RESIDENTIAL: 1 / 1000,
     ZoneType.FARMLAND_EDGE: 1 / 600,
 }
 
