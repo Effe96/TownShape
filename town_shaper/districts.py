@@ -1,0 +1,39 @@
+from typing import List, Tuple
+
+import numpy as np
+from scipy.spatial import Voronoi
+
+from town_shaper.geometry import clip_polygon_to_bounds
+from town_shaper.models import Anchor, District
+
+
+def _mirrored_points(points: np.ndarray, bounds: Tuple[float, float, float, float]) -> np.ndarray:
+    min_x, min_y, max_x, max_y = bounds
+    reflections = []
+    for x, y in points:
+        reflections.append((2 * min_x - x, y))
+        reflections.append((2 * max_x - x, y))
+        reflections.append((x, 2 * min_y - y))
+        reflections.append((x, 2 * max_y - y))
+    return np.vstack([points, np.array(reflections)])
+
+
+def build_districts(anchors: List[Anchor], bounds: Tuple[float, float, float, float]) -> List[District]:
+    if len(anchors) < 4:
+        raise ValueError("At least 4 anchors are required to compute a stable Voronoi diagram")
+
+    anchor_points = np.array([(a.x, a.y) for a in anchors])
+    all_points = _mirrored_points(anchor_points, bounds)
+    vor = Voronoi(all_points)
+
+    districts: List[District] = []
+    for i, anchor in enumerate(anchors):
+        region_index = vor.point_region[i]
+        region = vor.regions[region_index]
+        if -1 in region or len(region) == 0:
+            raise ValueError(f"Anchor {anchor.id} produced an unbounded Voronoi region")
+        raw_polygon = [tuple(vor.vertices[v]) for v in region]
+        polygon = clip_polygon_to_bounds(raw_polygon, bounds)
+        districts.append(District(id=anchor.id, zone_type=anchor.zone_type, anchor=anchor, polygon=polygon))
+
+    return districts
