@@ -127,18 +127,20 @@ def generate_births_and_deaths(
                 continue
             age = age_on(date.fromisoformat(row["birth_date"]), year_start)
             category = _age_category(age)
-            rate = death_rate_by_age[category]
+            base_rate = death_rate_by_age[category]
 
-            disease = _active_disease(disease_rows, year_start, row.get("home_zone_type"))
+            day_offset = rng.randint(0, 364)
+            candidate_death_date = year_start + timedelta(days=day_offset)
+
+            disease = _active_disease(disease_rows, candidate_death_date, row.get("home_zone_type"))
+            rate = base_rate
             if disease is not None:
-                rate = min(1.0, rate * DISEASE_DEATH_MULTIPLIER * disease["severity"])
+                rate = min(1.0, base_rate * DISEASE_DEATH_MULTIPLIER * disease["severity"])
 
             if rng.random() >= rate:
                 continue
 
-            day_offset = rng.randint(0, 364)
-            death_date = year_start + timedelta(days=day_offset)
-            row["death_date"] = death_date.isoformat()
+            row["death_date"] = candidate_death_date.isoformat()
 
             if disease is not None:
                 cause = "plague"
@@ -149,7 +151,7 @@ def generate_births_and_deaths(
 
             deaths.append({
                 "resident_db_id": row["db_id"],
-                "death_date": death_date.isoformat(),
+                "death_date": candidate_death_date.isoformat(),
                 "cause": cause,
                 "disease_event_id": disease["_db_id"] if disease is not None else None,
                 "reported_by_building_id": reporting_building,

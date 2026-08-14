@@ -1,5 +1,5 @@
 # tests/test_db_vital_records.py
-from datetime import date
+from datetime import date, timedelta
 
 from town_db.vital_records import (
     DEFAULT_DEATH_RATE_BY_AGE,
@@ -65,6 +65,7 @@ def test_no_reporting_building_means_no_births():
     )
     assert births == []
     assert new_residents == []
+    assert deaths == []
 
 
 def test_death_rate_is_elevated_during_an_active_town_wide_disease_event():
@@ -89,6 +90,66 @@ def test_death_rate_is_elevated_during_an_active_town_wide_disease_event():
     assert len(deaths_with_disease) > len(deaths_without_disease)
     assert all(d["cause"] == "plague" for d in deaths_with_disease)
     assert all(d["disease_event_id"] == 1 for d in deaths_with_disease)
+
+
+def test_death_rate_is_elevated_by_disease_active_on_the_actual_death_date_not_year_start():
+    # Disease starts 100 days into the year, not on year_start itself -- this is
+    # the realistic case that exposed the year_start-anchored bug.
+    disease_start = YEAR_START + timedelta(days=100)
+    disease_end = YEAR_START + timedelta(days=150)
+    disease = {
+        "_db_id": 1, "start_date": disease_start.isoformat(),
+        "end_date": disease_end.isoformat(),
+        "affected_zone_type": None, "severity": 1.0,
+    }
+    household = {"id": 1, "family_name": "Smith", "race": "human"}
+    residents = [_adult(i, 1, "male", 30) for i in range(500)]
+
+    _, deaths_with_disease, _ = generate_births_and_deaths(
+        ("town", 1), [household], [dict(r) for r in residents], [disease], YEAR_START,
+        temple_building_id=99, healer_building_id=None,
+        death_rate_by_age={**DEFAULT_DEATH_RATE_BY_AGE, "adult": 0.01},
+    )
+    # At least some of these deaths must actually be dated inside the disease window
+    # and tagged 'plague' -- proving the check used the real candidate date, not year_start.
+    plague_deaths_in_window = [
+        d for d in deaths_with_disease
+        if d["cause"] == "plague" and disease_start <= date.fromisoformat(d["death_date"]) <= disease_end
+    ]
+    assert len(plague_deaths_in_window) > 0
+
+
+def test_death_rate_is_elevated_only_for_residents_in_the_affected_zone():
+    disease = {
+        "_db_id": 1, "start_date": YEAR_START.isoformat(),
+        "end_date": date(1300, 12, 31).isoformat(),
+        "affected_zone_type": "poor_residential", "severity": 1.0,
+    }
+    household = {"id": 1, "family_name": "Smith", "race": "human"}
+    affected_residents = [
+        _adult(i, 1, "male", 30, home_building_id=1) for i in range(200)
+    ]
+    for r in affected_residents:
+        r["home_zone_type"] = "poor_residential"
+    unaffected_residents = [
+        _adult(200 + i, 1, "male", 30, home_building_id=1) for i in range(200)
+    ]
+    for r in unaffected_residents:
+        r["home_zone_type"] = "noble_residential"
+
+    _, affected_deaths, _ = generate_births_and_deaths(
+        ("town", 1), [household], [dict(r) for r in affected_residents], [disease], YEAR_START,
+        temple_building_id=99, healer_building_id=None,
+        death_rate_by_age={**DEFAULT_DEATH_RATE_BY_AGE, "adult": 0.01},
+    )
+    _, unaffected_deaths, _ = generate_births_and_deaths(
+        ("town", 1), [household], [dict(r) for r in unaffected_residents], [disease], YEAR_START,
+        temple_building_id=99, healer_building_id=None,
+        death_rate_by_age={**DEFAULT_DEATH_RATE_BY_AGE, "adult": 0.01},
+    )
+    assert len(affected_deaths) > len(unaffected_deaths)
+    assert all(d["cause"] == "plague" for d in affected_deaths)
+    assert all(d["cause"] != "plague" for d in unaffected_deaths)
 
 
 def test_a_resident_who_already_has_a_death_date_is_never_rolled_again():
