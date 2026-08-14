@@ -1,0 +1,63 @@
+from datetime import date
+
+from town_shaper.seeding import rng_for
+from town_db.goods import GOODS_CATALOG, insert_goods
+from town_db.purchases import generate_purchases
+from town_db.schema import connect, create_schema
+
+YEAR_START = date(1300, 1, 1)
+
+
+def _household(id_):
+    return {"id": id_, "family_name": "Smith", "race": "human"}
+
+
+def _resident(db_id, household_id, age_bracket="adult"):
+    return {
+        "db_id": db_id, "household_id": household_id, "age_bracket": age_bracket,
+        "ses": "poor", "is_noble": False,
+    }
+
+
+def test_insert_goods_populates_the_catalog(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    ids = insert_goods(conn)
+    assert set(ids.keys()) == {g["name"] for g in GOODS_CATALOG}
+    count = conn.execute("SELECT COUNT(*) FROM goods").fetchone()[0]
+    assert count == len(GOODS_CATALOG)
+
+
+def test_generate_purchases_returns_nothing_with_no_shops():
+    households = [_household(1)]
+    residents = [_resident(1, 1)]
+    purchases = generate_purchases(
+        ("town", 1), households, residents, {"bread": 1}, [], YEAR_START, weeks=4
+    )
+    assert purchases == []
+
+
+def test_generate_purchases_only_references_provided_shops_and_goods():
+    households = [_household(1), _household(2)]
+    residents = [_resident(1, 1), _resident(2, 2)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    shop_ids = [10, 11, 12]
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, shop_ids, YEAR_START, weeks=52
+    )
+    assert len(purchases) > 0
+    for p in purchases:
+        assert p["shop_building_id"] in shop_ids
+        assert p["good_id"] in goods_ids.values()
+        assert p["total_price"] == round(p["unit_price"] * p["quantity"], 2)
+        purchase_date = date.fromisoformat(p["purchase_date"])
+        assert YEAR_START <= purchase_date < date(1301, 1, 1)
+
+
+def test_generate_purchases_is_deterministic():
+    households = [_household(1)]
+    residents = [_resident(1, 1)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    p1 = generate_purchases(("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52)
+    p2 = generate_purchases(("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52)
+    assert p1 == p2
