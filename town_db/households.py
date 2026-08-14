@@ -34,6 +34,7 @@ def build_households_and_residents(
 
     for household_id in sorted(groups):
         members = groups[household_id]
+        has_children = any(m.age_bracket == "child" for m in members)
         primary_race = draw_race(rng, race_weights)
         surname = draw_surname(rng, primary_race)
         household_rows.append({"id": household_id, "family_name": surname, "race": primary_race})
@@ -59,7 +60,8 @@ def build_households_and_residents(
             race = race_by_member_id[member.id]
             gender = draw_gender(rng)
             first_name = draw_first_name(rng, race, gender)
-            age = draw_age(rng, member.age_bracket)
+            is_parent = has_children and member.age_bracket == "adult"
+            age = draw_age(rng, member.age_bracket, is_parent=is_parent)
             birth_date = birth_date_from_age(reference_date, age)
 
             resident_rows.append({

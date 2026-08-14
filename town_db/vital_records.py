@@ -7,7 +7,10 @@ from town_shaper.seeding import rng_for
 from town_db.ages import age_on
 from town_db.names import draw_first_name, draw_gender
 
-DEFAULT_BIRTH_RATE = 0.09
+# Per-household probability of a birth during the simulated year. Calibrated
+# empirically (with the PARENT_AGE_RANGE fix in town_db.ages) so the realized
+# crude birth rate lands near 30/1000, matching pre-industrial estimates.
+DEFAULT_BIRTH_RATE = 0.20
 DEFAULT_DEATH_RATE_BY_AGE = {
     "infant": 0.15,
     "child": 0.02,
@@ -89,7 +92,9 @@ def generate_births_and_deaths(
             )
             if mother is None or rng.random() >= birth_rate:
                 continue
-            father = next((m for m in adults if m is not mother), None)
+            father = next(
+                (m for m in adults if m is not mother and m["gender"] == "male"), None
+            )
 
             day_offset = rng.randint(0, 364)
             birth_date = year_start + timedelta(days=day_offset)
@@ -146,8 +151,10 @@ def generate_births_and_deaths(
                 cause = "plague"
             elif category == "elderly":
                 cause = rng.choice(["old age", "illness"])
-            else:
+            elif row["gender"] == "female" and FERTILE_AGE_RANGE[0] <= age <= FERTILE_AGE_RANGE[1]:
                 cause = rng.choice(["illness", "accident", "childbirth"])
+            else:
+                cause = rng.choice(["illness", "accident"])
 
             deaths.append({
                 "resident_db_id": row["db_id"],

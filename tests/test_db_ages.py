@@ -1,7 +1,14 @@
 from datetime import date
 
 from town_shaper.seeding import rng_for
-from town_db.ages import ADULT_AGE_RANGE, CHILD_AGE_RANGE, age_on, birth_date_from_age, draw_age
+from town_db.ages import (
+    ADULT_AGE_RANGE,
+    CHILD_AGE_RANGE,
+    PARENT_AGE_RANGE,
+    age_on,
+    birth_date_from_age,
+    draw_age,
+)
 
 
 def test_draw_age_stays_within_bracket_ranges():
@@ -31,6 +38,20 @@ def test_age_on_computes_whole_years_elapsed():
     assert age_on(date(1275, 6, 15), date(1300, 1, 1)) == 24
     assert age_on(date(1275, 1, 1), date(1300, 1, 1)) == 25
     assert age_on(date(1300, 1, 1), date(1300, 1, 1)) == 0
+
+
+def test_draw_age_with_is_parent_stays_inside_the_parent_plausible_range():
+    rng = rng_for(("town", 1), "test-parent-ages")
+    for _ in range(300):
+        age = draw_age(rng, "adult", is_parent=True)
+        assert PARENT_AGE_RANGE[0] <= age <= PARENT_AGE_RANGE[1]
+
+
+def test_draw_age_ignores_is_parent_for_children():
+    rng = rng_for(("town", 1), "test-parent-child-ages")
+    for _ in range(100):
+        age = draw_age(rng, "child", is_parent=True)
+        assert CHILD_AGE_RANGE[0] <= age <= CHILD_AGE_RANGE[1]
 
 
 def test_birth_date_from_age_clamps_feb_29_reference_in_non_leap_birth_years():

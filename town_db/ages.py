@@ -3,6 +3,10 @@ from typing import Tuple
 
 ADULT_AGE_RANGE: Tuple[int, int] = (18, 90)
 CHILD_AGE_RANGE: Tuple[int, int] = (0, 17)
+# Adults who actually live with children are drawn from a parent-plausible
+# band instead of the full adult pyramid, so households with children reliably
+# contain a fertile-age parent.
+PARENT_AGE_RANGE: Tuple[int, int] = (20, 55)
 AGE_DECAY_RATE = 0.97
 
 
@@ -12,9 +16,11 @@ def _weighted_age(rng, min_age: int, max_age: int, decay_rate: float = AGE_DECAY
     return rng.choices(ages, weights=weights, k=1)[0]
 
 
-def draw_age(rng, age_bracket: str) -> int:
+def draw_age(rng, age_bracket: str, is_parent: bool = False) -> int:
     if age_bracket == "child":
         return _weighted_age(rng, *CHILD_AGE_RANGE)
+    if is_parent:
+        return _weighted_age(rng, *PARENT_AGE_RANGE)
     return _weighted_age(rng, *ADULT_AGE_RANGE)
 
 

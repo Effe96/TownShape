@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from town_db.vital_records import (
     DEFAULT_DEATH_RATE_BY_AGE,
     DISEASE_DEATH_MULTIPLIER,
+    FERTILE_AGE_RANGE,
     generate_births_and_deaths,
     generate_disease_events,
 )
@@ -150,6 +151,67 @@ def test_death_rate_is_elevated_only_for_residents_in_the_affected_zone():
     assert len(affected_deaths) > len(unaffected_deaths)
     assert all(d["cause"] == "plague" for d in affected_deaths)
     assert all(d["cause"] != "plague" for d in unaffected_deaths)
+
+
+def test_childbirth_is_never_the_cause_for_men_or_non_fertile_age_women():
+    household = {"id": 1, "family_name": "Smith", "race": "human"}
+    residents = []
+    db_id = 0
+    # A mixed population: men of every adult age, plus women both inside and
+    # outside the fertile window. Death rate forced to 1.0 so everyone dies.
+    for age in range(18, 60):
+        residents.append(_adult(db_id, 1, "male", age))
+        db_id += 1
+        residents.append(_adult(db_id, 1, "female", age))
+        db_id += 1
+
+    age_by_db_id = {r["db_id"]: YEAR_START.year - date.fromisoformat(r["birth_date"]).year
+                    for r in residents}
+    gender_by_db_id = {r["db_id"]: r["gender"] for r in residents}
+
+    _, deaths, _ = generate_births_and_deaths(
+        ("town", 1), [household], residents, [], YEAR_START,
+        temple_building_id=99, healer_building_id=None, birth_rate=0.0,
+        death_rate_by_age={k: 1.0 for k in DEFAULT_DEATH_RATE_BY_AGE},
+    )
+    assert len(deaths) == len(residents)
+
+    childbirth_deaths = [d for d in deaths if d["cause"] == "childbirth"]
+    assert len(childbirth_deaths) > 0, "expected at least some childbirth deaths to exist at all"
+    for d in childbirth_deaths:
+        db_id = d["resident_db_id"]
+        assert gender_by_db_id[db_id] == "female", d
+        assert FERTILE_AGE_RANGE[0] <= age_by_db_id[db_id] <= FERTILE_AGE_RANGE[1], d
+
+
+def test_a_second_female_adult_is_never_recorded_as_the_father():
+    household = {"id": 1, "family_name": "Smith", "race": "human"}
+    mother = _adult(1, 1, "female", 25)
+    other_woman = _adult(2, 1, "female", 30)
+
+    births, _, _ = generate_births_and_deaths(
+        ("town", 1), [household], [mother, other_woman], [], YEAR_START,
+        temple_building_id=99, healer_building_id=None, birth_rate=1.0,
+        death_rate_by_age={k: 0.0 for k in DEFAULT_DEATH_RATE_BY_AGE},
+    )
+    assert len(births) == 1
+    assert births[0]["_mother_db_id"] == 1
+    assert births[0]["_father_db_id"] is None
+
+
+def test_a_male_adult_in_the_household_is_recorded_as_the_father():
+    household = {"id": 1, "family_name": "Smith", "race": "human"}
+    mother = _adult(1, 1, "female", 25)
+    other_woman = _adult(2, 1, "female", 30)
+    father = _adult(3, 1, "male", 32)
+
+    births, _, _ = generate_births_and_deaths(
+        ("town", 1), [household], [mother, other_woman, father], [], YEAR_START,
+        temple_building_id=99, healer_building_id=None, birth_rate=1.0,
+        death_rate_by_age={k: 0.0 for k in DEFAULT_DEATH_RATE_BY_AGE},
+    )
+    assert len(births) == 1
+    assert births[0]["_father_db_id"] == 3
 
 
 def test_a_resident_who_already_has_a_death_date_is_never_rolled_again():
