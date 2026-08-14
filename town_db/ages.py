@@ -18,8 +18,17 @@ def draw_age(rng, age_bracket: str) -> int:
     return _weighted_age(rng, *ADULT_AGE_RANGE)
 
 
+def _is_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
 def birth_date_from_age(reference_date: date, age: int) -> date:
-    return date(reference_date.year - age, reference_date.month, reference_date.day)
+    target_year = reference_date.year - age
+    month = reference_date.month
+    day = reference_date.day
+    if month == 2 and day == 29 and not _is_leap_year(target_year):
+        day = 28
+    return date(target_year, month, day)
 
 
 def age_on(birth_date: date, on_date: date) -> int:

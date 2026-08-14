@@ -31,3 +31,12 @@ def test_age_on_computes_whole_years_elapsed():
     assert age_on(date(1275, 6, 15), date(1300, 1, 1)) == 24
     assert age_on(date(1275, 1, 1), date(1300, 1, 1)) == 25
     assert age_on(date(1300, 1, 1), date(1300, 1, 1)) == 0
+
+
+def test_birth_date_from_age_clamps_feb_29_reference_in_non_leap_birth_years():
+    reference = date(1304, 2, 29)  # 1304 is a leap year
+    # age 4 -> target year 1300, which is NOT a leap year (1300 % 100 == 0, 1300 % 400 != 0)
+    result = birth_date_from_age(reference, 4)
+    assert result == date(1300, 2, 28)
+    # age 8 -> target year 1296, which IS a leap year -> no clamping needed
+    assert birth_date_from_age(reference, 8) == date(1296, 2, 29)
