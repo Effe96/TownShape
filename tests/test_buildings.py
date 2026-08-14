@@ -63,3 +63,41 @@ def test_fill_district_buildings_is_deterministic():
     second = fill_district_buildings(district, ("town", 1), next_building_id=0)
     assert [(b.id, b.x, b.y, b.building_type) for b in first] == \
            [(b.id, b.x, b.y, b.building_type) for b in second]
+
+
+def test_civic_zone_includes_garrison_and_healer():
+    from town_shaper.buildings import BUILDING_TYPES_BY_ZONE
+    from town_shaper.models import ZoneType
+    civic_types = BUILDING_TYPES_BY_ZONE[ZoneType.CIVIC]
+    assert "garrison" in civic_types
+    assert "healer" in civic_types
+    assert "university" in civic_types
+
+
+def test_university_never_appears_below_min_population():
+    district = _square_district(ZoneType.CIVIC, side=200.0)
+    for seed_index in range(20):
+        buildings = fill_district_buildings(
+            district, ("town", seed_index), next_building_id=0, target_population=1000
+        )
+        assert all(b.building_type != "university" for b in buildings)
+
+
+def test_university_can_appear_above_min_population():
+    district = _square_district(ZoneType.CIVIC, side=200.0)
+    found = False
+    for seed_index in range(50):
+        buildings = fill_district_buildings(
+            district, ("town", seed_index), next_building_id=0, target_population=20000
+        )
+        if any(b.building_type == "university" for b in buildings):
+            found = True
+            break
+    assert found
+
+
+def test_garrison_and_healer_create_expected_vacancies():
+    from town_shaper.buildings import JOB_VACANCIES_BY_BUILDING_TYPE
+    assert JOB_VACANCIES_BY_BUILDING_TYPE["garrison"] == [("soldier", 6)]
+    assert JOB_VACANCIES_BY_BUILDING_TYPE["healer"] == [("healer", 1)]
+    assert JOB_VACANCIES_BY_BUILDING_TYPE["university"] == [("scholar", 3)]

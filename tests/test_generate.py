@@ -56,3 +56,11 @@ def test_generate_town_completes_within_time_budget_at_low_thousands_scale():
     generate_town(("town", 1), target_population=3000)
     elapsed = time.monotonic() - start
     assert elapsed < 10.0
+
+
+def test_generate_town_threads_target_population_into_building_fill():
+    # A pop-3000 town (below UNIVERSITY_MIN_POPULATION) must never contain
+    # a university, proving target_population reaches fill_district_buildings.
+    town = generate_town(("town", 1), target_population=3000)
+    all_types = [b.building_type for d in town.districts for b in d.buildings]
+    assert "university" not in all_types

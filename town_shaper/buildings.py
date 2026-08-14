@@ -22,7 +22,10 @@ MIN_BUILDING_SPACING: Dict[ZoneType, float] = {
 }
 
 BUILDING_TYPES_BY_ZONE: Dict[ZoneType, Dict[str, float]] = {
-    ZoneType.CIVIC: {"temple": 0.3, "town_hall": 0.1, "school": 0.2, "guard_post": 0.4},
+    ZoneType.CIVIC: {
+        "temple": 0.25, "town_hall": 0.1, "school": 0.15, "guard_post": 0.25,
+        "garrison": 0.1, "healer": 0.1, "university": 0.05,
+    },
     ZoneType.MERCHANT: {"shop": 0.5, "tavern": 0.2, "market_stall": 0.3},
     ZoneType.RICH_RESIDENTIAL: {"manor": 1.0},
     ZoneType.POOR_RESIDENTIAL: {"residence": 1.0},
@@ -34,6 +37,9 @@ JOB_VACANCIES_BY_BUILDING_TYPE: Dict[str, List[Tuple[str, int]]] = {
     "town_hall": [("clerk", 3)],
     "school": [("teacher", 2)],
     "guard_post": [("guard", 4)],
+    "garrison": [("soldier", 6)],
+    "healer": [("healer", 1)],
+    "university": [("scholar", 3)],
     "shop": [("shopkeep", 1), ("shop_staff", 2)],
     "tavern": [("barkeep", 1), ("tavern_staff", 2)],
     "market_stall": [("trader", 1)],
@@ -41,6 +47,9 @@ JOB_VACANCIES_BY_BUILDING_TYPE: Dict[str, List[Tuple[str, int]]] = {
     "residence": [],
     "farmstead": [("farmer", 1), ("farmhand", 3)],
 }
+
+UNIVERSITY_MIN_POPULATION = 8000
+UNIVERSITY_CHANCE = 0.15
 
 BUILDING_HOME_CAPACITY: Dict[str, int] = {
     "manor": 10,
@@ -70,7 +79,9 @@ def poisson_disc_fill(polygon, target_count, min_spacing, rng, max_attempts_per_
     return points
 
 
-def fill_district_buildings(district: District, town_seed, next_building_id: int) -> List[Building]:
+def fill_district_buildings(
+    district: District, town_seed, next_building_id: int, target_population: int = 0
+) -> List[Building]:
     rng = rng_for(town_seed, "buildings", district.id)
     area = polygon_area(district.polygon)
     density = BUILDING_DENSITY_PER_AREA[district.zone_type]
@@ -79,7 +90,13 @@ def fill_district_buildings(district: District, town_seed, next_building_id: int
 
     points = poisson_disc_fill(district.polygon, target_count, spacing, rng)
 
-    type_weights = BUILDING_TYPES_BY_ZONE[district.zone_type]
+    type_weights = dict(BUILDING_TYPES_BY_ZONE[district.zone_type])
+    if district.zone_type == ZoneType.CIVIC and "university" in type_weights:
+        university_eligible = (
+            target_population >= UNIVERSITY_MIN_POPULATION and rng.random() < UNIVERSITY_CHANCE
+        )
+        if not university_eligible:
+            del type_weights["university"]
     subtypes = list(type_weights.keys())
     weights = list(type_weights.values())
 

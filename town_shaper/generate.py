@@ -27,7 +27,7 @@ def generate_town(seed, target_population: int) -> Town:
 
     for district in districts:
         next_building_id = district.id * BUILDING_ID_STRIDE
-        buildings = fill_district_buildings(district, seed, next_building_id)
+        buildings = fill_district_buildings(district, seed, next_building_id, target_population=target_population)
         district.buildings = buildings
 
     households = generate_households(seed, target_population)
