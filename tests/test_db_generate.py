@@ -71,3 +71,74 @@ def test_generate_town_database_business_rules(tmp_path):
         "SELECT resident_id, COUNT(*) c FROM deaths GROUP BY resident_id HAVING c > 1"
     ).fetchall()
     assert duplicate_deaths == []
+
+
+def test_generate_town_database_plausibility_bounds(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+    conn = sqlite3.connect(db_path)
+
+    resident_count = conn.execute("SELECT COUNT(*) FROM residents").fetchone()[0]
+    birth_count = conn.execute("SELECT COUNT(*) FROM births").fetchone()[0]
+    death_count = conn.execute("SELECT COUNT(*) FROM deaths").fetchone()[0]
+
+    # Real pre-industrial crude rates sit around 30-40 per 1000; the band below
+    # is deliberately wide enough to absorb per-seed variance and the odd
+    # disease year, but tight enough to catch an order-of-magnitude regression
+    # (the original 11/1000 birth rate would have failed this).
+    births_per_1000 = birth_count / resident_count * 1000
+    deaths_per_1000 = death_count / resident_count * 1000
+    assert 15 <= births_per_1000 <= 55, f"births/1000={births_per_1000}"
+    assert 10 <= deaths_per_1000 <= 60, f"deaths/1000={deaths_per_1000}"
+
+    # The spec explicitly requires "bread constantly, jewelry rarely" -- assert
+    # the SV-weighting direction produces that outcome, not its inverse.
+    bread_count = conn.execute(
+        "SELECT COUNT(*) FROM purchases p JOIN goods g ON g.id = p.good_id WHERE g.name = 'bread'"
+    ).fetchone()[0]
+    jewelry_count = conn.execute(
+        "SELECT COUNT(*) FROM purchases p JOIN goods g ON g.id = p.good_id WHERE g.name = 'jewelry'"
+    ).fetchone()[0]
+    assert bread_count > jewelry_count, f"bread={bread_count}, jewelry={jewelry_count}"
+
+
+def test_no_purchase_or_tax_payment_postdates_the_residents_death(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+    conn = sqlite3.connect(db_path)
+
+    posthumous_purchases = conn.execute(
+        "SELECT COUNT(*) FROM purchases p JOIN residents r ON r.id = p.resident_id "
+        "WHERE r.death_date IS NOT NULL AND p.purchase_date > r.death_date"
+    ).fetchone()[0]
+    assert posthumous_purchases == 0
+
+    posthumous_taxes = conn.execute(
+        "SELECT COUNT(*) FROM tax_payments t JOIN residents r ON r.id = t.resident_id "
+        "WHERE r.death_date IS NOT NULL AND t.payment_date > r.death_date"
+    ).fetchone()[0]
+    assert posthumous_taxes == 0
+
+
+def test_vital_record_causes_and_parents_are_biologically_possible(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+    conn = sqlite3.connect(db_path)
+
+    impossible_childbirth_deaths = conn.execute(
+        "SELECT COUNT(*) FROM deaths d JOIN residents r ON r.id = d.resident_id "
+        "WHERE d.cause = 'childbirth' AND r.gender != 'female'"
+    ).fetchone()[0]
+    assert impossible_childbirth_deaths == 0
+
+    female_fathers = conn.execute(
+        "SELECT COUNT(*) FROM births b JOIN residents r ON r.id = b.father_resident_id "
+        "WHERE r.gender != 'male'"
+    ).fetchone()[0]
+    assert female_fathers == 0
+
+    non_female_mothers = conn.execute(
+        "SELECT COUNT(*) FROM births b JOIN residents r ON r.id = b.mother_resident_id "
+        "WHERE r.gender != 'female'"
+    ).fetchone()[0]
+    assert non_female_mothers == 0
