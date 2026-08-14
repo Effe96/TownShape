@@ -12,10 +12,10 @@ def _household(id_):
     return {"id": id_, "family_name": "Smith", "race": "human"}
 
 
-def _resident(db_id, household_id, age_bracket="adult"):
+def _resident(db_id, household_id, age_bracket="adult", death_date=None):
     return {
         "db_id": db_id, "household_id": household_id, "age_bracket": age_bracket,
-        "ses": "poor", "is_noble": False,
+        "ses": "poor", "is_noble": False, "death_date": death_date,
     }
 
 
@@ -61,3 +61,55 @@ def test_generate_purchases_is_deterministic():
     p1 = generate_purchases(("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52)
     p2 = generate_purchases(("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52)
     assert p1 == p2
+
+
+def test_high_sv_staples_are_bought_more_often_than_low_sv_luxuries():
+    # The spec: "SV weights how often a purchase category occurs (bread
+    # constantly, jewelry rarely)". bread sv=800, jewelry sv=400.
+    households = [_household(i) for i in range(1, 41)]
+    residents = [_resident(i, i) for i in range(1, 41)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52
+    )
+    assert len(purchases) >= 500
+
+    bread_count = sum(1 for p in purchases if p["good_id"] == goods_ids["bread"])
+    jewelry_count = sum(1 for p in purchases if p["good_id"] == goods_ids["jewelry"])
+    assert bread_count > jewelry_count, f"bread={bread_count}, jewelry={jewelry_count}"
+
+
+def test_expensive_goods_are_only_ever_bought_one_at_a_time():
+    households = [_household(i) for i in range(1, 21)]
+    residents = [_resident(i, i) for i in range(1, 21)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    price_by_id = {goods_ids[g["name"]]: g["typical_price"] for g in GOODS_CATALOG}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52
+    )
+    for p in purchases:
+        if price_by_id[p["good_id"]] >= 1.0:
+            assert p["quantity"] == 1
+
+
+def test_a_resident_never_shops_after_their_own_death_date():
+    death_date = "1300-06-15"
+    households = [_household(1)]
+    residents = [_resident(1, 1, death_date=death_date)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52
+    )
+    assert len(purchases) > 0
+    for p in purchases:
+        assert p["purchase_date"] <= death_date, p
+
+
+def test_a_household_whose_only_adult_died_before_the_year_buys_nothing():
+    households = [_household(1)]
+    residents = [_resident(1, 1, death_date="1299-12-31")]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52
+    )
+    assert purchases == []

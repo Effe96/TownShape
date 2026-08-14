@@ -26,7 +26,10 @@ def generate_purchases(
     sv_by_name = {g["name"]: g["sv"] for g in GOODS_CATALOG if g["name"] in goods_ids}
     price_by_name = {g["name"]: g["typical_price"] for g in GOODS_CATALOG if g["name"] in goods_ids}
     goods_names = list(sv_by_name.keys())
-    good_weights = [1.0 / sv_by_name[name] for name in goods_names]
+    # SV is the population needed to support one business of this type, so a
+    # HIGHER sv means the good is bought more often (bread constantly, jewelry
+    # rarely) -- weight directly by sv, not by its reciprocal.
+    good_weights = [float(sv_by_name[name]) for name in goods_names]
 
     residents_by_household: Dict[int, List[Dict[str, Any]]] = {}
     for row in resident_rows:
@@ -37,7 +40,13 @@ def generate_purchases(
     for week in range(weeks):
         week_start = year_start + timedelta(weeks=week)
         for household in household_rows:
-            buyers = residents_by_household.get(household["id"], [])
+            all_buyers = residents_by_household.get(household["id"], [])
+            # A resident who has already died cannot shop this week.
+            buyers = [
+                r for r in all_buyers
+                if r.get("death_date") is None
+                or date.fromisoformat(r["death_date"]) >= week_start
+            ]
             if not buyers:
                 continue
             count = rng.choices([0, 1, 2, 3], weights=WEEKLY_PURCHASE_COUNT_WEIGHTS, k=1)[0]
@@ -45,9 +54,16 @@ def generate_purchases(
                 buyer = rng.choice(buyers)
                 good_name = rng.choices(goods_names, weights=good_weights, k=1)[0]
                 shop_id = rng.choice(shop_building_ids)
-                quantity = rng.randint(1, 5)
+                # Expensive goods are bought one at a time; cheap staples in bulk.
+                quantity = 1 if price_by_name[good_name] >= 1.0 else rng.randint(1, 5)
                 unit_price = round(price_by_name[good_name] * rng.uniform(0.85, 1.15), 2)
-                day_offset = rng.randint(0, 6)
+                # Cap the within-week day so a buyer who dies mid-week never
+                # shops after their own death date.
+                max_day_offset = 6
+                if buyer.get("death_date") is not None:
+                    days_left = (date.fromisoformat(buyer["death_date"]) - week_start).days
+                    max_day_offset = min(6, max(0, days_left))
+                day_offset = rng.randint(0, max_day_offset)
                 purchase_date = week_start + timedelta(days=day_offset)
 
                 purchases.append({

@@ -67,29 +67,9 @@ def generate_town_database(
 
     _insert_residents(conn, resident_rows)
 
-    goods_ids = insert_goods(conn)
-
-    shop_building_ids = [
-        b.id for d in town.districts for b in d.buildings if b.building_type in SHOP_BUILDING_TYPES
-    ]
-    purchases = generate_purchases(
-        seed, household_rows, resident_rows, goods_ids, shop_building_ids, year_start,
-    )
-    for p in purchases:
-        conn.execute(
-            "INSERT INTO purchases (resident_id, shop_building_id, good_id, quantity, unit_price, total_price, purchase_date) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (p["resident_db_id"], p["shop_building_id"], p["good_id"], p["quantity"],
-             p["unit_price"], p["total_price"], p["purchase_date"]),
-        )
-
-    tax_payments = generate_tax_payments(seed, household_rows, resident_rows, year_start)
-    for t in tax_payments:
-        conn.execute(
-            "INSERT INTO tax_payments (resident_id, tax_type, amount, period, payment_date) VALUES (?, ?, ?, ?, ?)",
-            (t["resident_db_id"], t["tax_type"], t["amount"], t["period"], t["payment_date"]),
-        )
-
+    # Vital records run BEFORE purchases and taxes so that residents who die
+    # partway through the year stop shopping and paying tax on their death
+    # date, rather than transacting for the whole year regardless.
     disease_rows = generate_disease_events(seed, year_start)
     for d in disease_rows:
         cursor = conn.execute(
@@ -123,6 +103,29 @@ def generate_town_database(
         conn.execute(
             "UPDATE residents SET death_date = ? WHERE id = ?",
             (death["death_date"], death["resident_db_id"]),
+        )
+
+    goods_ids = insert_goods(conn)
+
+    shop_building_ids = [
+        b.id for d in town.districts for b in d.buildings if b.building_type in SHOP_BUILDING_TYPES
+    ]
+    purchases = generate_purchases(
+        seed, household_rows, resident_rows, goods_ids, shop_building_ids, year_start,
+    )
+    for p in purchases:
+        conn.execute(
+            "INSERT INTO purchases (resident_id, shop_building_id, good_id, quantity, unit_price, total_price, purchase_date) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (p["resident_db_id"], p["shop_building_id"], p["good_id"], p["quantity"],
+             p["unit_price"], p["total_price"], p["purchase_date"]),
+        )
+
+    tax_payments = generate_tax_payments(seed, household_rows, resident_rows, year_start)
+    for t in tax_payments:
+        conn.execute(
+            "INSERT INTO tax_payments (resident_id, tax_type, amount, period, payment_date) VALUES (?, ?, ?, ?, ?)",
+            (t["resident_db_id"], t["tax_type"], t["amount"], t["period"], t["payment_date"]),
         )
 
     all_resident_rows = resident_rows + new_resident_rows
