@@ -43,6 +43,9 @@ def derive_family_relationships(
                 canonical_pair(parent_candidates[0]["id"], parent_candidates[1]["id"], "spouse")
             )
 
+        # Track which (parent, child) pairs are established via birth records
+        asserted_parent_pairs: set = set()
+
         for child in children:
             if child["id"] in birth_parents:
                 for parent_id in birth_parents[child["id"]]:
@@ -50,6 +53,7 @@ def derive_family_relationships(
                         "resident_a_id": parent_id, "resident_b_id": child["id"],
                         "relationship_type": "parent", "detail": None,
                     })
+                    asserted_parent_pairs.add((parent_id, child["id"]))
             else:
                 for parent in parent_candidates:
                     relationships.append({
@@ -64,7 +68,9 @@ def derive_family_relationships(
         non_extra = parent_candidates + children
         for extra in extra_adults:
             for other in non_extra:
-                relationships.append(canonical_pair(extra["id"], other["id"], "household_member"))
+                # Skip household_member if this pair is an asserted parent-child relationship
+                if (extra["id"], other["id"]) not in asserted_parent_pairs and (other["id"], extra["id"]) not in asserted_parent_pairs:
+                    relationships.append(canonical_pair(extra["id"], other["id"], "household_member"))
         for i in range(len(extra_adults)):
             for j in range(i + 1, len(extra_adults)):
                 relationships.append(

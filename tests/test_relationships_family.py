@@ -58,9 +58,15 @@ def test_birth_record_overrides_household_heuristic_for_parentage():
     ]
     births = [{"child_resident_id": 4, "mother_resident_id": 3, "father_resident_id": None}]
     relationships = derive_family_relationships(residents, births, REFERENCE_DATE)
-    parent_pairs = {
-        (r["resident_a_id"], r["resident_b_id"]) for r in relationships if r["relationship_type"] == "parent"
-    }
+
+    by_type = {}
+    for r in relationships:
+        by_type.setdefault(r["relationship_type"], set()).add((r["resident_a_id"], r["resident_b_id"]))
+
     # The heuristic would have used the first two adults (1, 2); the real birth
     # record says the mother is adult #3 -- the exact record must win.
-    assert parent_pairs == {(3, 4)}
+    assert by_type.get("parent") == {(3, 4)}
+
+    # Verify that (3, 4) does NOT appear as household_member (no contradictory relationships)
+    household_member_pairs = by_type.get("household_member", set())
+    assert (3, 4) not in household_member_pairs and (4, 3) not in household_member_pairs
