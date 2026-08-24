@@ -142,3 +142,37 @@ def test_vital_record_causes_and_parents_are_biologically_possible(tmp_path):
         "WHERE r.gender != 'female'"
     ).fetchone()[0]
     assert non_female_mothers == 0
+
+
+def test_generate_town_database_default_new_parameters_match_previous_behavior(tmp_path):
+    db_path_a = str(tmp_path / "a.db")
+    db_path_b = str(tmp_path / "b.db")
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path_a)
+    generate_town_database(
+        ("town", 1), target_population=1500, db_path=db_path_b,
+        area_per_resident_multiplier=1.0, density_multiplier=1.0, rich_proportion=0.05,
+    )
+
+    conn_a = sqlite3.connect(db_path_a)
+    conn_b = sqlite3.connect(db_path_b)
+    for table in ["residents", "buildings"]:
+        rows_a = conn_a.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        rows_b = conn_b.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        assert rows_a == rows_b
+
+
+def test_generate_town_database_threads_area_multiplier_into_building_placement(tmp_path):
+    db_path_small = str(tmp_path / "small.db")
+    db_path_large = str(tmp_path / "large.db")
+    generate_town_database(
+        ("town", 1), target_population=1500, db_path=db_path_small, area_per_resident_multiplier=0.5
+    )
+    generate_town_database(
+        ("town", 1), target_population=1500, db_path=db_path_large, area_per_resident_multiplier=2.0
+    )
+
+    conn_small = sqlite3.connect(db_path_small)
+    conn_large = sqlite3.connect(db_path_large)
+    small_max_x = conn_small.execute("SELECT MAX(x) FROM buildings").fetchone()[0]
+    large_max_x = conn_large.execute("SELECT MAX(x) FROM buildings").fetchone()[0]
+    assert large_max_x > small_max_x

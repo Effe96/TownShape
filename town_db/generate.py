@@ -32,8 +32,16 @@ def generate_town_database(
     intermarriage_rate: float = DEFAULT_INTERMARRIAGE_RATE,
     birth_rate: float = DEFAULT_BIRTH_RATE,
     death_rate_by_age: Dict[str, float] = DEFAULT_DEATH_RATE_BY_AGE,
+    area_per_resident_multiplier: float = 1.0,
+    density_multiplier: float = 1.0,
+    rich_proportion: float = 0.05,
 ) -> None:
-    town = generate_town(seed, target_population)
+    town = generate_town(
+        seed, target_population,
+        area_per_resident_multiplier=area_per_resident_multiplier,
+        density_multiplier=density_multiplier,
+        rich_proportion=rich_proportion,
+    )
 
     conn = connect(db_path)
     create_schema(conn)
