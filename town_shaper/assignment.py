@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from town_shaper.models import Building, District, Household, JobVacancy, ResidentSlot, SES, ZoneType
 from town_shaper.seeding import rng_for
 
-SES_PROPORTIONS: Dict[SES, float] = {SES.RICH: 0.2, SES.POOR: 0.8}
+SES_PROPORTIONS: Dict[SES, float] = {SES.RICH: 0.05, SES.POOR: 0.95}
 DRIFT_CHANCE = 0.05
 
 ZONE_TYPE_BY_SES: Dict[SES, ZoneType] = {
