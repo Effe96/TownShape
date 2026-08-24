@@ -80,13 +80,14 @@ def poisson_disc_fill(polygon, target_count, min_spacing, rng, max_attempts_per_
 
 
 def fill_district_buildings(
-    district: District, town_seed, next_building_id: int, target_population: int = 0
+    district: District, town_seed, next_building_id: int,
+    target_population: int = 0, density_multiplier: float = 1.0,
 ) -> List[Building]:
     rng = rng_for(town_seed, "buildings", district.id)
     area = polygon_area(district.polygon)
-    density = BUILDING_DENSITY_PER_AREA[district.zone_type]
+    density = BUILDING_DENSITY_PER_AREA[district.zone_type] * density_multiplier
     target_count = max(1, round(area * density))
-    spacing = MIN_BUILDING_SPACING[district.zone_type]
+    spacing = MIN_BUILDING_SPACING[district.zone_type] / density_multiplier
 
     points = poisson_disc_fill(district.polygon, target_count, spacing, rng)
 

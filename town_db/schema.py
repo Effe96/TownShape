@@ -111,6 +111,15 @@ CREATE TABLE military_service (
     start_date TEXT NOT NULL,
     end_date TEXT
 );
+
+CREATE TABLE generation_parameters (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    seed TEXT NOT NULL,
+    target_population INTEGER NOT NULL,
+    area_per_resident_multiplier REAL NOT NULL,
+    density_multiplier REAL NOT NULL,
+    rich_proportion REAL NOT NULL
+);
 """
 
 
