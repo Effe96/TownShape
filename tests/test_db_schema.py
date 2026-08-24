@@ -5,7 +5,7 @@ from town_db.schema import connect, create_schema
 EXPECTED_TABLES = {
     "districts", "buildings", "households", "residents", "goods",
     "purchases", "tax_payments", "disease_events", "births", "deaths",
-    "school_enrollments", "military_service",
+    "school_enrollments", "military_service", "generation_parameters",
 }
 
 
@@ -59,3 +59,19 @@ def test_foreign_key_violation_is_rejected(tmp_path):
         assert False, "expected a foreign key violation"
     except sqlite3.IntegrityError:
         pass
+
+
+def test_generation_parameters_accepts_a_row(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO generation_parameters (seed, target_population, area_per_resident_multiplier, "
+        "density_multiplier, rich_proportion) VALUES (?, ?, ?, ?, ?)",
+        ("('town', 1)", 1500, 1.0, 1.0, 0.05),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT seed, target_population, area_per_resident_multiplier, density_multiplier, rich_proportion "
+        "FROM generation_parameters"
+    ).fetchone()
+    assert row == ("('town', 1)", 1500, 1.0, 1.0, 0.05)
