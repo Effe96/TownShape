@@ -101,3 +101,30 @@ def test_garrison_and_healer_create_expected_vacancies():
     assert JOB_VACANCIES_BY_BUILDING_TYPE["garrison"] == [("soldier", 6)]
     assert JOB_VACANCIES_BY_BUILDING_TYPE["healer"] == [("healer", 1)]
     assert JOB_VACANCIES_BY_BUILDING_TYPE["university"] == [("scholar", 3)]
+
+
+def test_fill_district_buildings_higher_density_multiplier_increases_building_count():
+    district = _square_district(ZoneType.POOR_RESIDENTIAL, side=200.0)
+    baseline = fill_district_buildings(district, ("town", 1), next_building_id=0)
+    denser = fill_district_buildings(district, ("town", 1), next_building_id=0, density_multiplier=2.0)
+    assert len(denser) > len(baseline)
+
+
+def test_fill_district_buildings_lower_density_multiplier_increases_spacing():
+    from town_shaper.buildings import MIN_BUILDING_SPACING
+
+    district = _square_district(ZoneType.POOR_RESIDENTIAL, side=200.0)
+    sparse = fill_district_buildings(district, ("town", 1), next_building_id=0, density_multiplier=0.5)
+    expected_min_spacing = MIN_BUILDING_SPACING[ZoneType.POOR_RESIDENTIAL] / 0.5
+
+    for i, a in enumerate(sparse):
+        for b in sparse[i + 1:]:
+            assert distance((a.x, a.y), (b.x, b.y)) >= expected_min_spacing
+
+
+def test_fill_district_buildings_default_density_multiplier_matches_previous_behavior():
+    district = _square_district(ZoneType.MERCHANT, side=100.0)
+    baseline = fill_district_buildings(district, ("town", 1), next_building_id=0)
+    explicit = fill_district_buildings(district, ("town", 1), next_building_id=0, density_multiplier=1.0)
+    assert [(b.id, b.x, b.y, b.building_type) for b in baseline] == \
+           [(b.id, b.x, b.y, b.building_type) for b in explicit]
