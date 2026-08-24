@@ -39,3 +39,37 @@ def test_generate_town_from_parameters_passes_foreign_key_check(tmp_path):
     conn.execute("PRAGMA foreign_keys = ON")
     violations = conn.execute("PRAGMA foreign_key_check").fetchall()
     assert violations == []
+
+
+def test_generate_town_from_parameters_threads_density_multiplier_into_building_count(tmp_path):
+    db_path_sparse = str(tmp_path / "sparse.db")
+    db_path_dense = str(tmp_path / "dense.db")
+    generate_town_from_parameters(
+        TownParameters(seed=("town", 1), target_population=1500, density_multiplier=0.5), db_path_sparse
+    )
+    generate_town_from_parameters(
+        TownParameters(seed=("town", 1), target_population=1500, density_multiplier=2.0), db_path_dense
+    )
+
+    conn_sparse = sqlite3.connect(db_path_sparse)
+    conn_dense = sqlite3.connect(db_path_dense)
+    sparse_count = conn_sparse.execute("SELECT COUNT(*) FROM buildings").fetchone()[0]
+    dense_count = conn_dense.execute("SELECT COUNT(*) FROM buildings").fetchone()[0]
+    assert dense_count > sparse_count
+
+
+def test_generate_town_from_parameters_threads_rich_proportion_into_resident_ses(tmp_path):
+    db_path_poor = str(tmp_path / "poor.db")
+    db_path_rich = str(tmp_path / "rich.db")
+    generate_town_from_parameters(
+        TownParameters(seed=("town", 1), target_population=1500, rich_proportion=0.01), db_path_poor
+    )
+    generate_town_from_parameters(
+        TownParameters(seed=("town", 1), target_population=1500, rich_proportion=0.9), db_path_rich
+    )
+
+    conn_poor = sqlite3.connect(db_path_poor)
+    conn_rich = sqlite3.connect(db_path_rich)
+    poor_rich_count = conn_poor.execute("SELECT COUNT(*) FROM residents WHERE ses = 'rich'").fetchone()[0]
+    rich_rich_count = conn_rich.execute("SELECT COUNT(*) FROM residents WHERE ses = 'rich'").fetchone()[0]
+    assert rich_rich_count > poor_rich_count

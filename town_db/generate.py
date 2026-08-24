@@ -3,6 +3,7 @@ import sqlite3
 from datetime import date
 from typing import Any, Dict, List
 
+from town_shaper.assignment import DEFAULT_RICH_PROPORTION
 from town_shaper.generate import generate_town
 
 from town_db.enrollment import generate_school_enrollments
@@ -34,7 +35,7 @@ def generate_town_database(
     death_rate_by_age: Dict[str, float] = DEFAULT_DEATH_RATE_BY_AGE,
     area_per_resident_multiplier: float = 1.0,
     density_multiplier: float = 1.0,
-    rich_proportion: float = 0.05,
+    rich_proportion: float = DEFAULT_RICH_PROPORTION,
 ) -> None:
     town = generate_town(
         seed, target_population,

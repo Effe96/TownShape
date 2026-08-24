@@ -26,8 +26,11 @@ rather than silently guessing.
 - **`density_multiplier`** (default `1.0`) — how tightly buildings are
   packed within whatever area exists, independent of size. Low density
   at a large size reads as "a small village in a large town." Low
-  density at a *small* size can leave some residents unhoused —
-  overcrowding/slums, a legitimate narrative outcome, not an error.
+  density combined with a small area reduces total housing capacity;
+  residents beyond that capacity are omitted from the generated town
+  entirely (never written to the `residents` table), so the actual
+  generated population can end up well below `target_population`, with
+  no explicit marker of the shortfall anywhere in the data.
 - **`rich_proportion`** (default `0.05`) — fraction of households that
   are SES-rich; the rest are poor (there is no third tier). "Richness"
   of the town overall.

@@ -113,6 +113,7 @@ CREATE TABLE military_service (
 );
 
 CREATE TABLE generation_parameters (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
     seed TEXT NOT NULL,
     target_population INTEGER NOT NULL,
     area_per_resident_multiplier REAL NOT NULL,

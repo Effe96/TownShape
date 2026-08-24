@@ -39,5 +39,19 @@ town") or a path to a longer document.
    generate_town_from_parameters(params, db_path="<destination path>.db")
    ```
 
+6. **Verify the actual resident count.** Low `density_multiplier`
+   combined with a small `area_per_resident_multiplier` can leave the
+   generated town short of `target_population` — residents who don't
+   fit in any building are silently omitted, with no marker of the
+   shortfall in the data. After generating, run:
+
+   ```sql
+   SELECT COUNT(*) FROM residents;
+   ```
+
+   against the generated database, and if the result differs
+   materially from the requested `target_population`, tell the user the
+   actual resident count.
+
 See `docs/narrative-town-parameters.md` for the full mapping table and
 the reasoning behind each field.

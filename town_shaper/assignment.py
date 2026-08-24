@@ -4,6 +4,7 @@ from town_shaper.models import Building, District, Household, JobVacancy, Reside
 from town_shaper.seeding import rng_for
 
 DRIFT_CHANCE = 0.05
+DEFAULT_RICH_PROPORTION = 0.05
 
 ZONE_TYPE_BY_SES: Dict[SES, ZoneType] = {
     SES.RICH: ZoneType.RICH_RESIDENTIAL,
@@ -59,7 +60,10 @@ def _build_vacancy_pool(districts: List[District], rng) -> List[JobVacancy]:
 
 
 def assign_residents(
-    town_seed, households: List[Household], districts: List[District], rich_proportion: float = 0.05
+    town_seed,
+    households: List[Household],
+    districts: List[District],
+    rich_proportion: float = DEFAULT_RICH_PROPORTION,
 ) -> List[ResidentSlot]:
     rng = rng_for(town_seed, "assignment")
 

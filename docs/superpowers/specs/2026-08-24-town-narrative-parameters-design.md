@@ -111,12 +111,15 @@ Validated in `__post_init__` (raises `ValueError`, matching the existing
   whatever area exists, independent of size. At `1.0`, behavior is
   unchanged from today. Values `< 1.0` spread buildings out (fewer per
   unit area, more spacing between them); `> 1.0` packs them tighter. A
-  low-density, small-area, high-population combination can legitimately
-  leave some residents unhoused — the codebase already tolerates this
-  gracefully (`town_shaper/assignment.py`'s `_find_home_with_capacity`
-  returns `None` and the resident is silently skipped for that pass) and
-  1a does not add new validation against it; an overcrowded, partly-
-  unhoused population is a plausible narrative outcome, not a bug.
+  low-density, small-area, high-population combination reduces total
+  housing capacity below `target_population`; residents beyond capacity
+  are omitted from the generated town entirely
+  (`town_shaper/assignment.py`'s `_find_home_with_capacity` returns
+  `None` and the resident is never appended to the `residents` list —
+  not marked "unhoused" anywhere in the data, simply absent) and 1a does
+  not add new validation against it. Future sub-slices should treat the
+  resulting capacity shortfall as something to surface explicitly (e.g.
+  a count or warning), not assume it is recorded anywhere today.
 - `rich_proportion` — promotes the currently-hardcoded
   `SES_PROPORTIONS[SES.RICH] = 0.05` constant in
   `town_shaper/assignment.py` to a caller-supplied value. "Poor" is

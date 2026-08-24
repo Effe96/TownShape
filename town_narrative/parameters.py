@@ -1,14 +1,16 @@
 from dataclasses import dataclass
 from typing import Any
 
+from town_shaper.assignment import DEFAULT_RICH_PROPORTION
 
-@dataclass
+
+@dataclass(frozen=True)
 class TownParameters:
     seed: Any
     target_population: int
     area_per_resident_multiplier: float = 1.0
     density_multiplier: float = 1.0
-    rich_proportion: float = 0.05
+    rich_proportion: float = DEFAULT_RICH_PROPORTION
 
     def __post_init__(self) -> None:
         if self.target_population <= 0:

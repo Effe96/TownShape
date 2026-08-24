@@ -16,9 +16,9 @@ def generate_town_from_parameters(params: TownParameters, db_path: str) -> None:
 
     conn = connect(db_path)
     conn.execute(
-        "INSERT INTO generation_parameters (seed, target_population, area_per_resident_multiplier, "
-        "density_multiplier, rich_proportion) VALUES (?, ?, ?, ?, ?)",
-        (str(params.seed), params.target_population, params.area_per_resident_multiplier,
+        "INSERT INTO generation_parameters (id, seed, target_population, area_per_resident_multiplier, "
+        "density_multiplier, rich_proportion) VALUES (?, ?, ?, ?, ?, ?)",
+        (1, str(params.seed), params.target_population, params.area_per_resident_multiplier,
          params.density_multiplier, params.rich_proportion),
     )
     conn.commit()
