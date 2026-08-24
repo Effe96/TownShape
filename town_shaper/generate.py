@@ -12,8 +12,10 @@ AREA_PER_RESIDENT = 150.0  # square map-units of town area assumed per resident
 BUILDING_ID_STRIDE = 100_000
 
 
-def compute_town_bounds(target_population: int) -> Tuple[float, float, float, float]:
-    area = target_population * AREA_PER_RESIDENT
+def compute_town_bounds(
+    target_population: int, area_per_resident_multiplier: float = 1.0
+) -> Tuple[float, float, float, float]:
+    area = target_population * AREA_PER_RESIDENT * area_per_resident_multiplier
     side = math.sqrt(area)
     half = side / 2.0
     return (-half, -half, half, half)

@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from town_shaper.buildings import fill_district_buildings
 from town_shaper.generate import BUILDING_ID_STRIDE, compute_town_bounds, generate_town
 from town_shaper.models import Town
@@ -64,3 +66,17 @@ def test_generate_town_threads_target_population_into_building_fill():
     town = generate_town(("town", 1), target_population=3000)
     all_types = [b.building_type for d in town.districts for b in d.buildings]
     assert "university" not in all_types
+
+
+def test_compute_town_bounds_scales_with_area_multiplier_independent_of_population():
+    baseline = compute_town_bounds(target_population=1000)
+    doubled = compute_town_bounds(target_population=1000, area_per_resident_multiplier=2.0)
+    baseline_area = (baseline[2] - baseline[0]) * (baseline[3] - baseline[1])
+    doubled_area = (doubled[2] - doubled[0]) * (doubled[3] - doubled[1])
+    assert doubled_area == pytest.approx(baseline_area * 2.0)
+
+
+def test_compute_town_bounds_default_multiplier_matches_no_multiplier():
+    assert compute_town_bounds(target_population=1000) == compute_town_bounds(
+        target_population=1000, area_per_resident_multiplier=1.0
+    )
