@@ -21,19 +21,27 @@ def compute_town_bounds(
     return (-half, -half, half, half)
 
 
-def generate_town(seed, target_population: int) -> Town:
-    bounds = compute_town_bounds(target_population)
+def generate_town(
+    seed, target_population: int,
+    area_per_resident_multiplier: float = 1.0,
+    density_multiplier: float = 1.0,
+    rich_proportion: float = 0.05,
+) -> Town:
+    bounds = compute_town_bounds(target_population, area_per_resident_multiplier)
 
     anchors = place_anchors(seed, target_population, bounds)
     districts = build_districts(anchors, bounds)
 
     for district in districts:
         next_building_id = district.id * BUILDING_ID_STRIDE
-        buildings = fill_district_buildings(district, seed, next_building_id, target_population=target_population)
+        buildings = fill_district_buildings(
+            district, seed, next_building_id,
+            target_population=target_population, density_multiplier=density_multiplier,
+        )
         district.buildings = buildings
 
     households = generate_households(seed, target_population)
-    residents = assign_residents(seed, households, districts)
+    residents = assign_residents(seed, households, districts, rich_proportion=rich_proportion)
 
     town = Town(seed=seed, target_population=target_population, bounds=bounds)
     town.districts = districts
