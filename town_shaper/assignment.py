@@ -3,7 +3,6 @@ from typing import Dict, List, Optional
 from town_shaper.models import Building, District, Household, JobVacancy, ResidentSlot, SES, ZoneType
 from town_shaper.seeding import rng_for
 
-SES_PROPORTIONS: Dict[SES, float] = {SES.RICH: 0.05, SES.POOR: 0.95}
 DRIFT_CHANCE = 0.05
 
 ZONE_TYPE_BY_SES: Dict[SES, ZoneType] = {
@@ -11,8 +10,8 @@ ZONE_TYPE_BY_SES: Dict[SES, ZoneType] = {
     SES.POOR: ZoneType.POOR_RESIDENTIAL,
 }
 
-def _draw_household_ses(rng) -> SES:
-    return SES.RICH if rng.random() < SES_PROPORTIONS[SES.RICH] else SES.POOR
+def _draw_household_ses(rng, rich_proportion: float) -> SES:
+    return SES.RICH if rng.random() < rich_proportion else SES.POOR
 
 
 def _preferred_zones(ses: SES, rng) -> List[ZoneType]:
@@ -59,7 +58,9 @@ def _build_vacancy_pool(districts: List[District], rng) -> List[JobVacancy]:
     return vacancies
 
 
-def assign_residents(town_seed, households: List[Household], districts: List[District]) -> List[ResidentSlot]:
+def assign_residents(
+    town_seed, households: List[Household], districts: List[District], rich_proportion: float = 0.05
+) -> List[ResidentSlot]:
     rng = rng_for(town_seed, "assignment")
 
     residential_buildings = sorted(
@@ -72,7 +73,7 @@ def assign_residents(town_seed, households: List[Household], districts: List[Dis
     resident_id = 0
 
     for household in households:
-        ses = _draw_household_ses(rng)
+        ses = _draw_household_ses(rng, rich_proportion)
         preferred_zones = _preferred_zones(ses, rng)
 
         member_specs = [("adult", True)]

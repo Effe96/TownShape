@@ -4,7 +4,7 @@ from town_shaper.buildings import fill_district_buildings
 from town_shaper.districts import build_districts
 from town_shaper.generate import compute_town_bounds, generate_town
 from town_shaper.households import generate_households
-from town_shaper.models import Anchor, Building, District, Household, ZoneType
+from town_shaper.models import Anchor, Building, District, Household, SES, ZoneType
 
 
 def _build_town_pieces(seed, target_population=3000):
@@ -134,3 +134,30 @@ def test_assign_residents_ses_drift_is_observable():
 
     drifted_count = sum(1 for r in residents_with_homes if is_drifted(r))
     assert 0 < drifted_count < 0.15 * len(residents_with_homes)
+
+
+def test_assign_residents_default_rich_proportion_matches_previous_hardcoded_value():
+    seed = ("town", 1)
+    districts1, households1 = _build_town_pieces(seed, target_population=3000)
+    residents_default = assign_residents(seed, households1, districts1)
+
+    districts2, households2 = _build_town_pieces(seed, target_population=3000)
+    residents_explicit = assign_residents(seed, households2, districts2, rich_proportion=0.05)
+
+    key = lambda r: (r.id, r.household_id, r.ses, r.age_bracket, r.home_building_id, r.workplace_building_id, r.occupation)
+    assert [key(r) for r in residents_default] == [key(r) for r in residents_explicit]
+
+
+def test_assign_residents_high_rich_proportion_produces_majority_rich_residents():
+    seed = ("town", 1)
+    districts, households = _build_town_pieces(seed, target_population=3000)
+    residents = assign_residents(seed, households, districts, rich_proportion=0.9)
+    rich_count = sum(1 for r in residents if r.ses == SES.RICH)
+    assert rich_count > 0.5 * len(residents)
+
+
+def test_assign_residents_zero_rich_proportion_produces_no_rich_residents():
+    seed = ("town", 1)
+    districts, households = _build_town_pieces(seed, target_population=3000)
+    residents = assign_residents(seed, households, districts, rich_proportion=0.0)
+    assert all(r.ses == SES.POOR for r in residents)
