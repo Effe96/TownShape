@@ -76,6 +76,17 @@ def _build_minimal_town(db_path):
         (neighbor,),
     )
 
+    conn.execute(
+        "INSERT INTO school_enrollments (resident_id, school_building_id, enrollment_type, start_date, end_date) "
+        "VALUES (?, 21, 'student', '1300-01-01', NULL)",
+        (child,),
+    )
+    conn.execute(
+        "INSERT INTO school_enrollments (resident_id, school_building_id, enrollment_type, start_date, end_date) "
+        "VALUES (?, 21, 'student', '1300-01-15', NULL)",
+        (neighbor,),
+    )
+
     conn.commit()
     conn.close()
     return {"father": father, "mother": mother, "child": child, "neighbor": neighbor}
@@ -102,6 +113,7 @@ def test_derive_relationships_populates_both_tables_end_to_end(tmp_path):
     assert types_for(father, child) == {"parent"}
     assert types_for(mother, child) == {"parent"}
     assert types_for(father, neighbor) == {"coworker", "neighbor", "unit_mate"}
+    assert types_for(child, neighbor) == {"classmate", "neighbor"}
 
     shop_rows = conn.execute(
         "SELECT resident_id, shop_building_id, is_primary FROM shop_relationships"
