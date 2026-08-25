@@ -107,3 +107,22 @@ def test_place_anchors_avoids_water_polygon():
     anchors = place_anchors(("town", 1), 3000, bounds, water_polygon=water_polygon)
     for anchor in anchors:
         assert not water_polygon.contains(Point(anchor.x, anchor.y))
+
+
+def test_place_anchors_port_anchor_avoids_realistic_water_shapes():
+    from shapely.geometry import Point
+    from shapely.ops import unary_union
+
+    from town_shaper.water import generate_water_features
+
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    failures = []
+    for seed_index in range(100):
+        seed = ("town", seed_index)
+        features = generate_water_features(seed, bounds, num_rivers=1, has_coastline=True)
+        water_polygon = unary_union([f.polygon for f in features])
+        anchors = place_anchors(seed, 3000, bounds, water_polygon=water_polygon, has_port=True)
+        port_anchor = next(a for a in anchors if a.zone_type == ZoneType.PORT)
+        if water_polygon.contains(Point(port_anchor.x, port_anchor.y)):
+            failures.append(seed_index)
+    assert not failures, f"{len(failures)}/100 seeds placed the port anchor in water: {failures[:10]}"

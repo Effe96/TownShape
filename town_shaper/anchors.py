@@ -40,7 +40,6 @@ _ZONE_ORDER = [
 
 MAX_WATER_RESAMPLE_ATTEMPTS = 20
 PORT_BOUNDARY_SAMPLE_COUNT = 40
-PORT_LAND_NUDGE_DISTANCE = 10.0
 
 
 def compute_anchor_counts(target_population: int) -> Dict[ZoneType, int]:
@@ -90,42 +89,53 @@ def _draw_anchor_point(
 
 def _place_port_anchor(town_seed, water_polygon, bounds, next_anchor_id: int) -> Anchor:
     rng = rng_for(town_seed, "anchors", "port")
-    boundary = water_polygon.exterior
+    # .boundary (not .exterior) so this also works when water_polygon is a
+    # MultiPolygon (e.g. a river and a coastline that don't touch) -- for a
+    # simple single Polygon the two are equivalent.
+    boundary = water_polygon.boundary
     min_x, min_y, max_x, max_y = bounds
+    centroid = water_polygon.centroid
+    max_nudge = math.hypot(max_x - min_x, max_y - min_y) * 0.25
+    nudge_steps = 10
 
-    def _on_bounds_edge(x: float, y: float) -> bool:
-        return (
-            math.isclose(x, min_x, abs_tol=1e-6) or math.isclose(x, max_x, abs_tol=1e-6)
-            or math.isclose(y, min_y, abs_tol=1e-6) or math.isclose(y, max_y, abs_tol=1e-6)
-        )
+    def _within_bounds(x: float, y: float) -> bool:
+        return min_x <= x <= max_x and min_y <= y <= max_y
 
-    candidate = None
     for _ in range(PORT_BOUNDARY_SAMPLE_COUNT):
         fraction = rng.uniform(0.0, 1.0)
         point = boundary.interpolate(fraction, normalized=True)
-        if _on_bounds_edge(point.x, point.y):
+        if not _within_bounds(point.x, point.y):
             continue
-        candidate = (point.x, point.y)
-        break
 
-    if candidate is None:
-        # Every sampled boundary point was on the map edge (e.g. a coastline
-        # dominating the water shape) -- fall back to the boundary point
-        # closest to the water body's own centroid.
-        centroid = water_polygon.centroid
-        nearest = boundary.interpolate(boundary.project(centroid))
-        candidate = (nearest.x, nearest.y)
+        dx = point.x - centroid.x
+        dy = point.y - centroid.y
+        length = math.hypot(dx, dy)
+        if length == 0:
+            continue
+        direction = (dx / length, dy / length)
 
-    centroid = water_polygon.centroid
-    dx = candidate[0] - centroid.x
-    dy = candidate[1] - centroid.y
-    length = math.hypot(dx, dy)
-    nudge = (0.0, 0.0) if length == 0 else (
-        dx / length * PORT_LAND_NUDGE_DISTANCE, dy / length * PORT_LAND_NUDGE_DISTANCE
-    )
+        for step in range(1, nudge_steps + 1):
+            nudge_distance = max_nudge * step / nudge_steps
+            x, y = _clamp_to_bounds(
+                point.x + direction[0] * nudge_distance, point.y + direction[1] * nudge_distance, bounds
+            )
+            if not water_polygon.contains(Point(x, y)):
+                return Anchor(id=next_anchor_id, zone_type=ZoneType.PORT, x=x, y=y)
 
-    x, y = _clamp_to_bounds(candidate[0] + nudge[0], candidate[1] + nudge[1], bounds)
-    return Anchor(id=next_anchor_id, zone_type=ZoneType.PORT, x=x, y=y)
+    # No boundary candidate cleared the water within budget (e.g. water
+    # covers nearly the whole map) -- fall back to the driest point found
+    # across random samples of the whole map, guaranteed dry if any
+    # meaningful dry land exists.
+    best_point = (min_x, min_y)
+    best_distance = -1.0
+    for _ in range(PORT_BOUNDARY_SAMPLE_COUNT):
+        x = rng.uniform(min_x, max_x)
+        y = rng.uniform(min_y, max_y)
+        distance = Point(x, y).distance(water_polygon)
+        if distance > best_distance:
+            best_distance = distance
+            best_point = (x, y)
+    return Anchor(id=next_anchor_id, zone_type=ZoneType.PORT, x=best_point[0], y=best_point[1])
 
 
 def place_anchors(
@@ -157,7 +167,9 @@ def place_anchors(
                     )
                     attempts += 1
                 if water_polygon.contains(Point(x, y)):
-                    nearest = water_polygon.exterior.interpolate(water_polygon.exterior.project(Point(x, y)))
+                    # .boundary handles MultiPolygon water shapes too (see
+                    # _place_port_anchor for the same reasoning).
+                    nearest = water_polygon.boundary.interpolate(water_polygon.boundary.project(Point(x, y)))
                     x, y = _clamp_to_bounds(nearest.x, nearest.y, bounds)
             anchors.append(Anchor(id=anchor_id, zone_type=zone_type, x=x, y=y))
             anchor_id += 1
