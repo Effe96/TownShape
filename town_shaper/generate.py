@@ -32,6 +32,7 @@ def generate_town(
     num_rivers: int = 0,
     has_coastline: bool = False,
     has_port: bool = False,
+    magic_prevalence: float = 0.0,
 ) -> Town:
     bounds = compute_town_bounds(target_population, area_per_resident_multiplier)
 
@@ -46,6 +47,7 @@ def generate_town(
         buildings = fill_district_buildings(
             district, seed, next_building_id,
             target_population=target_population, density_multiplier=density_multiplier,
+            magic_prevalence=magic_prevalence,
         )
         district.buildings = buildings
 

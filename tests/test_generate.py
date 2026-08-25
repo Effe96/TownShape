@@ -158,3 +158,21 @@ def test_generate_town_is_fully_deterministic_with_water():
     buildings1 = [building_key(b) for d in town1.districts for b in d.buildings]
     buildings2 = [building_key(b) for d in town2.districts for b in d.buildings]
     assert buildings1 == buildings2
+
+
+def test_generate_town_with_no_magic_prevalence_matches_previous_behavior():
+    town_default = generate_town(("town", 1), target_population=3000)
+    town_explicit = generate_town(("town", 1), target_population=3000, magic_prevalence=0.0)
+    resident_key = lambda r: (r.id, r.household_id, r.ses, r.home_building_id, r.workplace_building_id, r.occupation)
+    assert [resident_key(r) for r in town_default.residents] == [resident_key(r) for r in town_explicit.residents]
+
+
+def test_generate_town_with_magic_prevalence_can_produce_arcane_shops():
+    found = False
+    for seed_index in range(20):
+        town = generate_town(("town", seed_index), target_population=5000, magic_prevalence=0.8)
+        all_types = [b.building_type for d in town.districts for b in d.buildings]
+        if "arcane_shop" in all_types:
+            found = True
+            break
+    assert found
