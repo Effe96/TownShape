@@ -100,3 +100,16 @@ def test_build_districts_without_water_polygon_matches_previous_behavior():
     without_arg = build_districts(anchors, bounds)
     key = lambda ds: [(d.id, d.polygon_parts) for d in ds]
     assert key(with_none) == key(without_arg)
+
+
+def test_build_districts_with_realistic_water_never_crashes():
+    from shapely.ops import unary_union
+    from town_shaper.water import generate_water_features
+
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    for seed_index in range(300):
+        seed = ("town", seed_index)
+        anchors = place_anchors(seed, 3000, bounds)
+        features = generate_water_features(seed, bounds, num_rivers=2, has_coastline=True)
+        water_polygon = unary_union([f.polygon for f in features])
+        build_districts(anchors, bounds, water_polygon=water_polygon)  # must not raise

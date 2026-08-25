@@ -49,7 +49,8 @@ def build_districts(
         polygon = clip_polygon_to_bounds(raw_polygon, bounds)
 
         if water_polygon is not None:
-            land = ShapelyPolygon(polygon).difference(water_polygon)
+            shapely_polygon = ShapelyPolygon(polygon).buffer(0)
+            land = shapely_polygon.difference(water_polygon)
             polygon_parts = _polygon_to_parts(land)
         else:
             polygon_parts = [polygon]
