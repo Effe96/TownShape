@@ -11,6 +11,7 @@ BUILDING_DENSITY_PER_AREA: Dict[ZoneType, float] = {
     ZoneType.RICH_RESIDENTIAL: 1 / 500,
     ZoneType.POOR_RESIDENTIAL: 1 / 1000,
     ZoneType.FARMLAND_EDGE: 1 / 600,
+    ZoneType.PORT: 1 / 250,
 }
 
 MIN_BUILDING_SPACING: Dict[ZoneType, float] = {
@@ -19,6 +20,7 @@ MIN_BUILDING_SPACING: Dict[ZoneType, float] = {
     ZoneType.RICH_RESIDENTIAL: 12.0,
     ZoneType.POOR_RESIDENTIAL: 5.0,
     ZoneType.FARMLAND_EDGE: 20.0,
+    ZoneType.PORT: 8.0,
 }
 
 BUILDING_TYPES_BY_ZONE: Dict[ZoneType, Dict[str, float]] = {
@@ -30,6 +32,7 @@ BUILDING_TYPES_BY_ZONE: Dict[ZoneType, Dict[str, float]] = {
     ZoneType.RICH_RESIDENTIAL: {"manor": 1.0},
     ZoneType.POOR_RESIDENTIAL: {"residence": 1.0},
     ZoneType.FARMLAND_EDGE: {"farmstead": 1.0},
+    ZoneType.PORT: {"dock": 0.4, "warehouse": 0.35, "harbormaster_office": 0.25},
 }
 
 JOB_VACANCIES_BY_BUILDING_TYPE: Dict[str, List[Tuple[str, int]]] = {
@@ -46,6 +49,9 @@ JOB_VACANCIES_BY_BUILDING_TYPE: Dict[str, List[Tuple[str, int]]] = {
     "manor": [("noble", 1), ("servant", 3)],
     "residence": [],
     "farmstead": [("farmer", 1), ("farmhand", 3)],
+    "dock": [("dockworker", 3)],
+    "warehouse": [("warehouse_clerk", 1), ("laborer", 2)],
+    "harbormaster_office": [("harbormaster", 1), ("customs_clerk", 2)],
 }
 
 UNIVERSITY_MIN_POPULATION = 8000

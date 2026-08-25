@@ -4,9 +4,9 @@ from town_shaper.models import (
 )
 
 
-def test_zone_type_has_five_members():
+def test_zone_type_has_six_members():
     assert {z.value for z in ZoneType} == {
-        "civic", "merchant", "rich_residential", "poor_residential", "farmland_edge",
+        "civic", "merchant", "rich_residential", "poor_residential", "farmland_edge", "port",
     }
 
 

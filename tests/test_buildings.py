@@ -128,3 +128,26 @@ def test_fill_district_buildings_default_density_multiplier_matches_previous_beh
     explicit = fill_district_buildings(district, ("town", 1), next_building_id=0, density_multiplier=1.0)
     assert [(b.id, b.x, b.y, b.building_type) for b in baseline] == \
            [(b.id, b.x, b.y, b.building_type) for b in explicit]
+
+
+def test_port_zone_building_types_have_no_home_capacity():
+    from town_shaper.buildings import BUILDING_HOME_CAPACITY, BUILDING_TYPES_BY_ZONE
+    for building_type in BUILDING_TYPES_BY_ZONE[ZoneType.PORT]:
+        assert building_type not in BUILDING_HOME_CAPACITY
+
+
+def test_fill_district_buildings_port_zone_produces_expected_building_types():
+    district = _square_district(ZoneType.PORT, side=200.0)
+    buildings = fill_district_buildings(district, ("town", 1), next_building_id=0)
+    assert len(buildings) > 0
+    assert all(b.building_type in {"dock", "warehouse", "harbormaster_office"} for b in buildings)
+
+
+def test_port_building_vacancies_match_job_table():
+    from town_shaper.buildings import JOB_VACANCIES_BY_BUILDING_TYPE
+    district = _square_district(ZoneType.PORT, side=200.0)
+    buildings = fill_district_buildings(district, ("town", 1), next_building_id=0)
+    for building in buildings:
+        expected = JOB_VACANCIES_BY_BUILDING_TYPE[building.building_type]
+        expected_total = sum(count for _, count in expected)
+        assert len(building.vacancies) == expected_total
