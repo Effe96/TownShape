@@ -51,7 +51,7 @@ def generate_town_database(
     for district in town.districts:
         conn.execute(
             "INSERT INTO districts (id, zone_type, polygon) VALUES (?, ?, ?)",
-            (district.id, district.zone_type.value, json.dumps(district.polygon)),
+            (district.id, district.zone_type.value, json.dumps(district.polygon_parts)),
         )
         for building in district.buildings:
             conn.execute(

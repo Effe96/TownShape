@@ -34,6 +34,6 @@ def build_districts(anchors: List[Anchor], bounds: Tuple[float, float, float, fl
             raise ValueError(f"Anchor {anchor.id} produced an unbounded Voronoi region")
         raw_polygon = [tuple(vor.vertices[v]) for v in region]
         polygon = clip_polygon_to_bounds(raw_polygon, bounds)
-        districts.append(District(id=anchor.id, zone_type=anchor.zone_type, anchor=anchor, polygon=polygon))
+        districts.append(District(id=anchor.id, zone_type=anchor.zone_type, anchor=anchor, polygon_parts=[polygon]))
 
     return districts

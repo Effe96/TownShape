@@ -52,7 +52,7 @@ class District:
     id: int
     zone_type: ZoneType
     anchor: Anchor
-    polygon: List[Tuple[float, float]]
+    polygon_parts: List[List[Tuple[float, float]]]
     buildings: List[Building] = field(default_factory=list)
 
 

@@ -90,12 +90,13 @@ def fill_district_buildings(
     target_population: int = 0, density_multiplier: float = 1.0,
 ) -> List[Building]:
     rng = rng_for(town_seed, "buildings", district.id)
-    area = polygon_area(district.polygon)
+    polygon = district.polygon_parts[0]
+    area = polygon_area(polygon)
     density = BUILDING_DENSITY_PER_AREA[district.zone_type] * density_multiplier
     target_count = max(1, round(area * density))
     spacing = MIN_BUILDING_SPACING[district.zone_type] / density_multiplier
 
-    points = poisson_disc_fill(district.polygon, target_count, spacing, rng)
+    points = poisson_disc_fill(polygon, target_count, spacing, rng)
 
     type_weights = dict(BUILDING_TYPES_BY_ZONE[district.zone_type])
     if district.zone_type == ZoneType.CIVIC and "university" in type_weights:

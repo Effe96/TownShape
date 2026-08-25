@@ -8,7 +8,7 @@ from town_shaper.seeding import rng_for
 def _square_district(zone_type, side=40.0, district_id=1):
     anchor = Anchor(id=district_id, zone_type=zone_type, x=side / 2, y=side / 2)
     polygon = [(0.0, 0.0), (side, 0.0), (side, side), (0.0, side)]
-    return District(id=district_id, zone_type=zone_type, anchor=anchor, polygon=polygon)
+    return District(id=district_id, zone_type=zone_type, anchor=anchor, polygon_parts=[polygon])
 
 
 def test_poisson_disc_fill_respects_min_spacing_and_polygon():
@@ -37,7 +37,7 @@ def test_fill_district_buildings_places_buildings_inside_district():
 
     assert len(buildings) > 0
     for building in buildings:
-        assert point_in_polygon((building.x, building.y), district.polygon)
+        assert point_in_polygon((building.x, building.y), district.polygon_parts[0])
         assert building.district_id == district.id
         assert building.district_zone_type == ZoneType.POOR_RESIDENTIAL
 

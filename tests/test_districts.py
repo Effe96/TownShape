@@ -20,7 +20,7 @@ def test_build_districts_partitions_bounding_box_area():
     districts = build_districts(anchors, bounds)
 
     box_area = (bounds[2] - bounds[0]) * (bounds[3] - bounds[1])
-    total_district_area = sum(polygon_area(d.polygon) for d in districts)
+    total_district_area = sum(polygon_area(part) for d in districts for part in d.polygon_parts)
     assert math.isclose(total_district_area, box_area, rel_tol=1e-6)
 
 
@@ -30,7 +30,8 @@ def test_build_districts_each_polygon_contains_its_own_anchor():
     districts = build_districts(anchors, bounds)
 
     for district in districts:
-        assert point_in_polygon((district.anchor.x, district.anchor.y), district.polygon)
+        assert len(district.polygon_parts) == 1
+        assert point_in_polygon((district.anchor.x, district.anchor.y), district.polygon_parts[0])
 
 
 def test_build_districts_preserves_zone_type_from_anchor():

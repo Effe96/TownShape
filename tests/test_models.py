@@ -25,7 +25,7 @@ def test_building_defaults_to_empty_vacancies_and_residents():
 
 def test_district_defaults_to_empty_buildings():
     anchor = Anchor(id=1, zone_type=ZoneType.CIVIC, x=0.0, y=0.0)
-    district = District(id=1, zone_type=ZoneType.CIVIC, anchor=anchor, polygon=[(0.0, 0.0)])
+    district = District(id=1, zone_type=ZoneType.CIVIC, anchor=anchor, polygon_parts=[[(0.0, 0.0)]])
     assert district.buildings == []
 
 

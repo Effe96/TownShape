@@ -99,7 +99,7 @@ def test_assign_residents_no_household_is_partially_dropped_when_a_home_exists()
     seed = ("town", 1)
     anchor = Anchor(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, x=0.0, y=0.0)
     polygon = [(0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0)]
-    district = District(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, anchor=anchor, polygon=polygon)
+    district = District(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, anchor=anchor, polygon_parts=[polygon])
     big_home = Building(
         id=1, district_id=1, district_zone_type=ZoneType.POOR_RESIDENTIAL,
         x=20.0, y=20.0, building_type="residence", capacity=8,
