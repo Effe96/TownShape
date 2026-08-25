@@ -1,4 +1,7 @@
+import json
 import sqlite3
+
+from town_shaper.generate import generate_town
 
 from town_db.generate import generate_town_database
 
@@ -223,3 +226,24 @@ def test_generate_town_database_with_water_passes_foreign_key_check(tmp_path):
     conn.execute("PRAGMA foreign_keys = ON")
     violations = conn.execute("PRAGMA foreign_key_check").fetchall()
     assert violations == []
+
+
+def test_generate_town_database_persists_water_feature_interior_rings(tmp_path):
+    found_multi_ring = False
+    for seed_index in range(10):
+        seed = ("town", seed_index)
+        db_path = str(tmp_path / f"town_{seed_index}.db")
+        generate_town_database(seed, target_population=1500, db_path=db_path, has_coastline=True)
+
+        town = generate_town(seed, target_population=1500, has_coastline=True)
+        feature = next(f for f in town.water_features if f.kind == "coastline")
+        expected_ring_count = 1 + len(feature.polygon.interiors)
+        if expected_ring_count > 1:
+            found_multi_ring = True
+
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("SELECT polygon FROM water_features WHERE kind = 'coastline'").fetchone()
+        rings = json.loads(row[0])
+        assert len(rings) == expected_ring_count
+
+    assert found_multi_ring, "expected at least one seed to produce a coastline with interior rings"

@@ -40,10 +40,16 @@ rather than silently guessing.
   district it passes through.
 - **`has_coastline`** (default `false`) — whether one side of the town
   borders open water (a sea/lake edge), as opposed to an interior river.
+  Water carves real unbuildable space out of the town, the same way a low
+  `density_multiplier` does — a coastal town's realized population can run
+  20-40% below `target_population`, silently, with no marker of the
+  shortfall in the data. Verify the actual resident count after
+  generating (see the skill's step 6).
 - **`has_port`** (default `false`) — whether the town has a dedicated
   port district (docks, warehouses, a harbormaster's office). Requires
   `num_rivers > 0` or `has_coastline` — raises otherwise, since a port
-  needs water to sit on.
+  needs water to sit on. Carries the same population-shortfall caveat as
+  `has_coastline`.
 
 ## Narrative language → value
 

@@ -70,13 +70,19 @@ def test_generate_water_features_rivers_are_reliably_curved_across_seeds():
     assert not failures, f"{len(failures)}/{trials} seeds produced a near-straight river: {failures[:10]}"
 
 
-def test_generate_water_features_coastline_extends_past_its_chosen_edge():
+def test_generate_water_features_coastline_fully_covers_one_map_edge():
+    from shapely.geometry import LineString
+
     bounds = (-100.0, -100.0, 100.0, 100.0)
-    features = generate_water_features(("town", 1), bounds, num_rivers=0, has_coastline=True)
-    coastline_polygon = features[0].polygon
-    minx, miny, maxx, maxy = coastline_polygon.bounds
-    extends_past_an_edge = (
-        maxx > bounds[2] + 1.0 or minx < bounds[0] - 1.0
-        or maxy > bounds[3] + 1.0 or miny < bounds[1] - 1.0
-    )
-    assert extends_past_an_edge
+    min_x, min_y, max_x, max_y = bounds
+    edges = [
+        LineString([(min_x, max_y), (max_x, max_y)]),  # north
+        LineString([(min_x, min_y), (max_x, min_y)]),  # south
+        LineString([(max_x, min_y), (max_x, max_y)]),  # east
+        LineString([(min_x, min_y), (min_x, max_y)]),  # west
+    ]
+    for seed_index in range(500):
+        seed = ("town", seed_index)
+        features = generate_water_features(seed, bounds, num_rivers=0, has_coastline=True)
+        coastline_polygon = features[0].polygon
+        assert any(coastline_polygon.covers(edge) for edge in edges), f"seed {seed_index}: no edge fully covered"

@@ -54,9 +54,13 @@ def generate_town_database(
     create_schema(conn)
 
     for feature in town.water_features:
+        polygon = feature.polygon
+        rings = [list(polygon.exterior.coords)[:-1]] + [
+            list(interior.coords)[:-1] for interior in polygon.interiors
+        ]
         conn.execute(
             "INSERT INTO water_features (id, kind, polygon) VALUES (?, ?, ?)",
-            (feature.id, feature.kind, json.dumps(list(feature.polygon.exterior.coords)[:-1])),
+            (feature.id, feature.kind, json.dumps(rings)),
         )
 
     zone_type_by_building_id: Dict[int, str] = {}

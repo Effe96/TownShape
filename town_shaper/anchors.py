@@ -47,8 +47,9 @@ def compute_anchor_counts(target_population: int) -> Dict[ZoneType, int]:
         raise ValueError("target_population must be positive")
 
     total = max(MIN_ANCHORS, round(target_population / ANCHOR_POPULATION_DIVISOR))
-    # Guarantee at least one anchor per zone type without exceeding total.
-    total = max(total, len(ZoneType))
+    # Guarantee at least one anchor per proportional zone type (PORT is
+    # additive and excluded from this system) without exceeding total.
+    total = max(total, len(_ZONE_ORDER))
 
     raw = {zt: ZONE_PROPORTIONS[zt] * total for zt in _ZONE_ORDER}
     counts = {zt: max(1, math.floor(raw[zt])) for zt in _ZONE_ORDER}
