@@ -115,3 +115,46 @@ def test_generate_town_density_multiplier_changes_total_building_count():
     sparse_count = sum(len(d.buildings) for d in sparse.districts)
     dense_count = sum(len(d.buildings) for d in dense.districts)
     assert dense_count > sparse_count
+
+
+def test_generate_town_with_no_water_params_matches_previous_behavior():
+    town_default = generate_town(("town", 1), target_population=3000)
+    town_explicit = generate_town(
+        ("town", 1), target_population=3000, num_rivers=0, has_coastline=False, has_port=False,
+    )
+    resident_key = lambda r: (r.id, r.household_id, r.ses, r.home_building_id, r.workplace_building_id, r.occupation)
+    assert [resident_key(r) for r in town_default.residents] == [resident_key(r) for r in town_explicit.residents]
+    assert town_default.water_features == []
+    assert town_explicit.water_features == []
+
+
+def test_generate_town_with_rivers_populates_water_features():
+    town = generate_town(("town", 1), target_population=3000, num_rivers=2)
+    assert len(town.water_features) == 2
+    assert all(f.kind == "river" for f in town.water_features)
+
+
+def test_generate_town_with_coastline_populates_water_features():
+    town = generate_town(("town", 1), target_population=3000, has_coastline=True)
+    assert len(town.water_features) == 1
+    assert town.water_features[0].kind == "coastline"
+
+
+def test_generate_town_with_port_adds_port_district_with_buildings():
+    town = generate_town(("town", 1), target_population=3000, has_coastline=True, has_port=True)
+    port_districts = [d for d in town.districts if d.zone_type.value == "port"]
+    assert len(port_districts) == 1
+    assert len(port_districts[0].buildings) > 0
+
+
+def test_generate_town_is_fully_deterministic_with_water():
+    town1 = generate_town(("town", 1), target_population=3000, num_rivers=1, has_coastline=True, has_port=True)
+    town2 = generate_town(("town", 1), target_population=3000, num_rivers=1, has_coastline=True, has_port=True)
+
+    resident_key = lambda r: (r.id, r.household_id, r.ses, r.home_building_id, r.workplace_building_id, r.occupation)
+    assert [resident_key(r) for r in town1.residents] == [resident_key(r) for r in town2.residents]
+
+    building_key = lambda b: (b.id, b.x, b.y, b.building_type)
+    buildings1 = [building_key(b) for d in town1.districts for b in d.buildings]
+    buildings2 = [building_key(b) for d in town2.districts for b in d.buildings]
+    assert buildings1 == buildings2

@@ -75,16 +75,17 @@ class ResidentSlot:
 
 
 @dataclass
+class WaterFeature:
+    id: int
+    kind: str
+    polygon: Polygon
+
+
+@dataclass
 class Town:
     seed: tuple
     target_population: int
     bounds: Tuple[float, float, float, float]
     districts: List[District] = field(default_factory=list)
     residents: List[ResidentSlot] = field(default_factory=list)
-
-
-@dataclass
-class WaterFeature:
-    id: int
-    kind: str
-    polygon: Polygon
+    water_features: List[WaterFeature] = field(default_factory=list)
