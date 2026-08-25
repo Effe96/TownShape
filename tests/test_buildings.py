@@ -151,3 +151,45 @@ def test_port_building_vacancies_match_job_table():
         expected = JOB_VACANCIES_BY_BUILDING_TYPE[building.building_type]
         expected_total = sum(count for _, count in expected)
         assert len(building.vacancies) == expected_total
+
+
+def test_fill_district_buildings_zero_area_district_returns_no_buildings():
+    anchor = Anchor(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, x=0.0, y=0.0)
+    district = District(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, anchor=anchor, polygon_parts=[])
+    buildings = fill_district_buildings(district, ("town", 1), next_building_id=0)
+    assert buildings == []
+
+
+def test_fill_district_buildings_multi_part_with_zero_count_second_part_matches_single_part():
+    anchor = Anchor(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, x=50.0, y=50.0)
+    big_part = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
+    tiny_part = [(200.0, 200.0), (201.0, 200.0), (201.0, 201.0), (200.0, 201.0)]
+    multi_part_district = District(
+        id=1, zone_type=ZoneType.POOR_RESIDENTIAL, anchor=anchor, polygon_parts=[big_part, tiny_part],
+    )
+    single_part_district = District(
+        id=1, zone_type=ZoneType.POOR_RESIDENTIAL, anchor=anchor, polygon_parts=[big_part],
+    )
+
+    multi_part_buildings = fill_district_buildings(multi_part_district, ("town", 1), next_building_id=0)
+    single_part_buildings = fill_district_buildings(single_part_district, ("town", 1), next_building_id=0)
+
+    key = lambda buildings: [(b.id, b.x, b.y, b.building_type) for b in buildings]
+    assert key(multi_part_buildings) == key(single_part_buildings)
+
+
+def test_fill_district_buildings_multi_part_splits_proportionally_to_area():
+    anchor = Anchor(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, x=0.0, y=0.0)
+    large_part = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
+    small_part = [(200.0, 0.0), (250.0, 0.0), (250.0, 50.0), (200.0, 50.0)]
+    district = District(
+        id=1, zone_type=ZoneType.POOR_RESIDENTIAL, anchor=anchor, polygon_parts=[large_part, small_part],
+    )
+
+    buildings = fill_district_buildings(district, ("town", 1), next_building_id=0)
+    large_part_buildings = [b for b in buildings if point_in_polygon((b.x, b.y), large_part)]
+    small_part_buildings = [b for b in buildings if point_in_polygon((b.x, b.y), small_part)]
+
+    assert len(large_part_buildings) == 10
+    assert len(small_part_buildings) == 2
+    assert len(large_part_buildings) + len(small_part_buildings) == len(buildings)

@@ -1,4 +1,5 @@
 # town_shaper/buildings.py
+import math
 from typing import Dict, List, Tuple
 
 from town_shaper.geometry import distance, point_in_polygon, polygon_area
@@ -85,18 +86,45 @@ def poisson_disc_fill(polygon, target_count, min_spacing, rng, max_attempts_per_
     return points
 
 
+def _split_count_by_area(total_count: int, part_areas: List[float]) -> List[int]:
+    total_area = sum(part_areas)
+    if total_area <= 0:
+        return [0 for _ in part_areas]
+
+    raw = [total_count * (area / total_area) for area in part_areas]
+    counts = [math.floor(r) for r in raw]
+    remainder = total_count - sum(counts)
+
+    remainders_sorted = sorted(range(len(part_areas)), key=lambda i: raw[i] - math.floor(raw[i]), reverse=True)
+    i = 0
+    while remainder > 0:
+        counts[remainders_sorted[i % len(remainders_sorted)]] += 1
+        remainder -= 1
+        i += 1
+
+    return counts
+
+
 def fill_district_buildings(
     district: District, town_seed, next_building_id: int,
     target_population: int = 0, density_multiplier: float = 1.0,
 ) -> List[Building]:
     rng = rng_for(town_seed, "buildings", district.id)
-    polygon = district.polygon_parts[0]
-    area = polygon_area(polygon)
+    parts = district.polygon_parts
+    part_areas = [polygon_area(part) for part in parts]
+    total_area = sum(part_areas)
+
+    if total_area <= 0:
+        return []
+
     density = BUILDING_DENSITY_PER_AREA[district.zone_type] * density_multiplier
-    target_count = max(1, round(area * density))
+    total_target_count = max(1, round(total_area * density))
     spacing = MIN_BUILDING_SPACING[district.zone_type] / density_multiplier
 
-    points = poisson_disc_fill(polygon, target_count, spacing, rng)
+    part_counts = _split_count_by_area(total_target_count, part_areas)
+    points: List[Tuple[float, float]] = []
+    for part, part_count in zip(parts, part_counts):
+        points.extend(poisson_disc_fill(part, part_count, spacing, rng))
 
     type_weights = dict(BUILDING_TYPES_BY_ZONE[district.zone_type])
     if district.zone_type == ZoneType.CIVIC and "university" in type_weights:
