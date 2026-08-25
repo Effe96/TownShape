@@ -6,6 +6,7 @@ EXPECTED_TABLES = {
     "districts", "buildings", "households", "residents", "goods",
     "purchases", "tax_payments", "disease_events", "births", "deaths",
     "school_enrollments", "military_service", "generation_parameters",
+    "water_features",
 }
 
 
@@ -66,12 +67,25 @@ def test_generation_parameters_accepts_a_row(tmp_path):
     create_schema(conn)
     conn.execute(
         "INSERT INTO generation_parameters (seed, target_population, area_per_resident_multiplier, "
-        "density_multiplier, rich_proportion) VALUES (?, ?, ?, ?, ?)",
-        ("('town', 1)", 1500, 1.0, 1.0, 0.05),
+        "density_multiplier, rich_proportion, num_rivers, has_coastline, has_port) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("('town', 1)", 1500, 1.0, 1.0, 0.05, 1, 1, 1),
     )
     conn.commit()
     row = conn.execute(
-        "SELECT seed, target_population, area_per_resident_multiplier, density_multiplier, rich_proportion "
-        "FROM generation_parameters"
+        "SELECT seed, target_population, area_per_resident_multiplier, density_multiplier, rich_proportion, "
+        "num_rivers, has_coastline, has_port FROM generation_parameters"
     ).fetchone()
-    assert row == ("('town', 1)", 1500, 1.0, 1.0, 0.05)
+    assert row == ("('town', 1)", 1500, 1.0, 1.0, 0.05, 1, 1, 1)
+
+
+def test_water_features_accepts_a_row(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO water_features (id, kind, polygon) VALUES (?, ?, ?)",
+        (1, "river", "[[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]]"),
+    )
+    conn.commit()
+    row = conn.execute("SELECT id, kind, polygon FROM water_features").fetchone()
+    assert row == (1, "river", "[[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]]")

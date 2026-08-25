@@ -118,7 +118,16 @@ CREATE TABLE generation_parameters (
     target_population INTEGER NOT NULL,
     area_per_resident_multiplier REAL NOT NULL,
     density_multiplier REAL NOT NULL,
-    rich_proportion REAL NOT NULL
+    rich_proportion REAL NOT NULL,
+    num_rivers INTEGER NOT NULL,
+    has_coastline INTEGER NOT NULL,
+    has_port INTEGER NOT NULL
+);
+
+CREATE TABLE water_features (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    polygon TEXT NOT NULL
 );
 """
 
