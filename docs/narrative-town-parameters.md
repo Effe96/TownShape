@@ -34,6 +34,16 @@ rather than silently guessing.
 - **`rich_proportion`** (default `0.05`) — fraction of households that
   are SES-rich; the rest are poor (there is no third tier). "Richness"
   of the town overall.
+- **`num_rivers`** (default `0`) — how many rivers run through the town.
+  Each is generated as an independent, gently curved strip of water
+  crossing the town, carving real unbuildable space out of whatever
+  district it passes through.
+- **`has_coastline`** (default `false`) — whether one side of the town
+  borders open water (a sea/lake edge), as opposed to an interior river.
+- **`has_port`** (default `false`) — whether the town has a dedicated
+  port district (docks, warehouses, a harbormaster's office). Requires
+  `num_rivers > 0` or `has_coastline` — raises otherwise, since a port
+  needs water to sit on.
 
 ## Narrative language → value
 
@@ -48,6 +58,12 @@ rather than silently guessing.
 | "wealthy", "prosperous", "opulent" | `rich_proportion` | 0.15 – 0.3 |
 | "poor", "impoverished", "destitute" | `rich_proportion` | 0.01 – 0.03 |
 | (no wealth cue) | `rich_proportion` | 0.05 (default) |
+| "a river runs through it", "on the river", "riverside" | `num_rivers` | 1 |
+| "where two rivers meet", "at the confluence" | `num_rivers` | 2 |
+| (no river cue) | `num_rivers` | 0 (default) |
+| "coastal", "seaside", "on the coast/sea" | `has_coastline` | `true` |
+| (no coastal cue) | `has_coastline` | `false` (default) |
+| "port town", "trading port", "harbor" | `has_port` | `true` — also set `has_coastline=true` as the implied water source, unless the narrative specifies a river port instead |
 
 These ranges are starting points, open to tuning as they're used against
 real campaign input — same spirit as the empirically-set constants
