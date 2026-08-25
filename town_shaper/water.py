@@ -8,7 +8,10 @@ from town_shaper.models import WaterFeature
 from town_shaper.seeding import rng_for
 
 RIVER_WIDTH = 8.0
-RIVER_WAYPOINT_JITTER = 0.15  # fraction of straight-line edge-to-edge distance
+RIVER_WAYPOINT_JITTER_MIN = 0.12  # fraction of straight-line edge-to-edge distance
+RIVER_WAYPOINT_JITTER_MAX = 0.20  # fraction of straight-line edge-to-edge distance
+RIVER_WAYPOINT_JITTER_ABS_MIN = 2.0  # absolute floor on offset magnitude, in map units
+ROOM_SAFETY_FACTOR = 0.9  # stay strictly inside available room to a bound, never touch it
 COASTLINE_DEPTH_FRACTION = 0.12  # fraction of the shorter bounds dimension
 COASTLINE_JITTER = 0.08  # fraction of the shorter bounds dimension
 
@@ -26,6 +29,24 @@ def _point_on_edge(edge: str, bounds: Tuple[float, float, float, float], rng) ->
     return (min_x, rng.uniform(min_y, max_y))  # "west"
 
 
+def _room_to_bounds(point: Tuple[float, float], direction: Tuple[float, float], bounds: Tuple[float, float, float, float]) -> float:
+    px, py = point
+    dx, dy = direction
+    min_x, min_y, max_x, max_y = bounds
+    limits = []
+    if dx > 0:
+        limits.append((max_x - px) / dx)
+    elif dx < 0:
+        limits.append((min_x - px) / dx)
+    if dy > 0:
+        limits.append((max_y - py) / dy)
+    elif dy < 0:
+        limits.append((min_y - py) / dy)
+    if not limits:
+        return float("inf")
+    return max(0.0, min(limits))
+
+
 def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, width: float, bounds: Tuple[float, float, float, float]) -> Polygon:
     dx = end[0] - start[0]
     dy = end[1] - start[1]
@@ -35,17 +56,26 @@ def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, wid
 
     perp = (-dy / length, dx / length)  # unit vector perpendicular to start->end
     waypoint_count = rng.randint(2, 3)
-    min_x, min_y, max_x, max_y = bounds
 
     points = [start]
     for i in range(1, waypoint_count + 1):
         t = i / (waypoint_count + 1)
         base_x = start[0] + dx * t
         base_y = start[1] + dy * t
-        jitter = rng.uniform(-RIVER_WAYPOINT_JITTER, RIVER_WAYPOINT_JITTER) * length
-        x = min(max(base_x + perp[0] * jitter, min_x), max_x)
-        y = min(max(base_y + perp[1] * jitter, min_y), max_y)
-        points.append((x, y))
+        target_magnitude = rng.uniform(RIVER_WAYPOINT_JITTER_MIN, RIVER_WAYPOINT_JITTER_MAX) * length
+        # Near-corner start/end pairs can produce a chord so short that a
+        # purely length-proportional target is negligible (the buffer's round
+        # end-caps then dominate the polygon's area, masking any curvature).
+        # An absolute floor keeps the offset meaningful regardless of length;
+        # the room cap below still keeps it safely inside bounds.
+        target_magnitude = max(target_magnitude, RIVER_WAYPOINT_JITTER_ABS_MIN)
+
+        room_pos = _room_to_bounds((base_x, base_y), perp, bounds)
+        room_neg = _room_to_bounds((base_x, base_y), (-perp[0], -perp[1]), bounds)
+        sign, room = (1.0, room_pos) if room_pos >= room_neg else (-1.0, room_neg)
+        magnitude = min(target_magnitude, room * ROOM_SAFETY_FACTOR)
+
+        points.append((base_x + perp[0] * sign * magnitude, base_y + perp[1] * sign * magnitude))
     points.append(end)
 
     return LineString(points).buffer(width / 2.0)
