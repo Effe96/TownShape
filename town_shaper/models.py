@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Tuple
 
+from shapely.geometry import Polygon
+
 
 class ZoneType(Enum):
     CIVIC = "civic"
@@ -78,3 +80,10 @@ class Town:
     bounds: Tuple[float, float, float, float]
     districts: List[District] = field(default_factory=list)
     residents: List[ResidentSlot] = field(default_factory=list)
+
+
+@dataclass
+class WaterFeature:
+    id: int
+    kind: str
+    polygon: Polygon
