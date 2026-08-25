@@ -53,10 +53,12 @@ JOB_VACANCIES_BY_BUILDING_TYPE: Dict[str, List[Tuple[str, int]]] = {
     "dock": [("dockworker", 3)],
     "warehouse": [("warehouse_clerk", 1), ("laborer", 2)],
     "harbormaster_office": [("harbormaster", 1), ("customs_clerk", 2)],
+    "arcane_shop": [("mage", 1), ("apprentice", 2)],
 }
 
 UNIVERSITY_MIN_POPULATION = 8000
 UNIVERSITY_CHANCE = 0.15
+ARCANE_SHOP_WEIGHT_SCALE = 0.5
 
 BUILDING_HOME_CAPACITY: Dict[str, int] = {
     "manor": 10,
@@ -108,6 +110,7 @@ def _split_count_by_area(total_count: int, part_areas: List[float]) -> List[int]
 def fill_district_buildings(
     district: District, town_seed, next_building_id: int,
     target_population: int = 0, density_multiplier: float = 1.0,
+    magic_prevalence: float = 0.0,
 ) -> List[Building]:
     rng = rng_for(town_seed, "buildings", district.id)
     parts = district.polygon_parts
@@ -133,6 +136,8 @@ def fill_district_buildings(
         )
         if not university_eligible:
             del type_weights["university"]
+    if district.zone_type == ZoneType.MERCHANT and magic_prevalence > 0:
+        type_weights["arcane_shop"] = magic_prevalence * ARCANE_SHOP_WEIGHT_SCALE
     subtypes = list(type_weights.keys())
     weights = list(type_weights.values())
 

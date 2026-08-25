@@ -193,3 +193,45 @@ def test_fill_district_buildings_multi_part_splits_proportionally_to_area():
     assert len(large_part_buildings) == 10
     assert len(small_part_buildings) == 2
     assert len(large_part_buildings) + len(small_part_buildings) == len(buildings)
+
+
+def test_arcane_shop_never_appears_at_zero_magic_prevalence():
+    district = _square_district(ZoneType.MERCHANT, side=200.0)
+    for seed_index in range(20):
+        buildings = fill_district_buildings(district, ("town", seed_index), next_building_id=0)
+        assert all(b.building_type != "arcane_shop" for b in buildings)
+
+
+def test_arcane_shop_appears_more_often_at_higher_magic_prevalence():
+    district = _square_district(ZoneType.MERCHANT, side=200.0)
+    low_count = 0
+    high_count = 0
+    trials = 30
+    for seed_index in range(trials):
+        low_buildings = fill_district_buildings(
+            district, ("town", seed_index), next_building_id=0, magic_prevalence=0.05,
+        )
+        high_buildings = fill_district_buildings(
+            district, ("town", seed_index), next_building_id=0, magic_prevalence=0.9,
+        )
+        low_count += sum(1 for b in low_buildings if b.building_type == "arcane_shop")
+        high_count += sum(1 for b in high_buildings if b.building_type == "arcane_shop")
+    assert high_count > low_count
+
+
+def test_arcane_shop_job_vacancies_match_job_table():
+    from town_shaper.buildings import JOB_VACANCIES_BY_BUILDING_TYPE
+    assert JOB_VACANCIES_BY_BUILDING_TYPE["arcane_shop"] == [("mage", 1), ("apprentice", 2)]
+
+
+def test_arcane_shop_has_no_home_capacity():
+    from town_shaper.buildings import BUILDING_HOME_CAPACITY
+    assert "arcane_shop" not in BUILDING_HOME_CAPACITY
+
+
+def test_fill_district_buildings_default_magic_prevalence_matches_previous_behavior():
+    district = _square_district(ZoneType.MERCHANT, side=100.0)
+    baseline = fill_district_buildings(district, ("town", 1), next_building_id=0)
+    explicit = fill_district_buildings(district, ("town", 1), next_building_id=0, magic_prevalence=0.0)
+    assert [(b.id, b.x, b.y, b.building_type) for b in baseline] == \
+           [(b.id, b.x, b.y, b.building_type) for b in explicit]
