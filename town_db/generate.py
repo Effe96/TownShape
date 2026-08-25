@@ -36,16 +36,28 @@ def generate_town_database(
     area_per_resident_multiplier: float = 1.0,
     density_multiplier: float = 1.0,
     rich_proportion: float = DEFAULT_RICH_PROPORTION,
+    num_rivers: int = 0,
+    has_coastline: bool = False,
+    has_port: bool = False,
 ) -> None:
     town = generate_town(
         seed, target_population,
         area_per_resident_multiplier=area_per_resident_multiplier,
         density_multiplier=density_multiplier,
         rich_proportion=rich_proportion,
+        num_rivers=num_rivers,
+        has_coastline=has_coastline,
+        has_port=has_port,
     )
 
     conn = connect(db_path)
     create_schema(conn)
+
+    for feature in town.water_features:
+        conn.execute(
+            "INSERT INTO water_features (id, kind, polygon) VALUES (?, ?, ?)",
+            (feature.id, feature.kind, json.dumps(list(feature.polygon.exterior.coords)[:-1])),
+        )
 
     zone_type_by_building_id: Dict[int, str] = {}
     for district in town.districts:

@@ -176,3 +176,50 @@ def test_generate_town_database_threads_area_multiplier_into_building_placement(
     small_max_x = conn_small.execute("SELECT MAX(x) FROM buildings").fetchone()[0]
     large_max_x = conn_large.execute("SELECT MAX(x) FROM buildings").fetchone()[0]
     assert large_max_x > small_max_x
+
+
+def test_generate_town_database_default_water_params_match_previous_behavior(tmp_path):
+    db_path_a = str(tmp_path / "a.db")
+    db_path_b = str(tmp_path / "b.db")
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path_a)
+    generate_town_database(
+        ("town", 1), target_population=1500, db_path=db_path_b,
+        num_rivers=0, has_coastline=False, has_port=False,
+    )
+
+    conn_a = sqlite3.connect(db_path_a)
+    conn_b = sqlite3.connect(db_path_b)
+    for table in ["residents", "buildings"]:
+        rows_a = conn_a.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        rows_b = conn_b.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        assert rows_a == rows_b
+
+    assert conn_a.execute("SELECT COUNT(*) FROM water_features").fetchone()[0] == 0
+
+
+def test_generate_town_database_persists_water_features_and_port_buildings(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(
+        ("town", 1), target_population=1500, db_path=db_path,
+        num_rivers=1, has_coastline=True, has_port=True,
+    )
+    conn = sqlite3.connect(db_path)
+    kinds = sorted(row[0] for row in conn.execute("SELECT kind FROM water_features").fetchall())
+    assert kinds == ["coastline", "river"]
+
+    port_building_count = conn.execute(
+        "SELECT COUNT(*) FROM buildings WHERE zone_type = 'port'"
+    ).fetchone()[0]
+    assert port_building_count > 0
+
+
+def test_generate_town_database_with_water_passes_foreign_key_check(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(
+        ("town", 1), target_population=1500, db_path=db_path,
+        num_rivers=1, has_coastline=True, has_port=True,
+    )
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+    assert violations == []
