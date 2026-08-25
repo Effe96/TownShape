@@ -52,3 +52,36 @@ def test_rich_proportion_out_of_range_raises():
 def test_rich_proportion_boundary_values_are_valid():
     TownParameters(seed="town-1", target_population=1000, rich_proportion=0.0)
     TownParameters(seed="town-1", target_population=1000, rich_proportion=1.0)
+
+
+def test_water_defaults_are_no_water():
+    params = TownParameters(seed="town-1", target_population=1000)
+    assert params.num_rivers == 0
+    assert params.has_coastline is False
+    assert params.has_port is False
+
+
+def test_negative_num_rivers_raises():
+    with pytest.raises(ValueError):
+        TownParameters(seed="town-1", target_population=1000, num_rivers=-1)
+
+
+def test_zero_num_rivers_is_valid():
+    TownParameters(seed="town-1", target_population=1000, num_rivers=0)
+
+
+def test_has_port_without_water_raises():
+    with pytest.raises(ValueError):
+        TownParameters(seed="town-1", target_population=1000, has_port=True)
+    with pytest.raises(ValueError):
+        TownParameters(
+            seed="town-1", target_population=1000, has_port=True, num_rivers=0, has_coastline=False,
+        )
+
+
+def test_has_port_with_river_is_valid():
+    TownParameters(seed="town-1", target_population=1000, has_port=True, num_rivers=1)
+
+
+def test_has_port_with_coastline_is_valid():
+    TownParameters(seed="town-1", target_population=1000, has_port=True, has_coastline=True)

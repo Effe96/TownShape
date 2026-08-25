@@ -11,6 +11,9 @@ class TownParameters:
     area_per_resident_multiplier: float = 1.0
     density_multiplier: float = 1.0
     rich_proportion: float = DEFAULT_RICH_PROPORTION
+    num_rivers: int = 0
+    has_coastline: bool = False
+    has_port: bool = False
 
     def __post_init__(self) -> None:
         if self.target_population <= 0:
@@ -21,3 +24,7 @@ class TownParameters:
             raise ValueError("density_multiplier must be positive")
         if not (0.0 <= self.rich_proportion <= 1.0):
             raise ValueError("rich_proportion must be between 0.0 and 1.0")
+        if self.num_rivers < 0:
+            raise ValueError("num_rivers must be non-negative")
+        if self.has_port and not (self.num_rivers > 0 or self.has_coastline):
+            raise ValueError("has_port requires num_rivers > 0 or has_coastline to be True")
