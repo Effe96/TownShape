@@ -14,6 +14,7 @@ from town_db.names import RACE_WEIGHTS
 from town_db.purchases import SHOP_BUILDING_TYPES, generate_purchases
 from town_db.schema import connect, create_schema
 from town_db.taxes import generate_tax_payments
+from town_db.unrest import generate_skirmish_casualties, generate_skirmish_events
 from town_db.vital_records import (
     DEFAULT_BIRTH_RATE,
     DEFAULT_DEATH_RATE_BY_AGE,
@@ -40,6 +41,7 @@ def generate_town_database(
     has_coastline: bool = False,
     has_port: bool = False,
     magic_prevalence: float = 0.0,
+    aggression: float = 0.0,
 ) -> None:
     town = generate_town(
         seed, target_population,
@@ -126,6 +128,31 @@ def generate_town_database(
             "VALUES (?, ?, ?, ?, ?)",
             (death["resident_db_id"], death["death_date"], death["cause"],
              death["disease_event_id"], death["reported_by_building_id"]),
+        )
+        conn.execute(
+            "UPDATE residents SET death_date = ? WHERE id = ?",
+            (death["death_date"], death["resident_db_id"]),
+        )
+
+    guard_post_id = next((b.id for d in town.districts for b in d.buildings if b.building_type == "guard_post"), None)
+    garrison_id = next((b.id for d in town.districts for b in d.buildings if b.building_type == "garrison"), None)
+    reporting_building_id = guard_post_id if guard_post_id is not None else garrison_id
+
+    skirmish_rows = generate_skirmish_events(seed, year_start, aggression)
+    for s in skirmish_rows:
+        cursor = conn.execute(
+            "INSERT INTO skirmish_events (name, skirmish_date, severity) VALUES (?, ?, ?)",
+            (s["name"], s["skirmish_date"], s["severity"]),
+        )
+        s["_db_id"] = cursor.lastrowid
+
+    skirmish_deaths = generate_skirmish_casualties(seed, resident_rows, skirmish_rows, reporting_building_id)
+    for death in skirmish_deaths:
+        conn.execute(
+            "INSERT INTO deaths (resident_id, death_date, cause, skirmish_event_id, reported_by_building_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (death["resident_db_id"], death["death_date"], death["cause"],
+             death["skirmish_event_id"], death["reported_by_building_id"]),
         )
         conn.execute(
             "UPDATE residents SET death_date = ? WHERE id = ?",

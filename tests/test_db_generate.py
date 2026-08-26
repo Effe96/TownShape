@@ -292,3 +292,50 @@ def test_generate_town_database_with_magic_passes_foreign_key_check(tmp_path):
     conn.execute("PRAGMA foreign_keys = ON")
     violations = conn.execute("PRAGMA foreign_key_check").fetchall()
     assert violations == []
+
+
+def test_generate_town_database_default_aggression_matches_previous_behavior(tmp_path):
+    db_path_a = str(tmp_path / "a.db")
+    db_path_b = str(tmp_path / "b.db")
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path_a)
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path_b, aggression=0.0)
+
+    conn_a = sqlite3.connect(db_path_a)
+    conn_b = sqlite3.connect(db_path_b)
+    for table in ["residents", "buildings", "deaths"]:
+        rows_a = conn_a.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        rows_b = conn_b.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        assert rows_a == rows_b
+
+    assert conn_a.execute("SELECT COUNT(*) FROM skirmish_events").fetchone()[0] == 0
+
+
+def test_generate_town_database_high_aggression_produces_skirmishes_and_maybe_casualties(tmp_path):
+    found_casualty = False
+    for seed_index in range(10):
+        db_path = str(tmp_path / f"town_{seed_index}.db")
+        generate_town_database(
+            ("town", seed_index), target_population=5000, db_path=db_path, aggression=1.0,
+        )
+        conn = sqlite3.connect(db_path)
+        skirmish_count = conn.execute("SELECT COUNT(*) FROM skirmish_events").fetchone()[0]
+        assert skirmish_count > 0
+
+        skirmish_death_count = conn.execute(
+            "SELECT COUNT(*) FROM deaths WHERE cause = 'skirmish'"
+        ).fetchone()[0]
+        if skirmish_death_count > 0:
+            found_casualty = True
+
+    assert found_casualty
+
+
+def test_generate_town_database_with_aggression_passes_foreign_key_check(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(
+        ("town", 1), target_population=5000, db_path=db_path, aggression=1.0,
+    )
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+    assert violations == []
