@@ -67,16 +67,16 @@ def test_generation_parameters_accepts_a_row(tmp_path):
     create_schema(conn)
     conn.execute(
         "INSERT INTO generation_parameters (seed, target_population, area_per_resident_multiplier, "
-        "density_multiplier, rich_proportion, num_rivers, has_coastline, has_port) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ("('town', 1)", 1500, 1.0, 1.0, 0.05, 1, 1, 1),
+        "density_multiplier, rich_proportion, num_rivers, has_coastline, has_port, magic_prevalence) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("('town', 1)", 1500, 1.0, 1.0, 0.05, 1, 1, 1, 0.3),
     )
     conn.commit()
     row = conn.execute(
         "SELECT seed, target_population, area_per_resident_multiplier, density_multiplier, rich_proportion, "
-        "num_rivers, has_coastline, has_port FROM generation_parameters"
+        "num_rivers, has_coastline, has_port, magic_prevalence FROM generation_parameters"
     ).fetchone()
-    assert row == ("('town', 1)", 1500, 1.0, 1.0, 0.05, 1, 1, 1)
+    assert row == ("('town', 1)", 1500, 1.0, 1.0, 0.05, 1, 1, 1, 0.3)
 
 
 def test_water_features_accepts_a_row(tmp_path):
@@ -89,3 +89,27 @@ def test_water_features_accepts_a_row(tmp_path):
     conn.commit()
     row = conn.execute("SELECT id, kind, polygon FROM water_features").fetchone()
     assert row == (1, "river", "[[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]]")
+
+
+def test_residents_has_magical_talent_defaults_to_zero(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute("INSERT INTO households (id, family_name, race) VALUES (1, 'Smith', 'human')")
+    conn.execute(
+        "INSERT INTO residents (household_id, first_name, last_name, gender, race, birth_date, ses) "
+        "VALUES (1, 'Ann', 'Smith', 'female', 'human', '1280-01-01', 'poor')"
+    )
+    row = conn.execute("SELECT has_magical_talent FROM residents").fetchone()
+    assert row[0] == 0
+
+
+def test_residents_has_magical_talent_accepts_a_row(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute("INSERT INTO households (id, family_name, race) VALUES (1, 'Smith', 'human')")
+    conn.execute(
+        "INSERT INTO residents (household_id, first_name, last_name, gender, race, birth_date, ses, has_magical_talent) "
+        "VALUES (1, 'Ann', 'Smith', 'female', 'human', '1280-01-01', 'poor', 1)"
+    )
+    row = conn.execute("SELECT has_magical_talent FROM residents").fetchone()
+    assert row[0] == 1

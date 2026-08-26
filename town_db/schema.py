@@ -34,6 +34,7 @@ CREATE TABLE residents (
     death_date TEXT,
     ses TEXT NOT NULL,
     is_noble INTEGER NOT NULL DEFAULT 0,
+    has_magical_talent INTEGER NOT NULL DEFAULT 0,
     home_building_id INTEGER REFERENCES buildings(id),
     workplace_building_id INTEGER REFERENCES buildings(id),
     occupation TEXT
@@ -121,7 +122,8 @@ CREATE TABLE generation_parameters (
     rich_proportion REAL NOT NULL,
     num_rivers INTEGER NOT NULL,
     has_coastline INTEGER NOT NULL,
-    has_port INTEGER NOT NULL
+    has_port INTEGER NOT NULL,
+    magic_prevalence REAL NOT NULL
 );
 
 CREATE TABLE water_features (
