@@ -102,3 +102,20 @@ def test_magic_prevalence_out_of_range_raises():
 def test_magic_prevalence_boundary_values_are_valid():
     TownParameters(seed="town-1", target_population=1000, magic_prevalence=0.0)
     TownParameters(seed="town-1", target_population=1000, magic_prevalence=1.0)
+
+
+def test_aggression_default_is_zero():
+    params = TownParameters(seed="town-1", target_population=1000)
+    assert params.aggression == 0.0
+
+
+def test_aggression_out_of_range_raises():
+    with pytest.raises(ValueError):
+        TownParameters(seed="town-1", target_population=1000, aggression=1.5)
+    with pytest.raises(ValueError):
+        TownParameters(seed="town-1", target_population=1000, aggression=-0.1)
+
+
+def test_aggression_boundary_values_are_valid():
+    TownParameters(seed="town-1", target_population=1000, aggression=0.0)
+    TownParameters(seed="town-1", target_population=1000, aggression=1.0)

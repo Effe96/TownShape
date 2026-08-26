@@ -120,3 +120,24 @@ def test_generate_town_from_parameters_with_magic_passes_foreign_key_check(tmp_p
     conn.execute("PRAGMA foreign_keys = ON")
     violations = conn.execute("PRAGMA foreign_key_check").fetchall()
     assert violations == []
+
+
+def test_generate_town_from_parameters_records_aggression(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    params = TownParameters(seed=("town", 1), target_population=1500, aggression=0.4)
+    generate_town_from_parameters(params, db_path)
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT aggression FROM generation_parameters").fetchone()
+    assert row == (0.4,)
+
+
+def test_generate_town_from_parameters_with_aggression_passes_foreign_key_check(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    params = TownParameters(seed=("town", 1), target_population=5000, aggression=1.0)
+    generate_town_from_parameters(params, db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+    assert violations == []
