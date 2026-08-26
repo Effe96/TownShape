@@ -167,9 +167,13 @@ def generate_town_database(
     arcane_shop_building_ids = [
         b.id for d in town.districts for b in d.buildings if b.building_type == "arcane_shop"
     ]
+    blacksmith_building_ids = [
+        b.id for d in town.districts for b in d.buildings if b.building_type == "blacksmith"
+    ]
     purchases = generate_purchases(
         seed, household_rows, resident_rows, goods_ids, shop_building_ids, year_start,
         magic_prevalence=magic_prevalence, arcane_shop_building_ids=arcane_shop_building_ids,
+        blacksmith_building_ids=blacksmith_building_ids,
     )
     for p in purchases:
         conn.execute(

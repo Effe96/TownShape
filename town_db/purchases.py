@@ -19,11 +19,13 @@ def generate_purchases(
     weeks: int = 52,
     magic_prevalence: float = 0.0,
     arcane_shop_building_ids: Optional[List[int]] = None,
+    blacksmith_building_ids: Optional[List[int]] = None,
 ) -> List[Dict[str, Any]]:
     if not shop_building_ids or not goods_ids:
         return []
 
     arcane_shop_building_ids = arcane_shop_building_ids or []
+    blacksmith_building_ids = blacksmith_building_ids or []
     rng = rng_for(seed, "db", "purchases")
 
     sv_by_name = {g["name"]: g["sv"] for g in GOODS_CATALOG if g["name"] in goods_ids}
@@ -34,9 +36,11 @@ def generate_purchases(
     # prevalence AND an arcane_shop actually exists to sell them at -- see
     # the design decision in the spec.
     magic_available = magic_prevalence > 0 and len(arcane_shop_building_ids) > 0
+    weapons_available = len(blacksmith_building_ids) > 0
     goods_names = [
         name for name in sv_by_name
-        if category_by_name[name] != "magic" or magic_available
+        if (category_by_name[name] != "magic" or magic_available)
+        and (category_by_name[name] != "weapons" or weapons_available)
     ]
     # SV is the population needed to support one business of this type, so a
     # HIGHER sv means the good is bought more often (bread constantly, jewelry
@@ -72,6 +76,8 @@ def generate_purchases(
                 good_name = rng.choices(goods_names, weights=good_weights, k=1)[0]
                 if category_by_name[good_name] == "magic":
                     shop_id = rng.choice(arcane_shop_building_ids)
+                elif category_by_name[good_name] == "weapons":
+                    shop_id = rng.choice(blacksmith_building_ids)
                 else:
                     shop_id = rng.choice(shop_building_ids)
                 # Expensive goods are bought one at a time; cheap staples in bulk.

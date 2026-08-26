@@ -339,3 +339,44 @@ def test_generate_town_database_with_aggression_passes_foreign_key_check(tmp_pat
     conn.execute("PRAGMA foreign_keys = ON")
     violations = conn.execute("PRAGMA foreign_key_check").fetchall()
     assert violations == []
+
+
+def test_generate_town_database_produces_weapons_purchases_scoped_to_blacksmiths(tmp_path):
+    found_weapons_purchase = False
+    for seed_index in range(10):
+        db_path = str(tmp_path / f"town_{seed_index}.db")
+        generate_town_database(("town", seed_index), target_population=3000, db_path=db_path)
+        conn = sqlite3.connect(db_path)
+
+        blacksmith_ids = {
+            row[0] for row in conn.execute(
+                "SELECT id FROM buildings WHERE building_type = 'blacksmith'"
+            ).fetchall()
+        }
+        weapons_good_ids = {
+            row[0] for row in conn.execute(
+                "SELECT id FROM goods WHERE category = 'weapons'"
+            ).fetchall()
+        }
+        weapons_purchase_shops = {
+            row[0] for row in conn.execute(
+                "SELECT DISTINCT shop_building_id FROM purchases WHERE good_id IN ({})".format(
+                    ",".join(str(i) for i in weapons_good_ids)
+                )
+            ).fetchall()
+        } if weapons_good_ids else set()
+
+        if weapons_purchase_shops:
+            found_weapons_purchase = True
+            assert weapons_purchase_shops <= blacksmith_ids
+
+    assert found_weapons_purchase
+
+
+def test_generate_town_database_with_blacksmith_passes_foreign_key_check(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+    assert violations == []

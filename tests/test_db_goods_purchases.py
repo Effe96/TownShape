@@ -205,3 +205,58 @@ def test_insert_goods_includes_weapons_goods(tmp_path):
     ids = insert_goods(conn)
     for name in ("dagger", "sword", "shield", "leather armor", "chainmail"):
         assert name in ids
+
+
+def test_weapons_goods_excluded_when_no_blacksmith_building_ids_given():
+    households = [_household(i) for i in range(1, 21)]
+    residents = [_resident(i, i) for i in range(1, 21)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    weapons_good_ids = {goods_ids[n] for n in ("dagger", "sword", "shield", "leather armor", "chainmail")}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52,
+    )
+    assert all(p["good_id"] not in weapons_good_ids for p in purchases)
+
+
+def test_weapons_goods_excluded_when_blacksmith_building_ids_is_empty():
+    households = [_household(i) for i in range(1, 21)]
+    residents = [_resident(i, i) for i in range(1, 21)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    weapons_good_ids = {goods_ids[n] for n in ("dagger", "sword", "shield", "leather armor", "chainmail")}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52,
+        blacksmith_building_ids=[],
+    )
+    assert all(p["good_id"] not in weapons_good_ids for p in purchases)
+
+
+def test_weapons_goods_purchased_and_shop_scoped_when_available():
+    households = [_household(i) for i in range(1, 41)]
+    residents = [_resident(i, i) for i in range(1, 41)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    weapons_good_ids = {goods_ids[n] for n in ("dagger", "sword", "shield", "leather armor", "chainmail")}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52,
+        blacksmith_building_ids=[99],
+    )
+    weapons_purchases = [p for p in purchases if p["good_id"] in weapons_good_ids]
+    assert len(weapons_purchases) > 0
+    assert all(p["shop_building_id"] == 99 for p in weapons_purchases)
+    non_weapons_purchases = [p for p in purchases if p["good_id"] not in weapons_good_ids]
+    assert all(p["shop_building_id"] == 10 for p in non_weapons_purchases)
+
+
+def test_generate_purchases_with_weapons_goods_present_in_catalog_matches_pool_without_them_at_defaults():
+    households = [_household(1)]
+    residents = [_resident(1, 1)]
+    full_goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    non_weapons_goods_ids = {
+        g["name"]: full_goods_ids[g["name"]] for g in GOODS_CATALOG if g["category"] != "weapons"
+    }
+    with_weapons_in_catalog = generate_purchases(
+        ("town", 1), households, residents, full_goods_ids, [10], YEAR_START, weeks=52
+    )
+    without_weapons_in_catalog = generate_purchases(
+        ("town", 1), households, residents, non_weapons_goods_ids, [10], YEAR_START, weeks=52
+    )
+    assert with_weapons_in_catalog == without_weapons_in_catalog
