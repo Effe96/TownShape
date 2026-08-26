@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 
 # A representative slice of medieval-demographics-made-easy.pdf's Support
 # Value table: population needed to support one business of this type.
-# Lower sv = more common = more frequently purchased.
+# Higher sv = more common = more frequently purchased.
 GOODS_CATALOG: List[Dict[str, Any]] = [
     {"name": "bread", "category": "food", "typical_price": 0.05, "sv": 800},
     {"name": "meat", "category": "food", "typical_price": 0.20, "sv": 1200},
@@ -19,6 +19,11 @@ GOODS_CATALOG: List[Dict[str, Any]] = [
     {"name": "healing potion", "category": "magic", "typical_price": 4.0, "sv": 500},
     {"name": "spell scroll", "category": "magic", "typical_price": 8.0, "sv": 300},
     {"name": "arcane reagents", "category": "magic", "typical_price": 1.5, "sv": 700},
+    {"name": "dagger", "category": "weapons", "typical_price": 3.0, "sv": 600},
+    {"name": "sword", "category": "weapons", "typical_price": 10.0, "sv": 350},
+    {"name": "shield", "category": "weapons", "typical_price": 8.0, "sv": 400},
+    {"name": "leather armor", "category": "weapons", "typical_price": 15.0, "sv": 300},
+    {"name": "chainmail", "category": "weapons", "typical_price": 40.0, "sv": 150},
 ]
 
 

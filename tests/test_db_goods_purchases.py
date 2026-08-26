@@ -183,3 +183,25 @@ def test_generate_purchases_with_magic_goods_present_in_catalog_matches_pool_wit
         ("town", 1), households, residents, non_magic_goods_ids, [10], YEAR_START, weeks=52
     )
     assert with_magic_in_catalog == without_magic_in_catalog
+
+
+def test_goods_catalog_includes_weapons_category():
+    weapons_goods = [g for g in GOODS_CATALOG if g["category"] == "weapons"]
+    assert {g["name"] for g in weapons_goods} == {"dagger", "sword", "shield", "leather armor", "chainmail"}
+
+
+def test_weapons_goods_have_the_expected_prices_and_sv():
+    by_name = {g["name"]: g for g in GOODS_CATALOG if g["category"] == "weapons"}
+    assert by_name["dagger"]["typical_price"] == 3.0 and by_name["dagger"]["sv"] == 600
+    assert by_name["sword"]["typical_price"] == 10.0 and by_name["sword"]["sv"] == 350
+    assert by_name["shield"]["typical_price"] == 8.0 and by_name["shield"]["sv"] == 400
+    assert by_name["leather armor"]["typical_price"] == 15.0 and by_name["leather armor"]["sv"] == 300
+    assert by_name["chainmail"]["typical_price"] == 40.0 and by_name["chainmail"]["sv"] == 150
+
+
+def test_insert_goods_includes_weapons_goods(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    ids = insert_goods(conn)
+    for name in ("dagger", "sword", "shield", "leather armor", "chainmail"):
+        assert name in ids
