@@ -77,6 +77,13 @@ CREATE TABLE disease_events (
     severity REAL NOT NULL
 );
 
+CREATE TABLE skirmish_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    skirmish_date TEXT NOT NULL,
+    severity REAL NOT NULL
+);
+
 CREATE TABLE births (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     child_resident_id INTEGER NOT NULL REFERENCES residents(id),
@@ -92,6 +99,7 @@ CREATE TABLE deaths (
     death_date TEXT NOT NULL,
     cause TEXT NOT NULL,
     disease_event_id INTEGER REFERENCES disease_events(id),
+    skirmish_event_id INTEGER REFERENCES skirmish_events(id),
     reported_by_building_id INTEGER NOT NULL REFERENCES buildings(id)
 );
 
@@ -123,7 +131,8 @@ CREATE TABLE generation_parameters (
     num_rivers INTEGER NOT NULL,
     has_coastline INTEGER NOT NULL,
     has_port INTEGER NOT NULL,
-    magic_prevalence REAL NOT NULL
+    magic_prevalence REAL NOT NULL,
+    aggression REAL NOT NULL
 );
 
 CREATE TABLE water_features (
