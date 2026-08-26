@@ -169,13 +169,17 @@ def test_magic_goods_purchased_and_shop_scoped_when_available():
     assert all(p["shop_building_id"] == 10 for p in non_magic_purchases)
 
 
-def test_generate_purchases_default_magic_params_match_previous_behavior():
+def test_generate_purchases_with_magic_goods_present_in_catalog_matches_pool_without_them_at_defaults():
     households = [_household(1)]
     residents = [_resident(1, 1)]
-    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
-    baseline = generate_purchases(("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52)
-    explicit = generate_purchases(
-        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52,
-        magic_prevalence=0.0, arcane_shop_building_ids=None,
+    full_goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    non_magic_goods_ids = {
+        g["name"]: full_goods_ids[g["name"]] for g in GOODS_CATALOG if g["category"] != "magic"
+    }
+    with_magic_in_catalog = generate_purchases(
+        ("town", 1), households, residents, full_goods_ids, [10], YEAR_START, weeks=52
     )
-    assert baseline == explicit
+    without_magic_in_catalog = generate_purchases(
+        ("town", 1), households, residents, non_magic_goods_ids, [10], YEAR_START, weeks=52
+    )
+    assert with_magic_in_catalog == without_magic_in_catalog
