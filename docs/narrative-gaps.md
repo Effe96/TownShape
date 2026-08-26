@@ -218,3 +218,16 @@ concept.
 User's guidance: disease/illness should be treated as a normal, ongoing
 part of daily life, not just a rare special event. Flagged by the user as
 a more urgent issue than most entries in this log.
+
+### Gap: no grandparent (or other multi-generational/extended-family) relationship exists
+
+**Status:** Open
+
+`town_relationships/family.py` only derives `spouse`, `parent`, `sibling`,
+and `household_member` — all single-generation or same-household links.
+There is no derivation that chains "parent of a parent" into
+`grandparent`, and no aunt/uncle, cousin, or in-law relationships either.
+A resident's grandparents (if still alive and identifiable via the chain
+of `parent` links) are not surfaced as a relationship at all, even though
+the underlying data (birth records, household history) would support
+deriving one.
