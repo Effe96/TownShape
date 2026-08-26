@@ -14,6 +14,7 @@ class TownParameters:
     num_rivers: int = 0
     has_coastline: bool = False
     has_port: bool = False
+    magic_prevalence: float = 0.0
 
     def __post_init__(self) -> None:
         if self.target_population <= 0:
@@ -28,3 +29,5 @@ class TownParameters:
             raise ValueError("num_rivers must be non-negative")
         if self.has_port and not (self.num_rivers > 0 or self.has_coastline):
             raise ValueError("has_port requires num_rivers > 0 or has_coastline to be True")
+        if not (0.0 <= self.magic_prevalence <= 1.0):
+            raise ValueError("magic_prevalence must be between 0.0 and 1.0")
