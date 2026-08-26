@@ -39,6 +39,7 @@ def generate_town_database(
     num_rivers: int = 0,
     has_coastline: bool = False,
     has_port: bool = False,
+    magic_prevalence: float = 0.0,
 ) -> None:
     town = generate_town(
         seed, target_population,
@@ -48,6 +49,7 @@ def generate_town_database(
         num_rivers=num_rivers,
         has_coastline=has_coastline,
         has_port=has_port,
+        magic_prevalence=magic_prevalence,
     )
 
     conn = connect(db_path)
@@ -79,7 +81,7 @@ def generate_town_database(
             zone_type_by_building_id[building.id] = district.zone_type.value
 
     household_rows, resident_rows = build_households_and_residents(
-        town, seed, year_start, race_weights, intermarriage_rate,
+        town, seed, year_start, race_weights, intermarriage_rate, magic_prevalence=magic_prevalence,
     )
     for row in resident_rows:
         row["home_zone_type"] = zone_type_by_building_id.get(row["home_building_id"])
@@ -135,8 +137,12 @@ def generate_town_database(
     shop_building_ids = [
         b.id for d in town.districts for b in d.buildings if b.building_type in SHOP_BUILDING_TYPES
     ]
+    arcane_shop_building_ids = [
+        b.id for d in town.districts for b in d.buildings if b.building_type == "arcane_shop"
+    ]
     purchases = generate_purchases(
         seed, household_rows, resident_rows, goods_ids, shop_building_ids, year_start,
+        magic_prevalence=magic_prevalence, arcane_shop_building_ids=arcane_shop_building_ids,
     )
     for p in purchases:
         conn.execute(
@@ -184,10 +190,11 @@ def _insert_residents(conn: sqlite3.Connection, resident_rows: List[Dict[str, An
     for row in resident_rows:
         cursor = conn.execute(
             "INSERT INTO residents (household_id, first_name, last_name, gender, race, birth_date, death_date, "
-            "ses, is_noble, home_building_id, workplace_building_id, occupation) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "ses, is_noble, has_magical_talent, home_building_id, workplace_building_id, occupation) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (row["household_id"], row["first_name"], row["last_name"], row["gender"], row["race"],
              row["birth_date"], row["death_date"], row["ses"], int(row["is_noble"]),
+             int(row.get("has_magical_talent", False)),
              row["home_building_id"], row["workplace_building_id"], row["occupation"]),
         )
         row["db_id"] = cursor.lastrowid

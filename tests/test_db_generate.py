@@ -247,3 +247,48 @@ def test_generate_town_database_persists_water_feature_interior_rings(tmp_path):
         assert len(rings) == expected_ring_count
 
     assert found_multi_ring, "expected at least one seed to produce a coastline with interior rings"
+
+
+def test_generate_town_database_default_magic_prevalence_matches_previous_behavior(tmp_path):
+    db_path_a = str(tmp_path / "a.db")
+    db_path_b = str(tmp_path / "b.db")
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path_a)
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path_b, magic_prevalence=0.0)
+
+    conn_a = sqlite3.connect(db_path_a)
+    conn_b = sqlite3.connect(db_path_b)
+    for table in ["residents", "buildings", "purchases"]:
+        rows_a = conn_a.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        rows_b = conn_b.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        assert rows_a == rows_b
+
+
+def test_generate_town_database_high_magic_prevalence_produces_talented_residents_and_arcane_purchases(tmp_path):
+    found_arcane_purchase = False
+    for seed_index in range(5):
+        db_path = str(tmp_path / f"town_{seed_index}.db")
+        generate_town_database(
+            ("town", seed_index), target_population=5000, db_path=db_path, magic_prevalence=0.9,
+        )
+        conn = sqlite3.connect(db_path)
+        talented_count = conn.execute("SELECT COUNT(*) FROM residents WHERE has_magical_talent = 1").fetchone()[0]
+        assert talented_count > 0
+
+        magic_purchase_count = conn.execute(
+            "SELECT COUNT(*) FROM purchases p JOIN goods g ON g.id = p.good_id WHERE g.category = 'magic'"
+        ).fetchone()[0]
+        if magic_purchase_count > 0:
+            found_arcane_purchase = True
+
+    assert found_arcane_purchase
+
+
+def test_generate_town_database_with_magic_passes_foreign_key_check(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(
+        ("town", 1), target_population=5000, db_path=db_path, magic_prevalence=0.9,
+    )
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+    assert violations == []
