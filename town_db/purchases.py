@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from town_shaper.seeding import rng_for
 
@@ -17,19 +17,36 @@ def generate_purchases(
     shop_building_ids: List[int],
     year_start: date,
     weeks: int = 52,
+    magic_prevalence: float = 0.0,
+    arcane_shop_building_ids: Optional[List[int]] = None,
 ) -> List[Dict[str, Any]]:
     if not shop_building_ids or not goods_ids:
         return []
 
+    arcane_shop_building_ids = arcane_shop_building_ids or []
     rng = rng_for(seed, "db", "purchases")
 
     sv_by_name = {g["name"]: g["sv"] for g in GOODS_CATALOG if g["name"] in goods_ids}
     price_by_name = {g["name"]: g["typical_price"] for g in GOODS_CATALOG if g["name"] in goods_ids}
-    goods_names = list(sv_by_name.keys())
+    category_by_name = {g["name"]: g["category"] for g in GOODS_CATALOG if g["name"] in goods_ids}
+
+    # Magic goods are only purchasable when both the town has some magic
+    # prevalence AND an arcane_shop actually exists to sell them at -- see
+    # the design decision in the spec.
+    magic_available = magic_prevalence > 0 and len(arcane_shop_building_ids) > 0
+    goods_names = [
+        name for name in sv_by_name
+        if category_by_name[name] != "magic" or magic_available
+    ]
     # SV is the population needed to support one business of this type, so a
     # HIGHER sv means the good is bought more often (bread constantly, jewelry
-    # rarely) -- weight directly by sv, not by its reciprocal.
-    good_weights = [float(sv_by_name[name]) for name in goods_names]
+    # rarely) -- weight directly by sv, not by its reciprocal. Magic goods are
+    # additionally scaled by magic_prevalence so a low-magic town buys them
+    # rarely even when an arcane_shop exists.
+    good_weights = [
+        float(sv_by_name[name]) * magic_prevalence if category_by_name[name] == "magic" else float(sv_by_name[name])
+        for name in goods_names
+    ]
 
     residents_by_household: Dict[int, List[Dict[str, Any]]] = {}
     for row in resident_rows:
@@ -53,7 +70,10 @@ def generate_purchases(
             for _ in range(count):
                 buyer = rng.choice(buyers)
                 good_name = rng.choices(goods_names, weights=good_weights, k=1)[0]
-                shop_id = rng.choice(shop_building_ids)
+                if category_by_name[good_name] == "magic":
+                    shop_id = rng.choice(arcane_shop_building_ids)
+                else:
+                    shop_id = rng.choice(shop_building_ids)
                 # Expensive goods are bought one at a time; cheap staples in bulk.
                 quantity = 1 if price_by_name[good_name] >= 1.0 else rng.randint(1, 5)
                 unit_price = round(price_by_name[good_name] * rng.uniform(0.85, 1.15), 2)

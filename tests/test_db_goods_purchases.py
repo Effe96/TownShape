@@ -127,3 +127,55 @@ def test_insert_goods_includes_magic_goods(tmp_path):
     assert "healing potion" in ids
     assert "spell scroll" in ids
     assert "arcane reagents" in ids
+
+
+def test_magic_goods_excluded_when_magic_prevalence_is_zero():
+    households = [_household(i) for i in range(1, 21)]
+    residents = [_resident(i, i) for i in range(1, 21)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    magic_good_ids = {goods_ids["healing potion"], goods_ids["spell scroll"], goods_ids["arcane reagents"]}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52,
+        magic_prevalence=0.0, arcane_shop_building_ids=[99],
+    )
+    assert all(p["good_id"] not in magic_good_ids for p in purchases)
+
+
+def test_magic_goods_excluded_when_no_arcane_shop_exists():
+    households = [_household(i) for i in range(1, 21)]
+    residents = [_resident(i, i) for i in range(1, 21)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    magic_good_ids = {goods_ids["healing potion"], goods_ids["spell scroll"], goods_ids["arcane reagents"]}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52,
+        magic_prevalence=0.9, arcane_shop_building_ids=[],
+    )
+    assert all(p["good_id"] not in magic_good_ids for p in purchases)
+
+
+def test_magic_goods_purchased_and_shop_scoped_when_available():
+    households = [_household(i) for i in range(1, 41)]
+    residents = [_resident(i, i) for i in range(1, 41)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    magic_good_ids = {goods_ids["healing potion"], goods_ids["spell scroll"], goods_ids["arcane reagents"]}
+    purchases = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52,
+        magic_prevalence=0.9, arcane_shop_building_ids=[99],
+    )
+    magic_purchases = [p for p in purchases if p["good_id"] in magic_good_ids]
+    assert len(magic_purchases) > 0
+    assert all(p["shop_building_id"] == 99 for p in magic_purchases)
+    non_magic_purchases = [p for p in purchases if p["good_id"] not in magic_good_ids]
+    assert all(p["shop_building_id"] == 10 for p in non_magic_purchases)
+
+
+def test_generate_purchases_default_magic_params_match_previous_behavior():
+    households = [_household(1)]
+    residents = [_resident(1, 1)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    baseline = generate_purchases(("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52)
+    explicit = generate_purchases(
+        ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52,
+        magic_prevalence=0.0, arcane_shop_building_ids=None,
+    )
+    assert baseline == explicit
