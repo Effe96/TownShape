@@ -113,3 +113,36 @@ def test_adults_in_childless_households_still_use_the_full_adult_pyramid():
     # With no children present, adults must still be able to be older than a
     # plausible parent -- otherwise the elderly would vanish from the town.
     assert any(a > PARENT_AGE_RANGE[1] for a in ages)
+
+
+def test_default_magic_prevalence_produces_no_magical_talent():
+    residents = [
+        ResidentSlot(id=i, household_id=i, ses=SES.POOR, age_bracket="adult")
+        for i in range(50)
+    ]
+    town = _make_town(residents)
+    _, enriched = build_households_and_residents(town, ("town", 1), REFERENCE_DATE)
+    assert all(r["has_magical_talent"] is False for r in enriched)
+
+
+def test_high_magic_prevalence_tags_most_residents():
+    residents = [
+        ResidentSlot(id=i, household_id=i, ses=SES.POOR, age_bracket="adult")
+        for i in range(200)
+    ]
+    town = _make_town(residents)
+    _, enriched = build_households_and_residents(town, ("town", 1), REFERENCE_DATE, magic_prevalence=0.9)
+    talented_count = sum(1 for r in enriched if r["has_magical_talent"])
+    assert talented_count > 150
+
+
+def test_magic_prevalence_zero_matches_default_behavior():
+    residents = [
+        ResidentSlot(id=i, household_id=i, ses=SES.POOR, age_bracket="adult")
+        for i in range(30)
+    ]
+    town = _make_town(residents)
+    _, baseline = build_households_and_residents(town, ("town", 1), REFERENCE_DATE)
+    _, explicit = build_households_and_residents(town, ("town", 1), REFERENCE_DATE, magic_prevalence=0.0)
+    key = lambda r: (r["household_id"], r["first_name"], r["race"], r["birth_date"], r["has_magical_talent"])
+    assert [key(r) for r in baseline] == [key(r) for r in explicit]

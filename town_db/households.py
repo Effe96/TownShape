@@ -25,6 +25,7 @@ def build_households_and_residents(
     reference_date: date,
     race_weights: Dict[str, float] = RACE_WEIGHTS,
     intermarriage_rate: float = DEFAULT_INTERMARRIAGE_RATE,
+    magic_prevalence: float = 0.0,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     rng = rng_for(seed, "db", "households")
 
@@ -75,6 +76,7 @@ def build_households_and_residents(
                 "death_date": None,
                 "ses": member.ses.value,
                 "is_noble": False,
+                "has_magical_talent": False,
                 "home_building_id": member.home_building_id,
                 "workplace_building_id": member.workplace_building_id,
                 "occupation": member.occupation,
@@ -82,6 +84,7 @@ def build_households_and_residents(
             })
 
     _tag_nobility(rng, resident_rows, town.target_population)
+    _tag_magical_talent(rng, resident_rows, magic_prevalence)
 
     return household_rows, resident_rows
 
@@ -92,3 +95,8 @@ def _tag_nobility(rng, resident_rows: List[Dict[str, Any]], target_population: i
     rng.shuffle(eligible)
     for row in eligible[:noble_count]:
         row["is_noble"] = True
+
+
+def _tag_magical_talent(rng, resident_rows: List[Dict[str, Any]], magic_prevalence: float) -> None:
+    for row in resident_rows:
+        row["has_magical_talent"] = rng.random() < magic_prevalence
