@@ -16,6 +16,9 @@ GOODS_CATALOG: List[Dict[str, Any]] = [
     {"name": "tools", "category": "tools", "typical_price": 2.5, "sv": 1500},
     {"name": "furniture", "category": "household", "typical_price": 5.0, "sv": 550},
     {"name": "jewelry", "category": "luxury", "typical_price": 15.0, "sv": 400},
+    {"name": "healing potion", "category": "magic", "typical_price": 4.0, "sv": 500},
+    {"name": "spell scroll", "category": "magic", "typical_price": 8.0, "sv": 300},
+    {"name": "arcane reagents", "category": "magic", "typical_price": 1.5, "sv": 700},
 ]
 
 

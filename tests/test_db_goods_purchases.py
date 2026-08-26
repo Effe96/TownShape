@@ -113,3 +113,17 @@ def test_a_household_whose_only_adult_died_before_the_year_buys_nothing():
         ("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52
     )
     assert purchases == []
+
+
+def test_goods_catalog_includes_magic_category():
+    magic_goods = [g for g in GOODS_CATALOG if g["category"] == "magic"]
+    assert {g["name"] for g in magic_goods} == {"healing potion", "spell scroll", "arcane reagents"}
+
+
+def test_insert_goods_includes_magic_goods(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    ids = insert_goods(conn)
+    assert "healing potion" in ids
+    assert "spell scroll" in ids
+    assert "arcane reagents" in ids
