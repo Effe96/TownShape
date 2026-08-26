@@ -241,13 +241,17 @@ def test_blacksmith_appears_in_merchant_zone():
     district = _square_district(ZoneType.MERCHANT, side=200.0)
     shop_count = 0
     blacksmith_count = 0
+    total = 0
     trials = 30
     for seed_index in range(trials):
         buildings = fill_district_buildings(district, ("town", seed_index), next_building_id=0)
         shop_count += sum(1 for b in buildings if b.building_type == "shop")
         blacksmith_count += sum(1 for b in buildings if b.building_type == "blacksmith")
+        total += len(buildings)
     assert blacksmith_count > 0
     assert shop_count > blacksmith_count
+    # Tighten frequency assertion: blacksmith should appear at ~15% of merchant buildings
+    assert 0.12 < blacksmith_count / total < 0.18
 
 
 def test_blacksmith_does_not_crowd_out_existing_merchant_building_types():

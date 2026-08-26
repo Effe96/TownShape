@@ -36,6 +36,8 @@ def generate_purchases(
     # prevalence AND an arcane_shop actually exists to sell them at -- see
     # the design decision in the spec.
     magic_available = magic_prevalence > 0 and len(arcane_shop_building_ids) > 0
+    # Weapons goods need a blacksmith to sell them -- no prevalence dial, a
+    # blacksmith is either present or it isn't.
     weapons_available = len(blacksmith_building_ids) > 0
     goods_names = [
         name for name in sv_by_name
