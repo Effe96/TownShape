@@ -32,7 +32,7 @@ def derive_relationships(db_path: str, reference_date: date = DEFAULT_YEAR_START
     relationship_rows += derive_coworker_relationships(residents)
     relationship_rows += derive_neighbor_relationships(residents, buildings)
     relationship_rows += derive_unit_mate_relationships(military_service)
-    relationship_rows += derive_classmate_relationships(school_enrollments)
+    relationship_rows += derive_classmate_relationships(school_enrollments, residents)
 
     for row in relationship_rows:
         conn.execute(

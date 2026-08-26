@@ -113,7 +113,9 @@ def test_derive_relationships_populates_both_tables_end_to_end(tmp_path):
     assert types_for(father, child) == {"parent"}
     assert types_for(mother, child) == {"parent"}
     assert types_for(father, neighbor) == {"coworker", "neighbor", "unit_mate"}
-    assert types_for(child, neighbor) == {"classmate", "neighbor"}
+    # Bob ("neighbor", born 1265) and Lil ("child", born 1295) are both enrolled
+    # at building 21, but 30 years apart in age -- correctly not classmates.
+    assert types_for(child, neighbor) == {"neighbor"}
 
     shop_rows = conn.execute(
         "SELECT resident_id, shop_building_id, is_primary FROM shop_relationships"

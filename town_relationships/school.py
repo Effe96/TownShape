@@ -1,18 +1,28 @@
 import json
-from typing import Any, Dict, List
+from datetime import date
+from typing import Any, Dict, List, Tuple
 
 from town_relationships.overlap import dates_overlap
 from town_relationships.pairs import canonical_pair
 
 
-def derive_classmate_relationships(school_enrollments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    by_school: Dict[int, List[Dict[str, Any]]] = {}
+def derive_classmate_relationships(
+    school_enrollments: List[Dict[str, Any]], residents: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    birth_date_by_resident = {r["id"]: r["birth_date"] for r in residents}
+
+    by_cohort: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
     for record in school_enrollments:
-        by_school.setdefault(record["school_building_id"], []).append(record)
+        birth_date = birth_date_by_resident.get(record["resident_id"])
+        if birth_date is None:
+            continue
+        age_at_start = date.fromisoformat(record["start_date"]).year - date.fromisoformat(birth_date).year
+        cohort_key = (record["school_building_id"], age_at_start)
+        by_cohort.setdefault(cohort_key, []).append(record)
 
     relationships: List[Dict[str, Any]] = []
     seen_pairs = set()
-    for records in by_school.values():
+    for records in by_cohort.values():
         for i in range(len(records)):
             for j in range(i + 1, len(records)):
                 a, b = records[i], records[j]
