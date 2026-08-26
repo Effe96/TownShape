@@ -17,6 +17,12 @@ deleting it, so the history of what was considered stays visible.
 - **Deferred** — considered, deliberately not addressing now, reason given
 - **Addressed** — resolved, with a pointer to where
 
+## Priority key
+
+Most entries carry no priority marker — ordinary backlog. Only entries
+explicitly flagged as more urgent (by the user) get a **Priority: High**
+line, so the marker stays meaningful.
+
 ---
 
 ## 2026-08-26 — test generation from a real campaign narrative
@@ -145,3 +151,70 @@ population-scaled cap (not just a density-per-area roll) for
 narratively-prominent building types like taverns and shops, separate
 from the question of how many are needed to support the underlying
 economic simulation (jobs, purchases, tax base).
+
+## 2026-08-27 — spot-checking individual resident profiles
+
+Source: pulling full profiles for specific residents (a magically
+talented poor resident and their household) in a low-magic test town,
+reviewed together.
+
+### Realism gap (not a narrative-mapping gap): home and workplace zones are assigned independently, with no locality preference
+
+**Status:** Open
+
+A resident working `shop_staff` (presumably in the merchant district) was
+found living on a `farmstead` in the `farmland_edge` zone, sharing that
+one building with two other, unrelated households (three different
+family surnames in a single capacity-8 farmstead). Poor-SES residents can
+apparently be housed in either `poor_residential` or `farmland_edge` as
+interchangeable overflow, with no relationship to where they actually
+work — home and workplace assignment appear to be independent processes.
+Not obviously wrong (real towns do have workers commuting from the
+edges), but worth a future look at whether home-building assignment
+should weight proximity to workplace, and whether farmsteads should host
+only farming-occupation residents rather than being generic poor-housing
+overflow shared across unrelated families.
+
+### Gap: no individual wealth/income model — SES has no effect on spending
+
+**Status:** Open
+**Priority:** High
+
+`ses` is currently only a binary poor/rich label with a single economic
+consequence: a flat `property_tax` rate (`PROPERTY_TAX_RATE_BY_SES` in
+`town_db/taxes.py` — 5.0/quarter rich, 1.0/quarter poor). Purchase
+generation (`town_db/purchases.py`) doesn't reference SES at all —
+frequency, quantity, and good selection are identical regardless of
+wealth. Confirmed empirically: in a test town, the single highest
+individual spender for the year was **poor** (211.45 total spent),
+outspending every rich resident (top rich spender: 177.69). A rich
+character currently cannot be shown consistently spending more, buying
+more luxury goods, or living more comfortably than a poor one, beyond the
+flat tax difference and which residential zone they're placed in.
+
+User's request: there should be a per-resident income/wealth concept —
+"how much money this person has, and makes on a daily basis" — that
+actually drives differentiated spending behavior, not just tax and
+housing. Flagged by the user as a more urgent issue than most entries in
+this log.
+
+### Gap: disease is modeled as a rare, all-or-nothing event instead of an everyday part of life
+
+**Status:** Open
+**Priority:** High
+
+`disease_events` currently rolls once per year for a single town-wide
+outbreak (`DISEASE_EVENT_CHANCE=0.3` in `town_db/vital_records.py`) — a
+town can go an entire year with zero disease events. Meanwhile `illness`
+as a cause of death is a completely separate, unlinked baseline mortality
+roll that happens regardless of whether an outbreak is active. Confirmed
+in a test town: `disease_events` was empty (no outbreak that year), yet
+107 deaths were still recorded with `cause='illness'` — ordinary
+background mortality, not tied to any disease event at all. There is no
+notion of everyday sickness (colds, minor ailments, chronic conditions)
+as a constant backdrop; only rare epidemic-level outbreaks exist as a
+concept.
+
+User's guidance: disease/illness should be treated as a normal, ongoing
+part of daily life, not just a rare special event. Flagged by the user as
+a more urgent issue than most entries in this log.
