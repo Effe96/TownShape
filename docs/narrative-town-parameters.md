@@ -93,8 +93,8 @@ rather than silently guessing.
 | (no coastal cue) | `has_coastline` | `false` (default) |
 | "port town", "trading port", "harbor" | `has_port` | `true` — also set `has_coastline=true` as the implied water source, unless the narrative specifies a river port instead |
 | "arcane", "wizards on every corner", "high magic" | `magic_prevalence` | 0.3 – 0.6 |
-| "no magic", "mundane", "magic is rare/forbidden here" | `magic_prevalence` | 0.0 (default) |
-| (no magic cue) | `magic_prevalence` | 0.0 (default) |
+| "no magic", "mundane", "magic is rare/forbidden here" | `magic_prevalence` | 0.0 (explicit absence stated) |
+| (no magic cue either way) | `magic_prevalence` | 0.05 – 0.1 (low, not zero — most fantasy settings have *some* ambient magic even when the narrative doesn't call it out; reserve `0.0` for when the text explicitly says magic is absent/forbidden/mundane) |
 | "restless", "prone to riots", "tense streets" | `aggression` | 0.3 – 0.6 |
 | "peaceful", "orderly", "no unrest" | `aggression` | 0.0 (default) |
 | (no aggression cue) | `aggression` | 0.0 (default) |
