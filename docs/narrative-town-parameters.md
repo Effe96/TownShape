@@ -50,6 +50,15 @@ rather than silently guessing.
   `num_rivers > 0` or `has_coastline` — raises otherwise, since a port
   needs water to sit on. Carries the same population-shortfall caveat as
   `has_coastline`.
+- **`magic_prevalence`** (default `0.0`) — how prevalent magic is in the
+  town, as a fraction from `0.0` (none) to `1.0` (saturated). Drives three
+  independent things: an `arcane_shop` (a MERCHANT-zone building, staffed
+  by a mage + apprentices) becomes more likely to appear as this rises;
+  magic-category goods (healing potions, spell scrolls, arcane reagents)
+  become purchasable, but only where an `arcane_shop` actually exists;
+  and the fraction of residents with `has_magical_talent` (a latent trait,
+  independent of occupation — not every mage is guaranteed to roll it,
+  and untrained townsfolk can have it too) tracks this value directly.
 
 ## Narrative language → value
 
@@ -70,6 +79,9 @@ rather than silently guessing.
 | "coastal", "seaside", "on the coast/sea" | `has_coastline` | `true` |
 | (no coastal cue) | `has_coastline` | `false` (default) |
 | "port town", "trading port", "harbor" | `has_port` | `true` — also set `has_coastline=true` as the implied water source, unless the narrative specifies a river port instead |
+| "arcane", "wizards on every corner", "high magic" | `magic_prevalence` | 0.3 – 0.6 |
+| "no magic", "mundane", "magic is rare/forbidden here" | `magic_prevalence` | 0.0 (default) |
+| (no magic cue) | `magic_prevalence` | 0.0 (default) |
 
 These ranges are starting points, open to tuning as they're used against
 real campaign input — same spirit as the empirically-set constants
