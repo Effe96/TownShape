@@ -235,3 +235,35 @@ def test_fill_district_buildings_default_magic_prevalence_matches_previous_behav
     explicit = fill_district_buildings(district, ("town", 1), next_building_id=0, magic_prevalence=0.0)
     assert [(b.id, b.x, b.y, b.building_type) for b in baseline] == \
            [(b.id, b.x, b.y, b.building_type) for b in explicit]
+
+
+def test_blacksmith_appears_in_merchant_zone():
+    district = _square_district(ZoneType.MERCHANT, side=200.0)
+    shop_count = 0
+    blacksmith_count = 0
+    trials = 30
+    for seed_index in range(trials):
+        buildings = fill_district_buildings(district, ("town", seed_index), next_building_id=0)
+        shop_count += sum(1 for b in buildings if b.building_type == "shop")
+        blacksmith_count += sum(1 for b in buildings if b.building_type == "blacksmith")
+    assert blacksmith_count > 0
+    assert shop_count > blacksmith_count
+
+
+def test_blacksmith_does_not_crowd_out_existing_merchant_building_types():
+    district = _square_district(ZoneType.MERCHANT, side=200.0)
+    seen_types = set()
+    for seed_index in range(30):
+        buildings = fill_district_buildings(district, ("town", seed_index), next_building_id=0)
+        seen_types.update(b.building_type for b in buildings)
+    assert {"shop", "tavern", "market_stall", "blacksmith"} <= seen_types
+
+
+def test_blacksmith_job_vacancies_match_job_table():
+    from town_shaper.buildings import JOB_VACANCIES_BY_BUILDING_TYPE
+    assert JOB_VACANCIES_BY_BUILDING_TYPE["blacksmith"] == [("blacksmith", 1), ("smith_apprentice", 2)]
+
+
+def test_blacksmith_has_no_home_capacity():
+    from town_shaper.buildings import BUILDING_HOME_CAPACITY
+    assert "blacksmith" not in BUILDING_HOME_CAPACITY
