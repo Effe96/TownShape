@@ -59,6 +59,19 @@ rather than silently guessing.
   and the fraction of residents with `has_magical_talent` (a latent trait,
   independent of occupation — not every mage is guaranteed to roll it,
   and untrained townsfolk can have it too) tracks this value directly.
+- **`aggression`** (default `0.0`) — how prone the population is to
+  skirmishes/incidents between the poor quarter and the city guard, as a
+  fraction from `0.0` (none) to `1.0` (frequent unrest). Drives skirmish
+  event frequency across the simulated year; skirmishes can produce
+  resident casualties among poor adults and guard/soldier-occupation
+  residents specifically.
+
+  There is no `stress` input field — it's a **derived** value, not
+  something you set. After generating a town, call
+  `town_db.stats.compute_stress(db_path)` to get a `0.0`-`1.0` readout
+  reflecting the town's poor-population fraction and observed skirmish
+  frequency, if you need to describe the town's overall tension level in
+  narrative terms.
 
 ## Narrative language → value
 
@@ -82,6 +95,9 @@ rather than silently guessing.
 | "arcane", "wizards on every corner", "high magic" | `magic_prevalence` | 0.3 – 0.6 |
 | "no magic", "mundane", "magic is rare/forbidden here" | `magic_prevalence` | 0.0 (default) |
 | (no magic cue) | `magic_prevalence` | 0.0 (default) |
+| "restless", "prone to riots", "tense streets" | `aggression` | 0.3 – 0.6 |
+| "peaceful", "orderly", "no unrest" | `aggression` | 0.0 (default) |
+| (no aggression cue) | `aggression` | 0.0 (default) |
 
 These ranges are starting points, open to tuning as they're used against
 real campaign input — same spirit as the empirically-set constants

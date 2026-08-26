@@ -18,7 +18,7 @@ town") or a path to a longer document.
    available today: `seed`, `target_population`,
    `area_per_resident_multiplier`, `density_multiplier`,
    `rich_proportion`, `num_rivers`, `has_coastline`, `has_port`,
-   `magic_prevalence`.
+   `magic_prevalence`, `aggression`.
 3. **When the input doesn't clearly resolve a field, don't guess
    silently** — state your recommended default and reasoning, and ask
    the user to confirm or override it.
@@ -40,6 +40,7 @@ town") or a path to a longer document.
        has_coastline=<bool>,
        has_port=<bool>,
        magic_prevalence=<float>,
+       aggression=<float>,
    )
    generate_town_from_parameters(params, db_path="<destination path>.db")
    ```
