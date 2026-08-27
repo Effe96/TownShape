@@ -1,9 +1,16 @@
 # town_db/edits.py
+"""Post-generation mutation primitives (illness, death, disease-event edits) for a town's SQLite
+database. These must be applied BEFORE calling town_relationships.generate.derive_relationships on
+the same database file: no cascade here updates the derived relationships/shop_relationships
+tables, so if relationships were already derived, they will be stale after any edit in this module.
+There is currently no supported way to re-derive them afterward -- re-running derive_relationships
+is not documented as idempotent."""
 import random
 from datetime import date
 from typing import List, Optional, Tuple
 
 from town_db.ages import ADULT_AGE_RANGE, age_on
+from town_db.purchases import SHOP_BUILDING_TYPES
 from town_db.schema import connect
 from town_shaper.buildings import JOB_VACANCIES_BY_BUILDING_TYPE
 
@@ -11,13 +18,18 @@ SHOP_LOSS_CEILING_VACANT = 0.65
 SHOP_LOSS_CEILING_REPLACED = 0.30
 SHOP_LOSS_RAMP_DAYS = 120
 
+_PROMOTABLE_BUILDING_TYPES = SHOP_BUILDING_TYPES | {"arcane_shop", "blacksmith"}
 
-def _living_adult_household_members(conn, resident_id: int, on_date: date) -> List[int]:
+
+def _living_adult_household_members(conn, resident_id: int, on_date: date) -> List[Tuple[int, Optional[str]]]:
+    """Returns (id, death_date) pairs for household members who are adults and not yet dead as of
+    on_date. death_date is carried through (rather than filtered out entirely here) so callers that
+    reassign purchases across a date window can re-check per-purchase liveness against it."""
     household_id = conn.execute(
         "SELECT household_id FROM residents WHERE id = ?", (resident_id,)
     ).fetchone()[0]
     rows = conn.execute(
-        "SELECT id, birth_date, death_date FROM residents WHERE household_id = ? AND id != ?",
+        "SELECT id, birth_date, death_date FROM residents WHERE household_id = ? AND id != ? ORDER BY id",
         (household_id, resident_id),
     ).fetchall()
 
@@ -27,35 +39,41 @@ def _living_adult_household_members(conn, resident_id: int, on_date: date) -> Li
             continue
         if age_on(date.fromisoformat(birth_date_str), on_date) < ADULT_AGE_RANGE[0]:
             continue
-        candidates.append(other_id)
+        candidates.append((other_id, other_death_date))
     return candidates
 
 
 def _reassign_or_delete_buyer_purchases(
     conn, resident_id: int, from_date: date, until_date: Optional[date], rng: random.Random
 ) -> None:
-    # Candidate pool is fixed once at from_date, not re-checked per purchase -- a candidate who
-    # dies later in the window stays eligible for the rest of it. Deliberate simplification: exact
-    # per-purchase-date liveness would require re-querying per row for marginal realism gain.
+    # Candidate pool (id, death_date) is fetched once at from_date -- adult eligibility doesn't
+    # change over the window, so it's safe to compute once. But liveness on the purchase's own date
+    # DOES change: a candidate who dies partway through the window must not be reassigned purchases
+    # dated after their own death, so eligibility is re-filtered per purchase below.
     candidates = _living_adult_household_members(conn, resident_id, from_date)
 
-    query = "SELECT id FROM purchases WHERE resident_id = ? AND purchase_date >= ?"
+    query = "SELECT id, purchase_date FROM purchases WHERE resident_id = ? AND purchase_date >= ?"
     params: List = [resident_id, from_date.isoformat()]
     if until_date is not None:
         query += " AND purchase_date < ?"
         params.append(until_date.isoformat())
+    query += " ORDER BY id"
 
     rows = conn.execute(query, params).fetchall()
-    for (purchase_id,) in rows:
-        if candidates:
-            new_buyer = rng.choice(candidates)
+    for purchase_id, purchase_date in rows:
+        eligible = [
+            candidate_id for candidate_id, candidate_death_date in candidates
+            if candidate_death_date is None or candidate_death_date > purchase_date
+        ]
+        if eligible:
+            new_buyer = rng.choice(eligible)
             conn.execute("UPDATE purchases SET resident_id = ? WHERE id = ?", (new_buyer, purchase_id))
         else:
             conn.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
 
 
 def _primary_occupation_info(building_type: Optional[str], occupation: Optional[str]) -> Tuple[bool, Optional[str]]:
-    if building_type is None:
+    if building_type is None or building_type not in _PROMOTABLE_BUILDING_TYPES:
         return False, None
     roles = JOB_VACANCIES_BY_BUILDING_TYPE.get(building_type, [])
     primary_roles = [name for name, capacity in roles if capacity == 1]
@@ -134,16 +152,17 @@ def mark_resident_ill(
         conn.close()
 
 
-def _reporting_building_id(conn) -> Optional[int]:
-    temple = conn.execute(
-        "SELECT id FROM buildings WHERE building_type = 'temple' ORDER BY id LIMIT 1"
+def _reporting_building_id(conn, building_types: Tuple[str, str] = ("temple", "healer")) -> Optional[int]:
+    primary_type, fallback_type = building_types
+    primary = conn.execute(
+        "SELECT id FROM buildings WHERE building_type = ? ORDER BY id LIMIT 1", (primary_type,)
     ).fetchone()
-    if temple:
-        return temple[0]
-    healer = conn.execute(
-        "SELECT id FROM buildings WHERE building_type = 'healer' ORDER BY id LIMIT 1"
+    if primary:
+        return primary[0]
+    fallback = conn.execute(
+        "SELECT id FROM buildings WHERE building_type = ? ORDER BY id LIMIT 1", (fallback_type,)
     ).fetchone()
-    return healer[0] if healer else None
+    return fallback[0] if fallback else None
 
 
 def kill_resident(
@@ -157,13 +176,17 @@ def kill_resident(
 ) -> None:
     conn = connect(db_path)
     try:
-        existing_death_date = conn.execute(
+        existing_row = conn.execute(
             "SELECT death_date FROM residents WHERE id = ?", (resident_id,)
-        ).fetchone()[0]
+        ).fetchone()
+        if existing_row is None:
+            raise ValueError(f"no resident with id {resident_id}")
+        existing_death_date = existing_row[0]
         if existing_death_date is not None:
             raise ValueError(f"resident {resident_id} already has a death_date ({existing_death_date})")
 
-        reporting_building_id = _reporting_building_id(conn)
+        reporting_building_types = ("guard_post", "garrison") if skirmish_event_id is not None else ("temple", "healer")
+        reporting_building_id = _reporting_building_id(conn, reporting_building_types)
         conn.execute("UPDATE residents SET death_date = ? WHERE id = ?", (death_date.isoformat(), resident_id))
         conn.execute(
             "INSERT INTO deaths (resident_id, death_date, cause, disease_event_id, skirmish_event_id, reported_by_building_id) "
@@ -213,7 +236,11 @@ def kill_resident(
 def scope_disease_event(db_path: str, event_id: int, zone_type: str) -> None:
     conn = connect(db_path)
     try:
-        conn.execute("UPDATE disease_events SET affected_zone_type = ? WHERE id = ?", (zone_type, event_id))
+        cursor = conn.execute(
+            "UPDATE disease_events SET affected_zone_type = ? WHERE id = ?", (zone_type, event_id)
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"no disease_events row with id {event_id}")
         conn.commit()
     finally:
         conn.close()

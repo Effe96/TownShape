@@ -1,5 +1,4 @@
 # tests/test_db_edits.py
-import random
 from datetime import date
 
 from town_db.edits import create_disease_event, kill_resident, mark_resident_ill, scope_disease_event
@@ -212,6 +211,47 @@ def test_kill_resident_raises_if_already_dead(tmp_path):
         pass
 
 
+def test_kill_resident_raises_on_unknown_resident_id(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.commit()
+    conn.close()
+
+    try:
+        kill_resident(db_path, resident_id=999, death_date=date(1300, 6, 1), cause="accident")
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+
+
+def test_kill_resident_reassign_rechecks_candidate_liveness_per_purchase(tmp_path):
+    # Reproduces the bug fixed by re-filtering candidates per purchase date: A is killed, leaving B
+    # as the household's only other living adult at the moment of A's death. B then dies partway
+    # through the reassignment window. A's purchases dated before B's death should still go to B,
+    # but A's purchases dated on/after B's own death_date must NOT be reassigned to B -- with B as
+    # the only candidate and already dead by then, those purchases should be deleted instead.
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    _insert_household(conn, 1)
+    _insert_resident(conn, 1, 1)  # A, will be killed
+    _insert_resident(conn, 2, 1, death_date="1300-07-01")  # B, dies partway through the window
+    _insert_good_and_shop(conn)
+    _insert_purchase(conn, 1, resident_id=1, purchase_date="1300-05-01")  # before B's death
+    _insert_purchase(conn, 2, resident_id=1, purchase_date="1300-09-01")  # after B's death
+    conn.commit()
+    conn.close()
+
+    kill_resident(db_path, resident_id=1, death_date=date(1300, 1, 1), cause="accident")
+
+    conn = connect(db_path)
+    before_b_death = conn.execute("SELECT resident_id FROM purchases WHERE id = 1").fetchone()
+    after_b_death = conn.execute("SELECT resident_id FROM purchases WHERE id = 2").fetchone()
+    assert before_b_death == (2,)  # reassigned to B while B was still alive on that date
+    assert after_b_death is None  # B was the only candidate but already dead by this date -> deleted
+
+
 def _insert_blacksmith_building(conn, building_id, district_id=1):
     conn.execute(
         "INSERT OR IGNORE INTO districts (id, zone_type, polygon) VALUES (?, 'merchant', '[]')",
@@ -292,8 +332,11 @@ def test_kill_resident_shop_ramp_uses_lower_ceiling_when_replacement_promoted(tm
         "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses) "
         "VALUES (3, 3, 'E', 'F', 'male', 'human', '1270-01-01', 'poor')"
     )
-    # 200 far-future purchases at the shop by an unrelated customer (resident 3), so the redirect
-    # ramp has enough volume for its ceiling to show up as a clear statistical difference.
+    # 200 far-future purchases at the shop by an unrelated customer (resident 3). This is the only
+    # blacksmith building in the test, so _apply_shop_reputation_ramp has no other_shops to redirect
+    # to and every hit takes the DELETE branch -- this test exercises pure loss, not redirection.
+    # The volume just gives the fixed-seed ceiling difference (0.30 vs 0.65) room to show up as a
+    # clear statistical difference in how many purchases remain.
     for i in range(200):
         conn.execute(
             "INSERT INTO purchases (id, resident_id, shop_building_id, good_id, quantity, unit_price, total_price, purchase_date) "
@@ -317,6 +360,73 @@ def test_kill_resident_shop_ramp_uses_lower_ceiling_when_replacement_promoted(tm
     assert remaining_at_shop == 136
 
 
+def test_kill_resident_manor_noble_is_not_promotable(tmp_path):
+    # manor is a rich-residential building, not a shop-like building, so it must not be treated as
+    # promotable: a dead noble's servant should not be promoted into the noble role, and no shop
+    # reputation ramp should apply. This exercises the _PROMOTABLE_BUILDING_TYPES gating.
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    _insert_household(conn, 1)
+    _insert_household(conn, 2)
+    conn.execute("INSERT INTO districts (id, zone_type, polygon) VALUES (1, 'rich_residential', '[]')")
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity) "
+        "VALUES (1, 1, 'rich_residential', 'manor', 0, 0, 4)"
+    )
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses, "
+        "workplace_building_id, occupation) VALUES (1, 1, 'A', 'B', 'male', 'human', '1260-01-01', 'rich', 1, 'noble')"
+    )
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses, "
+        "workplace_building_id, occupation) VALUES (2, 2, 'C', 'D', 'male', 'human', '1280-01-01', 'poor', 1, 'servant')"
+    )
+    conn.commit()
+    conn.close()
+
+    kill_resident(db_path, resident_id=1, death_date=date(1300, 6, 1), cause="accident", promote_replacement=True)
+
+    conn = connect(db_path)
+    workplace = conn.execute("SELECT workplace_building_id FROM residents WHERE id = 1").fetchone()[0]
+    servant_occupation = conn.execute("SELECT occupation FROM residents WHERE id = 2").fetchone()[0]
+    assert workplace is None
+    assert servant_occupation == "servant"  # not promoted to noble
+
+
+def test_kill_resident_skirmish_death_reports_to_guard_post_not_temple(tmp_path):
+    # TownShape's generator reports skirmish deaths via guard_post/garrison, distinct from the
+    # temple/healer resolution used for illness/disease deaths. _reporting_building_id must use the
+    # guard_post/garrison resolution specifically when skirmish_event_id is provided.
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    _insert_household(conn, 1)
+    _insert_resident(conn, 1, 1)
+    conn.execute("INSERT INTO districts (id, zone_type, polygon) VALUES (1, 'civic', '[]')")
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity) "
+        "VALUES (1, 1, 'civic', 'temple', 0, 0, 1)"
+    )
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity) "
+        "VALUES (2, 1, 'civic', 'guard_post', 0, 0, 1)"
+    )
+    conn.execute(
+        "INSERT INTO skirmish_events (id, name, skirmish_date, severity) VALUES (1, 'raid', '1300-06-01', 0.5)"
+    )
+    conn.commit()
+    conn.close()
+
+    kill_resident(db_path, resident_id=1, death_date=date(1300, 6, 1), cause="skirmish", skirmish_event_id=1)
+
+    conn = connect(db_path)
+    reported_by = conn.execute(
+        "SELECT reported_by_building_id FROM deaths WHERE resident_id = 1"
+    ).fetchone()[0]
+    assert reported_by == 2  # guard_post, not the temple (id 1)
+
+
 def test_scope_disease_event_sets_affected_zone_type(tmp_path):
     db_path = str(tmp_path / "town.db")
     conn = connect(db_path)
@@ -332,6 +442,20 @@ def test_scope_disease_event_sets_affected_zone_type(tmp_path):
 
     conn = connect(db_path)
     assert conn.execute("SELECT affected_zone_type FROM disease_events WHERE id = 1").fetchone()[0] == "merchant"
+
+
+def test_scope_disease_event_raises_on_nonexistent_event_id(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.commit()
+    conn.close()
+
+    try:
+        scope_disease_event(db_path, event_id=999, zone_type="merchant")
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
 
 
 def test_create_disease_event_inserts_and_returns_new_id(tmp_path):

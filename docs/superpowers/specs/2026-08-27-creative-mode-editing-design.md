@@ -164,12 +164,27 @@ def create_disease_event(
    is deliberate — the household's demand for bread doesn't vanish
    just because this particular buyer is gone. **Separately**, if the
    deceased was a shop's primary occupant: purchases *at that shop*
-   (buyer unrelated to the deceased's own household) after the death
-   date follow a reduced-ceiling redirect ramp if a replacement was
-   promoted (partial falloff, reflecting reduced skill/reputation) or
-   the existing full-redirect ramp if the position stayed vacant (total
-   loss) — reusing scenario 2's ramp shape from `shop-mystery-game`,
-   now as a first-class TownShape primitive instead of a private script.
+   after the death date follow a reduced-ceiling redirect ramp if a
+   replacement was promoted (partial falloff, reflecting reduced
+   skill/reputation) or the existing full-redirect ramp if the position
+   stayed vacant (total loss) — reusing scenario 2's ramp shape from
+   `shop-mystery-game`, now as a first-class TownShape primitive
+   instead of a private script.
+
+   **Amended 2026-08-27, post-implementation review**: this ramp
+   applies to every purchase at the shop, including ones made by the
+   deceased's own household (the "buyer unrelated to the household"
+   framing in an earlier draft of this line was aspirational, not
+   implemented, and the final whole-branch review caught the mismatch).
+   In practice this means a household purchase can be touched twice —
+   once by the buyer-reassignment step above (which may move it to
+   another household member), then again by this ramp (which may
+   redirect or delete it regardless of buyer). Left as-is deliberately:
+   the shop-level function has no household awareness today, adding it
+   would be new complexity for a benign, arguably realistic outcome (a
+   grieving household's own purchases at the family shop are just as
+   exposed to the shop's decline as anyone else's), and no test or
+   consumer currently depends on the old framing.
 4. **Tax payments**: every `tax_payments` row for this resident with
    `payment_date >= death_date` deleted (an individual obligation, not
    household demand — no reassignment).
