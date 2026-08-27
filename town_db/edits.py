@@ -208,3 +208,28 @@ def kill_resident(
         conn.commit()
     finally:
         conn.close()
+
+
+def scope_disease_event(db_path: str, event_id: int, zone_type: str) -> None:
+    conn = connect(db_path)
+    try:
+        conn.execute("UPDATE disease_events SET affected_zone_type = ? WHERE id = ?", (zone_type, event_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def create_disease_event(
+    db_path: str, zone_type: str, start_date: date, end_date: date, severity: float
+) -> int:
+    conn = connect(db_path)
+    try:
+        cursor = conn.execute(
+            "INSERT INTO disease_events (name, start_date, end_date, affected_zone_type, severity) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("an outbreak of fever", start_date.isoformat(), end_date.isoformat(), zone_type, severity),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()

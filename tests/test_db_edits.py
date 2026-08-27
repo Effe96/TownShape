@@ -2,7 +2,7 @@
 import random
 from datetime import date
 
-from town_db.edits import kill_resident, mark_resident_ill
+from town_db.edits import create_disease_event, kill_resident, mark_resident_ill, scope_disease_event
 from town_db.schema import connect, create_schema
 
 
@@ -315,3 +315,38 @@ def test_kill_resident_shop_ramp_uses_lower_ceiling_when_replacement_promoted(tm
     # the 0.30 (replaced) ceiling -- versus 73 remaining if the 0.65 (vacant) ceiling had applied
     # instead, confirming promote_replacement genuinely changes which ceiling is used.
     assert remaining_at_shop == 136
+
+
+def test_scope_disease_event_sets_affected_zone_type(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO disease_events (id, name, start_date, end_date, affected_zone_type, severity) "
+        "VALUES (1, 'fever', '1300-03-01', '1300-04-01', NULL, 0.5)"
+    )
+    conn.commit()
+    conn.close()
+
+    scope_disease_event(db_path, event_id=1, zone_type="merchant")
+
+    conn = connect(db_path)
+    assert conn.execute("SELECT affected_zone_type FROM disease_events WHERE id = 1").fetchone()[0] == "merchant"
+
+
+def test_create_disease_event_inserts_and_returns_new_id(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.commit()
+    conn.close()
+
+    event_id = create_disease_event(
+        db_path, zone_type="poor_residential", start_date=date(1300, 5, 1), end_date=date(1300, 6, 1), severity=0.7
+    )
+
+    conn = connect(db_path)
+    row = conn.execute(
+        "SELECT start_date, end_date, affected_zone_type, severity FROM disease_events WHERE id = ?", (event_id,)
+    ).fetchone()
+    assert row == ("1300-05-01", "1300-06-01", "poor_residential", 0.7)
