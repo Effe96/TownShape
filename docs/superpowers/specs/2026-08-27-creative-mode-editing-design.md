@@ -123,6 +123,7 @@ def kill_resident(
     db_path: str, resident_id: int, death_date: date, cause: str,
     disease_event_id: Optional[int] = None,
     skirmish_event_id: Optional[int] = None,
+    promote_replacement: bool = False,
 ) -> None: ...
 
 def mark_resident_ill(
@@ -144,21 +145,37 @@ def create_disease_event(
    `reported_by_building_id` resolved the same way generation does —
    the town's temple if one exists, else its healer, else `None` if
    neither exists; not proximity-based).
-2. **Purchases**: every `purchases` row where this resident is the
+2. **Workplace and replacement staffing (resolved before the purchase
+   cascade below, since it changes that cascade's ceiling)**: if
+   `promote_replacement=True` and the deceased held a workplace's
+   primary occupation (`blacksmith`, `mage` — the buildings' single
+   capacity-1 role per `town_shaper/buildings.py`), the apprentice with
+   the lowest `id` among residents sharing that `workplace_building_id`
+   is promoted into the primary occupation (`occupation` updated
+   directly; no seniority/hire-date field exists, so lowest id is used
+   as a deterministic proxy). Otherwise, or if no apprentice exists,
+   `workplace_building_id` is set to `NULL` and the position stays
+   vacant.
+3. **Purchases**: every `purchases` row where this resident is the
    buyer and `purchase_date >= death_date` is reassigned to another
    living adult in the same household (seeded random pick among
    residents sharing `household_id` with `death_date IS NULL` as of
    that date) if one exists, else deleted. Reassignment (not deletion)
    is deliberate — the household's demand for bread doesn't vanish
-   just because this particular buyer is gone.
-3. **Tax payments**: every `tax_payments` row for this resident with
+   just because this particular buyer is gone. **Separately**, if the
+   deceased was a shop's primary occupant: purchases *at that shop*
+   (buyer unrelated to the deceased's own household) after the death
+   date follow a reduced-ceiling redirect ramp if a replacement was
+   promoted (partial falloff, reflecting reduced skill/reputation) or
+   the existing full-redirect ramp if the position stayed vacant (total
+   loss) — reusing scenario 2's ramp shape from `shop-mystery-game`,
+   now as a first-class TownShape primitive instead of a private script.
+4. **Tax payments**: every `tax_payments` row for this resident with
    `payment_date >= death_date` deleted (an individual obligation, not
    household demand — no reassignment).
-4. **Military/school records**: any `military_service` or
+5. **Military/school records**: any `military_service` or
    `school_enrollments` row for this resident with `end_date IS NULL`
    gets `end_date = death_date`.
-5. **Workplace**: `workplace_building_id` set to `NULL`. See "Flagged
-   decision 2" for what happens to the vacancy itself.
 
 ### `mark_resident_ill` cascade
 
@@ -174,44 +191,36 @@ def create_disease_event(
 Sets/creates the row only. See "Flagged decision 1" for why no
 automatic per-resident/per-building cascade ships in this slice.
 
-## Flagged decisions (realism vs. cost — not decided in this doc)
+## Flagged decisions — resolved 2026-08-27
 
 Per standing project guidance: the most realistic option is named
 alongside the recommended default in every case where they diverge, so
 the choice is made deliberately rather than defaulted into silently.
+Both decisions below were raised and resolved before implementation:
 
 **Decision 1 — does `scope_disease_event` cascade to the whole zone?**
-- *Recommended default (this slice)*: no automatic cascade. Only the
-  specific entity you separately edit (e.g. one shop, via a `kill_` or
-  `mark_ill` call) is affected. Cheap, bounded, matches what
-  `shop-mystery-game`'s scenario 3 actually needed.
-- *More realistic alternative*: scoping a disease event to a zone
-  automatically suppresses purchases and elevates death risk for
-  *every* resident and building in that zone — a real outbreak doesn't
-  confine itself to whichever one shop is being investigated. Real
-  cost: a district can hold hundreds of buildings/thousands of
-  residents, so this touches far more rows, needs its own retry/
-  consistency handling, and its runtime scales with zone population.
+**Resolved: no, deferred — out of scope for this slice.** The
+realistic version (an outbreak suppressing purchases and elevating
+death risk for every resident/building in a zone, not just the one
+entity being edited) turned out to be the seed of a much larger
+interest: a *general* mechanism for how an event's effects propagate
+across many entities consistently, of which disease is only one
+instance — natural disaster and war were named as other instances.
+That is now its own separate, larger architectural project (tracked
+outside this spec, likely superseding/absorbing the roadmap's
+capability 2 "safe-mode simulation" rather than living under
+capability 3), including its own visualization-layer needs. This
+slice's `scope_disease_event`/`create_disease_event` ship with no
+automatic cascade, unchanged from the original recommendation, so that
+this slice can ship without waiting on that larger project.
 
 **Decision 2 — does a dead shop-owner's position get filled?**
-- *Recommended default (this slice)*: the workplace is simply vacated
-  (`workplace_building_id = NULL`). The shop has no active primary
-  staffer until something else fills it.
-- *More realistic alternative*: `kill_resident` gains an optional
-  `promote_replacement=True` behavior — if the deceased was a shop's
-  primary occupant (e.g. `blacksmith`, `mage`) and a same-workplace
-  apprentice exists, the senior remaining apprentice is promoted into
-  the primary occupation, and the purchase cascade becomes partial
-  falloff (reduced trade, reflecting reduced skill/reputation) instead
-  of a full loss. More realistic and narratively richer, but adds a
-  second cascade shape (partial vs. total) and a decision about who
-  counts as "senior" among apprentices (no seniority/hire-date concept
-  exists in `town_db` today — would need one, even if just "lowest
-  resident id" as a proxy).
-
-Both are left as **not implemented, not decided** in this first slice;
-this spec's plan should treat them as explicit optional follow-on
-tasks the user can choose to include or skip.
+**Resolved: yes, included in this slice.** `kill_resident` gains the
+optional `promote_replacement` behavior described above. Cheap
+relative to Decision 1 — reuses the same redirect-ramp mechanism
+already needed for the total-loss case, and every current building
+type has only two occupation tiers, so there's no recursive-vacancy
+concern.
 
 ## Testing
 
@@ -229,13 +238,16 @@ project. For each primitive:
 - Reassignment-vs-deletion branches: a synthetic household with >1
   living adult exercises reassignment; a synthetic household with
   exactly 1 living adult exercises deletion.
+- `promote_replacement`: both branches — an apprentice exists (promoted,
+  partial-falloff ramp applies) and none exists (vacancy, full-redirect
+  ramp applies, same as `promote_replacement=False`).
 - Idempotency/error cases: killing an already-dead resident, illness
   windows that overlap an existing illness, a `disease_event_id` that
   doesn't exist.
 
 ## Out of scope, restated
 
-New-entity backfill, zone-wide cascades (Decision 1), replacement
-staffing (Decision 2), and any live/forward simulation remain out of
-scope for this slice unless the user opts into Decision 1/2's
-realistic alternative during planning.
+New-entity backfill, zone-wide cascades (Decision 1 — now tracked as
+its own separate, larger project), and any live/forward simulation
+remain out of scope for this slice. Replacement staffing (Decision 2)
+is in scope, per the resolution above.
