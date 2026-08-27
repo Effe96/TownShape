@@ -109,7 +109,7 @@ CREATE TABLE deaths (
     cause TEXT NOT NULL,
     disease_event_id INTEGER REFERENCES disease_events(id),
     skirmish_event_id INTEGER REFERENCES skirmish_events(id),
-    reported_by_building_id INTEGER NOT NULL REFERENCES buildings(id)
+    reported_by_building_id INTEGER REFERENCES buildings(id)
 );
 
 CREATE TABLE school_enrollments (

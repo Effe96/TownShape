@@ -78,3 +78,63 @@ def mark_resident_ill(
         conn.commit()
     finally:
         conn.close()
+
+
+def _reporting_building_id(conn) -> Optional[int]:
+    temple = conn.execute(
+        "SELECT id FROM buildings WHERE building_type = 'temple' ORDER BY id LIMIT 1"
+    ).fetchone()
+    if temple:
+        return temple[0]
+    healer = conn.execute(
+        "SELECT id FROM buildings WHERE building_type = 'healer' ORDER BY id LIMIT 1"
+    ).fetchone()
+    return healer[0] if healer else None
+
+
+def kill_resident(
+    db_path: str,
+    resident_id: int,
+    death_date: date,
+    cause: str,
+    disease_event_id: Optional[int] = None,
+    skirmish_event_id: Optional[int] = None,
+    promote_replacement: bool = False,
+) -> None:
+    conn = connect(db_path)
+    try:
+        existing_death_date = conn.execute(
+            "SELECT death_date FROM residents WHERE id = ?", (resident_id,)
+        ).fetchone()[0]
+        if existing_death_date is not None:
+            raise ValueError(f"resident {resident_id} already has a death_date ({existing_death_date})")
+
+        reporting_building_id = _reporting_building_id(conn)
+        conn.execute("UPDATE residents SET death_date = ? WHERE id = ?", (death_date.isoformat(), resident_id))
+        conn.execute(
+            "INSERT INTO deaths (resident_id, death_date, cause, disease_event_id, skirmish_event_id, reported_by_building_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (resident_id, death_date.isoformat(), cause, disease_event_id, skirmish_event_id, reporting_building_id),
+        )
+
+        conn.execute("UPDATE residents SET workplace_building_id = NULL WHERE id = ?", (resident_id,))
+
+        rng = random.Random(f"kill-resident-{resident_id}-{death_date.isoformat()}")
+        _reassign_or_delete_buyer_purchases(conn, resident_id, death_date, None, rng)
+
+        conn.execute(
+            "DELETE FROM tax_payments WHERE resident_id = ? AND payment_date >= ?",
+            (resident_id, death_date.isoformat()),
+        )
+        conn.execute(
+            "UPDATE military_service SET end_date = ? WHERE resident_id = ? AND end_date IS NULL",
+            (death_date.isoformat(), resident_id),
+        )
+        conn.execute(
+            "UPDATE school_enrollments SET end_date = ? WHERE resident_id = ? AND end_date IS NULL",
+            (death_date.isoformat(), resident_id),
+        )
+
+        conn.commit()
+    finally:
+        conn.close()
