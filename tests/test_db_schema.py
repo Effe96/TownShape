@@ -4,7 +4,7 @@ from town_db.schema import connect, create_schema
 
 EXPECTED_TABLES = {
     "districts", "buildings", "households", "residents", "goods",
-    "purchases", "tax_payments", "disease_events", "births", "deaths",
+    "purchases", "tax_payments", "disease_events", "illnesses", "births", "deaths",
     "school_enrollments", "military_service", "generation_parameters",
     "water_features", "skirmish_events",
 }
@@ -174,3 +174,27 @@ def test_deaths_skirmish_event_id_accepts_a_value(tmp_path):
     )
     row = conn.execute("SELECT skirmish_event_id FROM deaths WHERE resident_id = 1").fetchone()
     assert row[0] == skirmish_id
+
+
+def test_illnesses_table_accepts_a_row_referencing_a_resident_and_disease_event(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.execute("INSERT INTO households (id, family_name, race) VALUES (1, 'Smith', 'human')")
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses) "
+        "VALUES (1, 1, 'A', 'B', 'male', 'human', '1280-01-01', 'poor')"
+    )
+    conn.execute(
+        "INSERT INTO disease_events (id, name, start_date, end_date, affected_zone_type, severity) "
+        "VALUES (1, 'fever', '1300-01-01', '1300-02-01', NULL, 0.5)"
+    )
+    conn.execute(
+        "INSERT INTO illnesses (resident_id, disease_event_id, start_date, end_date, severity) "
+        "VALUES (1, 1, '1300-01-05', '1300-01-20', 0.5)"
+    )
+    conn.commit()
+
+    row = conn.execute("SELECT resident_id, disease_event_id, start_date, end_date, severity FROM illnesses").fetchone()
+    assert row == (1, 1, "1300-01-05", "1300-01-20", 0.5)
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

@@ -77,6 +77,15 @@ CREATE TABLE disease_events (
     severity REAL NOT NULL
 );
 
+CREATE TABLE illnesses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resident_id INTEGER NOT NULL REFERENCES residents(id),
+    disease_event_id INTEGER REFERENCES disease_events(id),
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    severity REAL NOT NULL
+);
+
 CREATE TABLE skirmish_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
