@@ -210,3 +210,108 @@ def test_kill_resident_raises_if_already_dead(tmp_path):
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def _insert_blacksmith_building(conn, building_id, district_id=1):
+    conn.execute(
+        "INSERT OR IGNORE INTO districts (id, zone_type, polygon) VALUES (?, 'merchant', '[]')",
+        (district_id,),
+    )
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity) "
+        "VALUES (?, ?, 'merchant', 'blacksmith', 0, 0, 3)",
+        (building_id, district_id),
+    )
+
+
+def test_kill_resident_promotes_apprentice_when_requested(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    _insert_household(conn, 1)
+    _insert_household(conn, 2)
+    _insert_blacksmith_building(conn, building_id=1)
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses, "
+        "workplace_building_id, occupation) VALUES (1, 1, 'A', 'B', 'male', 'human', '1260-01-01', 'poor', 1, 'blacksmith')"
+    )
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses, "
+        "workplace_building_id, occupation) VALUES (2, 2, 'C', 'D', 'male', 'human', '1280-01-01', 'poor', 1, 'smith_apprentice')"
+    )
+    conn.commit()
+    conn.close()
+
+    kill_resident(db_path, resident_id=1, death_date=date(1300, 6, 1), cause="accident", promote_replacement=True)
+
+    conn = connect(db_path)
+    promoted_occupation = conn.execute("SELECT occupation FROM residents WHERE id = 2").fetchone()[0]
+    assert promoted_occupation == "blacksmith"
+
+
+def test_kill_resident_leaves_position_vacant_when_no_apprentice_exists(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    _insert_household(conn, 1)
+    _insert_blacksmith_building(conn, building_id=1)
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses, "
+        "workplace_building_id, occupation) VALUES (1, 1, 'A', 'B', 'male', 'human', '1260-01-01', 'poor', 1, 'blacksmith')"
+    )
+    conn.commit()
+    conn.close()
+
+    kill_resident(db_path, resident_id=1, death_date=date(1300, 6, 1), cause="accident", promote_replacement=True)
+
+    conn = connect(db_path)
+    workplace = conn.execute("SELECT workplace_building_id FROM residents WHERE id = 1").fetchone()[0]
+    assert workplace is None
+
+
+def test_kill_resident_shop_ramp_uses_lower_ceiling_when_replacement_promoted(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    _insert_household(conn, 1)
+    _insert_household(conn, 2)
+    _insert_household(conn, 3)
+    _insert_blacksmith_building(conn, building_id=1)
+    conn.execute(
+        "INSERT INTO goods (id, name, category, typical_price, sv) VALUES (1, 'sword', 'weapons', 10.0, 350)"
+    )
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses, "
+        "workplace_building_id, occupation) VALUES (1, 1, 'A', 'B', 'male', 'human', '1260-01-01', 'poor', 1, 'blacksmith')"
+    )
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses, "
+        "workplace_building_id, occupation) VALUES (2, 2, 'C', 'D', 'male', 'human', '1280-01-01', 'poor', 1, 'smith_apprentice')"
+    )
+    conn.execute(
+        "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses) "
+        "VALUES (3, 3, 'E', 'F', 'male', 'human', '1270-01-01', 'poor')"
+    )
+    # 200 far-future purchases at the shop by an unrelated customer (resident 3), so the redirect
+    # ramp has enough volume for its ceiling to show up as a clear statistical difference.
+    for i in range(200):
+        conn.execute(
+            "INSERT INTO purchases (id, resident_id, shop_building_id, good_id, quantity, unit_price, total_price, purchase_date) "
+            "VALUES (?, 3, 1, 1, 1, 10.0, 10.0, '1300-11-01')",
+            (i + 1,),
+        )
+    conn.commit()
+    conn.close()
+
+    kill_resident(db_path, resident_id=1, death_date=date(1300, 6, 1), cause="accident", promote_replacement=True)
+
+    conn = connect(db_path)
+    remaining_at_shop = conn.execute(
+        "SELECT COUNT(*) FROM purchases WHERE shop_building_id = 1 AND purchase_date = '1300-11-01'"
+    ).fetchone()[0]
+    # 153 days after a 1300-06-01 death exceeds the 120-day ramp, so the chance is pinned at the
+    # ceiling for every purchase. With the fixed seed _apply_shop_reputation_ramp derives for this
+    # resident/death_date, running the actual RNG sequence gives exactly 136 of 200 remaining at
+    # the 0.30 (replaced) ceiling -- versus 73 remaining if the 0.65 (vacant) ceiling had applied
+    # instead, confirming promote_replacement genuinely changes which ceiling is used.
+    assert remaining_at_shop == 136

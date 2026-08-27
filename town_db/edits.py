@@ -1,10 +1,15 @@
 # town_db/edits.py
 import random
 from datetime import date
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from town_db.ages import ADULT_AGE_RANGE, age_on
 from town_db.schema import connect
+from town_shaper.buildings import JOB_VACANCIES_BY_BUILDING_TYPE
+
+SHOP_LOSS_CEILING_VACANT = 0.65
+SHOP_LOSS_CEILING_REPLACED = 0.30
+SHOP_LOSS_RAMP_DAYS = 120
 
 
 def _living_adult_household_members(conn, resident_id: int, on_date: date) -> List[int]:
@@ -47,6 +52,55 @@ def _reassign_or_delete_buyer_purchases(
             conn.execute("UPDATE purchases SET resident_id = ? WHERE id = ?", (new_buyer, purchase_id))
         else:
             conn.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
+
+
+def _primary_occupation_info(building_type: Optional[str], occupation: Optional[str]) -> Tuple[bool, Optional[str]]:
+    if building_type is None:
+        return False, None
+    roles = JOB_VACANCIES_BY_BUILDING_TYPE.get(building_type, [])
+    primary_roles = [name for name, capacity in roles if capacity == 1]
+    if len(primary_roles) != 1 or occupation != primary_roles[0]:
+        return False, None
+    apprentice_roles = [name for name, _ in roles if name != primary_roles[0]]
+    return True, (apprentice_roles[0] if apprentice_roles else None)
+
+
+def _promote_apprentice(conn, workplace_id, apprentice_occupation, primary_occupation) -> Optional[int]:
+    if apprentice_occupation is None:
+        return None
+    candidate = conn.execute(
+        "SELECT id FROM residents WHERE workplace_building_id = ? AND occupation = ? AND death_date IS NULL "
+        "ORDER BY id LIMIT 1",
+        (workplace_id, apprentice_occupation),
+    ).fetchone()
+    if candidate is None:
+        return None
+    promoted_id = candidate[0]
+    conn.execute("UPDATE residents SET occupation = ? WHERE id = ?", (primary_occupation, promoted_id))
+    return promoted_id
+
+
+def _apply_shop_reputation_ramp(conn, shop_building_id, from_date, ceiling, rng) -> None:
+    other_shops = [
+        row[0] for row in conn.execute(
+            "SELECT b2.id FROM buildings b1 JOIN buildings b2 ON b2.building_type = b1.building_type "
+            "WHERE b1.id = ? AND b2.id != ?",
+            (shop_building_id, shop_building_id),
+        ).fetchall()
+    ]
+    rows = conn.execute(
+        "SELECT id, purchase_date FROM purchases WHERE shop_building_id = ? AND purchase_date >= ? ORDER BY id",
+        (shop_building_id, from_date.isoformat()),
+    ).fetchall()
+    for purchase_id, purchase_date in rows:
+        days_since = (date.fromisoformat(purchase_date) - from_date).days
+        chance = min(ceiling, days_since / SHOP_LOSS_RAMP_DAYS * ceiling)
+        if rng.random() < chance:
+            if other_shops:
+                dest = rng.choice(other_shops)
+                conn.execute("UPDATE purchases SET shop_building_id = ? WHERE id = ?", (dest, purchase_id))
+            else:
+                conn.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
 
 
 def mark_resident_ill(
@@ -117,10 +171,26 @@ def kill_resident(
             (resident_id, death_date.isoformat(), cause, disease_event_id, skirmish_event_id, reporting_building_id),
         )
 
+        workplace_id, occupation, building_type = conn.execute(
+            "SELECT r.workplace_building_id, r.occupation, b.building_type FROM residents r "
+            "LEFT JOIN buildings b ON b.id = r.workplace_building_id WHERE r.id = ?",
+            (resident_id,),
+        ).fetchone()
+
+        is_primary, apprentice_occupation = _primary_occupation_info(building_type, occupation)
+        promoted_id = None
+        if is_primary and promote_replacement:
+            promoted_id = _promote_apprentice(conn, workplace_id, apprentice_occupation, occupation)
+
         conn.execute("UPDATE residents SET workplace_building_id = NULL WHERE id = ?", (resident_id,))
 
         rng = random.Random(f"kill-resident-{resident_id}-{death_date.isoformat()}")
         _reassign_or_delete_buyer_purchases(conn, resident_id, death_date, None, rng)
+
+        if is_primary:
+            shop_rng = random.Random(f"kill-resident-shop-ramp-{resident_id}-{death_date.isoformat()}")
+            ceiling = SHOP_LOSS_CEILING_REPLACED if promoted_id is not None else SHOP_LOSS_CEILING_VACANT
+            _apply_shop_reputation_ramp(conn, workplace_id, death_date, ceiling, shop_rng)
 
         conn.execute(
             "DELETE FROM tax_payments WHERE resident_id = ? AND payment_date >= ?",
