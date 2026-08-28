@@ -57,15 +57,35 @@ any narrative/creative-mode interaction (this is the safe-mode path only
 ```sql
 CREATE TABLE town_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    current_date TEXT NOT NULL
+    year_start TEXT NOT NULL,
+    current_date TEXT NOT NULL,
+    aggression REAL NOT NULL,
+    magic_prevalence REAL NOT NULL
 );
 ```
 
-Singleton row, same convention as `generation_parameters`. Tracks "as of
-what date is this town's data." `generate_town_database` inserts the
-initial row at `year_start + 1 year` (the end of the year it already
-generates) — this is a pure persistence addition, no behavior change to
-existing generation. `advance_town` reads and updates it.
+Singleton row, same convention as `generation_parameters`. **Deliberately
+independent of `generation_parameters`**: `generation_parameters` is only
+ever written by `town_narrative.generate_town_from_parameters` (confirmed
+by reading `town_narrative/generate.py` directly) — `town_db.generate_town_database`,
+which is what actually needs to persist this data, is regularly called
+directly with no `town_narrative` involvement at all (every test in
+`tests/test_db_generate.py` does exactly this), so a database can easily
+have no `generation_parameters` row. `town_state` is written unconditionally
+by `generate_town_database` itself instead, so `advance_town` never depends
+on whether the narrative layer was used.
+
+`year_start` is immutable (the town's original generation start date, for
+deriving `year_index` — see Orchestration below); `current_date` is "as of
+what date is this town's data," mutated by `advance_town`. `aggression`/
+`magic_prevalence` are copied from `generate_town_database`'s own
+parameters (which it already receives) so `advance_town` can re-drive
+`generate_skirmish_events`/`generate_purchases` without any dependency on
+`generation_parameters`. `generate_town_database` inserts this row (year_start
+value it already has as a parameter; `current_date = year_start + 1 year`,
+the end of the year it already generates) — a pure persistence addition,
+no behavior change to existing generation. `advance_town` reads and updates
+`current_date`.
 
 ### `households` table — no schema change
 
@@ -97,7 +117,7 @@ For each of `years` iterations:
    1. `generate_disease_events(year_seed, year_start)`,
       `generate_skirmish_events(year_seed, year_start, aggression)` —
       reused as-is, reading `aggression`/`magic_prevalence` back out of
-      `generation_parameters`.
+      `town_state` (not `generation_parameters` — see Data Model above).
    2. `generate_births_and_deaths(...)`, skirmish casualties — reused as-is,
       against the currently-living population.
    3. **New**: `generate_household_formations(conn, year_seed, year_start,
@@ -117,17 +137,8 @@ For each of `years` iterations:
 **Implementation note on `year_index`**: rather than adding a new
 `elapsed_years` counter column (extra state to keep in sync), `year_index`
 is computed at the start of each iteration as `(town_state.current_date -
-generation_parameters.year_start).days // 365`. Since
-`generate_town_database` does not currently persist its own `year_start`
-value, this spec adds one column to close that gap:
-
-```sql
-ALTER TABLE generation_parameters ADD COLUMN year_start TEXT NOT NULL DEFAULT '1300-01-01';
-```
-
-(`generate_town_database` already receives `year_start` as a parameter —
-this just also records it, matching the existing pattern of
-`generation_parameters` recording every generation-time input.)
+town_state.year_start).days // 365`, both columns read from the same
+`town_state` row (no dependency on `generation_parameters`).
 
 ## Household Formation (`town_db/household_formation.py`)
 
@@ -286,9 +297,8 @@ sweeps, not one seed:
   database state across two independent runs from the same starting DB.
 - **Backward compatibility**: `generate_town_database` with no
   `advance_town` call ever made reproduces current exact behavior for a
-  fixed seed (the only change is the additional `town_state`/
-  `generation_parameters.year_start` rows, not any existing table's
-  content).
+  fixed seed (the only change is the additional `town_state` row, not any
+  existing table's content).
 
 ## Out of Scope for This Spec
 
