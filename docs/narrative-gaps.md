@@ -219,6 +219,30 @@ User's guidance: disease/illness should be treated as a normal, ongoing
 part of daily life, not just a rare special event. Flagged by the user as
 a more urgent issue than most entries in this log.
 
+## 2026-08-28 — capability 2 (safe-mode simulation) brainstorm
+
+Source: design discussion for the year-advance orchestrator (capability 2,
+slice 1), before any implementation started.
+
+### Gap: town's physical footprint (building stock) is fixed at generation, can't grow or shrink
+
+**Status:** Deferred — explicitly raised and set aside during the capability
+2 design discussion, to come back to later.
+
+`town_shaper` lays out districts and buildings once, at town creation. As
+capability 2's year-advance orchestrator simulates a town forward over many
+years, population can grow or shrink (births/deaths/household formation),
+but no mechanism adds new buildings/districts or removes them — the
+building stock is a permanent ceiling/floor. Slice 1's design deliberately
+handles this with a *soft cap*: when housing is full, new-household
+formation slows/pauses rather than overflowing or growing the town, and
+unfilled job vacancies are treated as normal economic slack rather than an
+error. A future slice may need the town to physically grow or contract
+(new construction, abandoned/demolished buildings) for long-run simulation
+to stay realistic, but that pulls `town_shaper`'s building-placement logic
+into a simulation context it wasn't designed for, and was judged too big
+for slice 1.
+
 ### Gap: no grandparent (or other multi-generational/extended-family) relationship exists
 
 **Status:** Open
