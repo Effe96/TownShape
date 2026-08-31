@@ -83,15 +83,12 @@ is merged.
 
 ### T01: `town_state` schema table
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Samwise1
-- **Handoff Notes:** Done — PR #3 open
-  (https://github.com/Effe96/TownShape/pull/3, branch
-  `t01-town-state-schema`). `town_state` singleton table added to
-  `town_db/schema.py`; `EXPECTED_TABLES` + 2 new tests in
-  `tests/test_db_schema.py`. Full suite 323 passed. One plan-drift finding
-  (`current_date` SQLite keyword collision) — see `LOG.md` + Director Notes;
-  reads must quote the identifier. Unblocks T02 once merged.
+- **Handoff Notes:** Merged via PR #3 (squash, `Agent: Samwise1`). `town_state`
+  singleton table in `town_db/schema.py`. Plan-drift finding
+  (`current_date` SQLite keyword collision — reads must quote the
+  identifier) stands, see `LOG.md` + Director Notes. T02 is now unblocked.
 
 ### T02: Extract `town_db/persistence.py`, wire `town_state` into `generate_town_database`
 
@@ -117,32 +114,21 @@ is merged.
 
 ### T04: Extract `town_db/succession.py`
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Frodo
-- **Handoff Notes:** Done — PR open at
-  https://github.com/Effe96/TownShape/pull/1 (branch
-  `t04-succession-extract`). `town_db/succession.py` created,
-  `town_db/edits.py` now imports `primary_occupation_info`/
-  `promote_apprentice` from it under the same private names. All 18
-  existing `test_db_edits.py` tests + 5 new `test_db_succession.py`
-  tests pass; full suite (326 tests) green. Waiting on Frodo's own
-  Integrate-mode pass before this can be set to `done` — T06 can start
-  once it merges.
+- **Handoff Notes:** Merged via PR #1 (squash, `Agent: Frodo`).
+  `town_db/succession.py` created; `town_db/edits.py` imports
+  `primary_occupation_info`/`promote_apprentice` from it under the same
+  private names. T06 is now unblocked.
 
 ### T05: Household formation (`town_db/household_formation.py`)
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Frodo
-- **Handoff Notes:** Done — PR open at
-  https://github.com/Effe96/TownShape/pull/2 (branch
-  `t05-household-formation`). Two real bugs found and fixed in the
-  plan's own speculative reference code along the way — see `LOG.md`
-  for the full writeup, short version: the spouse-candidate pool
-  excluded lone single adults (making the plan's own test fixture
-  unsatisfiable) and the plan's hard-coded test seed never actually
-  fires the formation roll for this call path. All 4 new tests +
-  full suite (325 on this branch's pre-T04 base) pass. Waiting on
-  Integrate mode before `done`.
+- **Handoff Notes:** Merged via PR #2 (squash, `Agent: Frodo`).
+  `town_db/household_formation.py` — two real bugs fixed vs. the plan's
+  speculative reference code (spouse-eligibility gap, dead test seed),
+  see `LOG.md` for the full writeup.
 
 ### T06: Job market (`town_db/job_market.py`)
 

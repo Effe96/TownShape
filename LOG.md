@@ -12,6 +12,21 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-08-31 — Frodo — Integrate pass: T01, T04, T05 merged
+
+Ran an Integrate pass on PRs #1 (T04), #2 (T05), #3 (T01) — all three
+matched their `CONTRACTS.md` File / Module Ownership exactly, none
+touched `TASKS.md`/`CONTRACTS.md`/`LOG.md`/`CLAUDE.md`, no PR
+comments to flag. `gitleaks` isn't installed on this machine, so the
+secret scan was manual review instead of tooling (nothing found);
+skipped the optional `claude-security` pass given how small and
+low-risk these diffs are. Independently re-ran the full suite on each
+branch before proposing the merge, then again on merged `main`
+afterward: 332 passed (321 baseline + 2 T01 + 5 T04 + 4 T05), confirming
+a clean combine with no cross-task regressions. Merged in order T01 →
+T04 → T05 (squash, each keeping its actual author's `Agent:` trailer).
+T02 and T06 are now unblocked.
+
 ## 2026-08-31 — Samwise1 — T01: `town_state.current_date` collides with the SQLite `CURRENT_DATE` keyword
 
 The plan's Task 1 names a `town_state` column `current_date`. `current_date`
