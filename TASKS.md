@@ -132,11 +132,13 @@ is merged.
 
 ### T06: Job market (`town_db/job_market.py`)
 
-- **Status:** in-progress
+- **Status:** done
 - **Owner:** Frodo
-- **Handoff Notes:** Plan section "Task 6". Depends on T04
-  (`town_db.succession.primary_occupation_info` / `promote_apprentice`)
-  being merged first. Add `tests/test_db_job_market.py`.
+- **Handoff Notes:** Merged via PR #4 (squash, `Agent: Frodo`). Matched
+  the plan's reference code exactly — no drift found this time. Full
+  suite green on merged `main` (335 passed). T07 is still **blocked**
+  on T02 and T03 (Samwise1's remaining Stream A tasks) — all of Stream
+  B (T04–T06) is now merged.
 
 ### T07: Orchestrator (`town_db/simulation.py`)
 
