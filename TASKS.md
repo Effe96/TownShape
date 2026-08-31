@@ -167,21 +167,12 @@ is merged.
 
 ### T07: Orchestrator (`town_db/simulation.py`)
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Frodo
-- **Handoff Notes:** Done — PR #6 open
-  (https://github.com/Effe96/TownShape/pull/6, branch
-  `t07-simulation-orchestrator`). Verified every generator/persistence
-  signature this task depends on against the actual codebase before
-  writing — all matched the plan exactly (the suspected
-  `generate_births_and_deaths` drift didn't materialize: its
-  `birth_rate`/`death_rate_by_age` params have defaults, and
-  `advance_town`'s own signature has no way to pass originals through
-  anyway — an inherent scope limit of this slice, not a bug). Only real
-  drift was the already-known `current_date` keyword collision — fixed
-  proactively, every read quoted. All 6 new tests + full suite (346
-  passed) pass. Waiting on Integrate mode before `done` — T08 can start
-  once it merges.
+- **Handoff Notes:** Merged via PR #6 (squash, `Agent: Frodo`).
+  `town_db.simulation.advance_town(db_path, seed, years=1)` ties
+  T01–T06 together. Full suite green on merged `main` (346 passed).
+  **T08 is now unblocked — last task on the board.**
 
 ### T08: Integration tests — seed sweep, determinism, data integrity
 
