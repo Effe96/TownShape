@@ -6,7 +6,7 @@ EXPECTED_TABLES = {
     "districts", "buildings", "households", "residents", "goods",
     "purchases", "tax_payments", "disease_events", "illnesses", "births", "deaths",
     "school_enrollments", "military_service", "generation_parameters",
-    "water_features", "skirmish_events",
+    "water_features", "skirmish_events", "town_state",
 }
 
 
@@ -174,6 +174,42 @@ def test_deaths_skirmish_event_id_accepts_a_value(tmp_path):
     )
     row = conn.execute("SELECT skirmish_event_id FROM deaths WHERE resident_id = 1").fetchone()
     assert row[0] == skirmish_id
+
+
+def test_town_state_accepts_a_row(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO town_state (id, year_start, current_date, aggression, magic_prevalence) "
+        "VALUES (1, ?, ?, ?, ?)",
+        ("1300-01-01", "1301-01-01", 0.2, 0.1),
+    )
+    conn.commit()
+    # NOTE: `current_date` is a SQLite keyword (CURRENT_DATE); a bare reference to it in a
+    # result-column list evaluates to today's date, not this column. Every *read* of this
+    # column must quote the identifier. Writes (INSERT column list, UPDATE SET) are unaffected.
+    row = conn.execute(
+        'SELECT year_start, "current_date", aggression, magic_prevalence FROM town_state WHERE id = 1'
+    ).fetchone()
+    assert row == ("1300-01-01", "1301-01-01", 0.2, 0.1)
+
+
+def test_town_state_enforces_singleton(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO town_state (id, year_start, current_date, aggression, magic_prevalence) "
+        "VALUES (1, '1300-01-01', '1301-01-01', 0.0, 0.0)"
+    )
+    conn.commit()
+    try:
+        conn.execute(
+            "INSERT INTO town_state (id, year_start, current_date, aggression, magic_prevalence) "
+            "VALUES (2, '1300-01-01', '1301-01-01', 0.0, 0.0)"
+        )
+        assert False, "expected a CHECK constraint violation"
+    except sqlite3.IntegrityError:
+        pass
 
 
 def test_illnesses_table_accepts_a_row_referencing_a_resident_and_disease_event(tmp_path):

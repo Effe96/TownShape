@@ -149,6 +149,14 @@ CREATE TABLE water_features (
     kind TEXT NOT NULL,
     polygon TEXT NOT NULL
 );
+
+CREATE TABLE town_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    year_start TEXT NOT NULL,
+    current_date TEXT NOT NULL,
+    aggression REAL NOT NULL,
+    magic_prevalence REAL NOT NULL
+);
 """
 
 
