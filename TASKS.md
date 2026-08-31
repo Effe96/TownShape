@@ -176,20 +176,28 @@ is merged.
 
 ### T08: Integration tests — seed sweep, determinism, data integrity
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Frodo
-- **Handoff Notes:** Done — PR #7 open
-  (https://github.com/Effe96/TownShape/pull/7, branch
-  `t08-simulation-integration`). This task's determinism test caught a
-  **real bug in already-merged T07 code**: `advance_town`'s `year_seed`
-  was a `random.Random` *instance* passed as a seed to every downstream
-  generator, whose `repr()` embeds a memory address — silently
-  non-reproducible across process runs, despite every T07 unit test
-  passing. Fixed in `town_db/simulation.py` (`year_seed` is now a plain
-  tuple). Also fixed the plan's own household-formation-relationship
-  test, which assumed a new household stays at exactly 2 members
-  forever — doesn't account for children born to the couple within the
-  simulated years. Full details in `LOG.md`. All 3 new tests + full
-  suite (349 passed) pass. Last task — once merged, post the "Final
-  whole-tree review and test" task per `CLAUDE.md`'s Team-mode
-  protocol.
+- **Handoff Notes:** Merged via PR #7 (squash, `Agent: Frodo`). Caught
+  and fixed a real determinism bug in already-merged T07 code
+  (`advance_town`'s `year_seed` was a `random.Random` instance, not a
+  plain hashable value — see `LOG.md` for the full writeup). Full suite
+  green on merged `main` (349 passed). **All 8 tasks (T01–T08) are now
+  `done`.**
+
+### T09: Final whole-tree review and test
+
+- **Status:** unclaimed
+- **Owner:** —
+- **Handoff Notes:** All 8 tasks (T01–T08) merged to `main`, full suite
+  green (349 passed). Per `CLAUDE.md`'s Team-mode protocol: claim this
+  by stating your rough remaining-budget tier (high/medium/low) —
+  whoever states the highest tier among interested collaborators takes
+  it, or first-push-wins if nobody states one. Scope: a whole-tree
+  review of the merged capability-2-slice-1 work (not just a re-run of
+  the suite, which is already green) — read `docs/superpowers/specs/2026-08-28-town-year-advance-design.md`
+  against what actually landed, sanity-check the plan-drift fixes noted
+  across `LOG.md` (the `current_date` keyword collision, T05's
+  spouse-pool fix, T03's `schema.py` deviation, T07/T08's determinism
+  fix) are consistent with each other and with `CONTRACTS.md`, and spot
+  anything that fell through the cracks of the individual task reviews.
