@@ -90,12 +90,18 @@ is merged.
 
 ### T05: Household formation (`town_db/household_formation.py`)
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Owner:** Frodo
-- **Handoff Notes:** Plan section "Task 5". New file, no dependency on
-  T04 — can be done before or after it. Uses `town_db.ages`,
-  `town_db.names.draw_surname`, `town_shaper.seeding.rng_for`. Add
-  `tests/test_db_household_formation.py`.
+- **Handoff Notes:** Done — PR open at
+  https://github.com/Effe96/TownShape/pull/2 (branch
+  `t05-household-formation`). Two real bugs found and fixed in the
+  plan's own speculative reference code along the way — see `LOG.md`
+  for the full writeup, short version: the spouse-candidate pool
+  excluded lone single adults (making the plan's own test fixture
+  unsatisfiable) and the plan's hard-coded test seed never actually
+  fires the formation roll for this call path. All 4 new tests +
+  full suite (325 on this branch's pre-T04 base) pass. Waiting on
+  Integrate mode before `done`.
 
 ### T06: Job market (`town_db/job_market.py`)
 
