@@ -176,10 +176,11 @@ is merged.
 
 ### T08: Integration tests — seed sweep, determinism, data integrity
 
-- **Status:** claimed
-- **Owner:** Samwise1
-- **Handoff Notes:** Plan section "Task 8". **Blocked until T07 is
-  merged.** Add `tests/test_db_simulation_integration.py` — seed-swept
+- **Status:** in-progress
+- **Owner:** Frodo
+- **Handoff Notes:** Reassigned from Samwise1 to Frodo (Samwise1 hadn't
+  started it — no lost work). Plan section "Task 8". Unblocked now that
+  T07 is merged. Add `tests/test_db_simulation_integration.py` — seed-swept
   multi-year `advance_town` runs checking FK integrity, no post-death
   purchases/taxes, no duplicate relationships/deaths. If the household-
   formation spouse-relationship test doesn't reliably trigger a formation
