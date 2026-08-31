@@ -132,7 +132,7 @@ is merged.
 
 ### T06: Job market (`town_db/job_market.py`)
 
-- **Status:** claimed
+- **Status:** in-progress
 - **Owner:** Frodo
 - **Handoff Notes:** Plan section "Task 6". Depends on T04
   (`town_db.succession.primary_occupation_info` / `promote_apprentice`)
