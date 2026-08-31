@@ -16,6 +16,8 @@ def derive_unit_mate_relationships(military_service: List[Dict[str, Any]]) -> Li
         for i in range(len(records)):
             for j in range(i + 1, len(records)):
                 a, b = records[i], records[j]
+                if a["resident_id"] == b["resident_id"]:
+                    continue
                 overlap = dates_overlap(a["start_date"], a["end_date"], b["start_date"], b["end_date"])
                 if overlap is None:
                     continue
