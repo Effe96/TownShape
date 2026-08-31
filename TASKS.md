@@ -46,11 +46,11 @@ is merged.
 
 ### T01: `town_state` schema table
 
-- **Status:** claimed
+- **Status:** in-progress
 - **Owner:** Samwise1
 - **Handoff Notes:** Plan section "Task 1". Modify `town_db/schema.py`,
   extend `tests/test_db_schema.py` (incl. `EXPECTED_TABLES`). Trivial,
-  first task in Stream A — unblocks T02.
+  first task in Stream A — unblocks T02. Branch `t01-town-state-schema`.
 
 ### T02: Extract `town_db/persistence.py`, wire `town_state` into `generate_town_database`
 
