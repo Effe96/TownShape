@@ -76,14 +76,17 @@ is merged.
 
 ### T04: Extract `town_db/succession.py`
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Owner:** Frodo
-- **Handoff Notes:** Plan section "Task 4". Creates
-  `town_db/succession.py`, modifies `town_db/edits.py` (removes the
-  duplicated private helpers, imports the extracted versions instead),
-  adds `tests/test_db_succession.py`. Run `tests/test_db_edits.py`
-  alongside the new tests — regression guard for the extraction. First
-  task in Stream B — unblocks T06.
+- **Handoff Notes:** Done — PR open at
+  https://github.com/Effe96/TownShape/pull/1 (branch
+  `t04-succession-extract`). `town_db/succession.py` created,
+  `town_db/edits.py` now imports `primary_occupation_info`/
+  `promote_apprentice` from it under the same private names. All 18
+  existing `test_db_edits.py` tests + 5 new `test_db_succession.py`
+  tests pass; full suite (326 tests) green. Waiting on Frodo's own
+  Integrate-mode pass before this can be set to `done` — T06 can start
+  once it merges.
 
 ### T05: Household formation (`town_db/household_formation.py`)
 
