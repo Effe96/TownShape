@@ -76,7 +76,7 @@ is merged.
 
 ### T04: Extract `town_db/succession.py`
 
-- **Status:** claimed
+- **Status:** in-progress
 - **Owner:** Frodo
 - **Handoff Notes:** Plan section "Task 4". Creates
   `town_db/succession.py`, modifies `town_db/edits.py` (removes the
