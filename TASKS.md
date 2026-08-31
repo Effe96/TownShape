@@ -176,15 +176,20 @@ is merged.
 
 ### T08: Integration tests — seed sweep, determinism, data integrity
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Owner:** Frodo
-- **Handoff Notes:** Reassigned from Samwise1 to Frodo (Samwise1 hadn't
-  started it — no lost work). Plan section "Task 8". Unblocked now that
-  T07 is merged. Add `tests/test_db_simulation_integration.py` — seed-swept
-  multi-year `advance_town` runs checking FK integrity, no post-death
-  purchases/taxes, no duplicate relationships/deaths. If the household-
-  formation spouse-relationship test doesn't reliably trigger a formation
-  at the given population/seed/year-count, raise `target_population`
-  and/or `years` per the plan's note rather than weakening the assertion.
-  Last task — once merged, post the "Final whole-tree review and test"
-  task per `CLAUDE.md`'s Team-mode protocol.
+- **Handoff Notes:** Done — PR #7 open
+  (https://github.com/Effe96/TownShape/pull/7, branch
+  `t08-simulation-integration`). This task's determinism test caught a
+  **real bug in already-merged T07 code**: `advance_town`'s `year_seed`
+  was a `random.Random` *instance* passed as a seed to every downstream
+  generator, whose `repr()` embeds a memory address — silently
+  non-reproducible across process runs, despite every T07 unit test
+  passing. Fixed in `town_db/simulation.py` (`year_seed` is now a plain
+  tuple). Also fixed the plan's own household-formation-relationship
+  test, which assumed a new household stays at exactly 2 members
+  forever — doesn't account for children born to the couple within the
+  simulated years. Full details in `LOG.md`. All 3 new tests + full
+  suite (349 passed) pass. Last task — once merged, post the "Final
+  whole-tree review and test" task per `CLAUDE.md`'s Team-mode
+  protocol.

@@ -12,6 +12,61 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-08-31 — Frodo — T08: caught a real non-determinism bug in already-merged T07 code
+
+T08 was reassigned from Samwise1 to Frodo (owner's call, no work lost —
+Samwise1 hadn't started it). Its whole purpose — catching cross-run
+issues that per-task unit tests structurally can't see — paid off
+immediately.
+
+**The bug:** `town_db/simulation.py`'s `advance_town` did
+`year_seed = rng_for(seed, "town_state", "year", year_index)`. `rng_for`
+*returns* a `random.Random` instance — but `year_seed` was then passed
+as the `seed` argument into every downstream generator
+(`generate_disease_events`, `generate_births_and_deaths`,
+`generate_household_formations`, `generate_purchases`, etc.), each of
+which re-derives its own RNG via its own `rng_for(seed, ...)` call.
+`rng_for`/`derive_seed` hashes `repr(base_seed)` — and a `random.Random`
+object's `repr()` embeds its memory address
+(`<random.Random object at 0x...>`), which differs on every process
+run. So every generator downstream of that line was silently seeded
+non-reproducibly, and no unit test caught it: T07's own tests all ran
+`advance_town` exactly once per test, never comparing two independent
+invocations. `test_advance_town_is_deterministic` does exactly that,
+and failed immediately — two identically-seeded 3-year advances
+diverged starting in year 1 (421 vs. 426 residents, different deaths,
+different household assignments for the same resident id).
+
+Repro'd directly (`rng_for(('town', 7), 'town_state', 'year', 0)` prints
+a different memory address every interpreter run) and confirmed the fix
+with a standalone before/after script: pre-fix, two runs' `residents`
+tables diverged after 1 year; post-fix, all 9 compared tables (`residents`,
+`households`, `purchases`, `tax_payments`, `births`, `deaths`,
+`skirmish_events`, `relationships`, `shop_relationships`) were
+byte-identical across a 3-year advance.
+
+**Fix:** `year_seed = (seed, "town_state", "year", year_index)` — a
+plain hashable tuple, not an `rng_for(...)` return value. The now-unused
+`rng_for` import was removed from `town_db/simulation.py`.
+
+**Second bug, in the plan's own test:** `test_household_formation_produces_spouse_not_household_member_relationship`
+assumed a newly-formed household always has exactly its founding two
+members. It doesn't account for children born to that couple within the
+remaining simulated years — they join the same `household_id` as
+infants. Root cause of the actual failure: a child's autoincremented id
+happened to numerically sort *between* its two parents' ids, so the
+test's naive "sort all household members, take the first two" picked
+the wrong pair and checked for a `spouse` relationship between a parent
+and their child instead of between the two parents. Fixed by identifying
+the household's adults via `age_on(..., reference_date) >=
+ADULT_AGE_RANGE[0]` (reading `town_state`'s `current_date`, quoted) at
+verification time, rather than assuming household size stays at 2.
+
+If you're implementing anything from this plan and hit unexplained
+non-determinism or a wrong-looking assertion, check whether the plan's
+own code/tests are the actual bug before assuming yours is — this is
+now three tasks (T05, T08's test, and T07 via T08) where they were.
+
 ## 2026-08-31 — Frodo — T02+T03 (PR #5) merged; Stream A + Stream B both complete
 
 Independently re-verified PR #5 (full suite 340 passed on the branch,
