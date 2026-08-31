@@ -8,6 +8,15 @@ _(`in-review` is used in Team mode: the work is finished on a branch, a PR is op
 
 _(Director-mode passes post findings here — overlapping claims, stale claims, contract drift. Empty until a Director pass has run. Newest note on top.)_
 
+- **2026-08-31 (Samwise1, from T03):** Plan Task 3's idempotency fix is
+  incomplete — `create_relationships_schema` uses bare `CREATE TABLE`, so a
+  second `derive_relationships` call crashes there before the plan's new
+  `DELETE`s run. PR #5 adds `IF NOT EXISTS` to both tables in
+  `town_relationships/schema.py` (its only caller is `derive_relationships`
+  + the schema tests, all still green). That file is **not** in T03's
+  `CONTRACTS.md` ownership row — flagging the deviation; no other task
+  touches `town_relationships/`. Full note in `LOG.md`.
+
 - **2026-08-31 (Director pass):** Reviewed `TASKS.md`, `CONTRACTS.md`, and
   commits through `9f7d592`. No overlapping claims, no stale
   `claimed`/`in-progress` tasks, no stuck `handoff-requested` tasks. All
@@ -92,25 +101,28 @@ is merged.
 
 ### T02: Extract `town_db/persistence.py`, wire `town_state` into `generate_town_database`
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Owner:** Samwise1
-- **Handoff Notes:** Plan section "Task 2". T01 merged — `town_state`
-  table is on `main`. Branch `t02-persistence` (T03 rides the same
-  branch). Create `town_db/persistence.py`, modify `town_db/generate.py`
-  (full replacement given in the plan), add `tests/test_db_persistence.py`,
-  extend `tests/test_db_generate.py`. Quote `current_date` in the new
-  `town_state` read tests (plan-drift finding). Run the *entire* suite
-  before opening the PR — every `town_db` test transitively depends on
-  `generate_town_database`.
+- **Handoff Notes:** Done — PR #5 open
+  (https://github.com/Effe96/TownShape/pull/5, branch `t02-persistence`,
+  shared with T03). `town_db/persistence.py` holds all nine `insert_*`
+  helpers; `town_db/generate.py` calls them, drops the local
+  `_insert_residents`, adds `YEAR_LENGTH_DAYS = 365`, and writes the
+  `town_state` row. New `tests/test_db_persistence.py` (2) + 2 in
+  `tests/test_db_generate.py` (`current_date` read quoted). Full suite
+  340 passed.
 
 ### T03: Make `derive_relationships` idempotent
 
-- **Status:** claimed
+- **Status:** in-review
 - **Owner:** Samwise1
-- **Handoff Notes:** Plan section "Task 3". Independent of T01/T02's
-  content (touches `town_relationships/generate.py` only) but keep it on
-  the same branch/PR sequence as T01→T02 to avoid a second Stream-A
-  owner. Small — two `DELETE` statements plus a test.
+- **Handoff Notes:** Done — same PR #5 (branch `t02-persistence`).
+  `DELETE`s added in `town_relationships/generate.py`; plan's fix was
+  incomplete so `IF NOT EXISTS` also added to
+  `town_relationships/schema.py` (deviation from T03's ownership row —
+  see Director Notes / `LOG.md`). New idempotency test. Full suite
+  340 passed. With T05/T06 merged, T07's prerequisites are all in
+  review once PR #5 lands.
 
 ### T04: Extract `town_db/succession.py`
 

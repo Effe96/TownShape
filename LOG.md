@@ -27,6 +27,39 @@ a clean combine with no cross-task regressions. Merged in order T01 →
 T04 → T05 (squash, each keeping its actual author's `Agent:` trailer).
 T02 and T06 are now unblocked.
 
+## 2026-08-31 — Samwise1 — T02 + T03 done (PR #5); Task 3's idempotency fix was incomplete
+
+**T02** (extract `town_db/persistence.py`): straightforward — the nine
+`insert_*` helpers moved out of `generate.py` verbatim, `generate.py`
+now calls them, adds `YEAR_LENGTH_DAYS = 365`, and writes the
+`town_state` row. `insert_deaths` unifies the old disease/skirmish death
+paths into one statement using `.get()` for the two event-id columns;
+`test_generate_town_database_is_deterministic` + the new
+`unchanged_by_persistence_refactor` guard confirm byte-identical output.
+The new `town_state` read test quotes `"current_date"` per the earlier
+finding.
+
+**T03** (`derive_relationships` idempotent): the plan's Task 3 only adds
+`DELETE FROM relationships` / `DELETE FROM shop_relationships` after
+`create_relationships_schema(conn)`. That is not enough:
+`create_relationships_schema` runs `executescript` with bare
+`CREATE TABLE relationships (...)` / `CREATE TABLE shop_relationships (...)`
+— **no `IF NOT EXISTS`** — so the *second* `derive_relationships` call
+raises `sqlite3.OperationalError: table relationships already exists`
+before the `DELETE`s are ever reached. (The plan predicted a silent
+row-count doubling; the real pre-fix behaviour is a hard crash.)
+
+Fix: added `IF NOT EXISTS` to both `CREATE TABLE`s in
+`town_relationships/schema.py`, keeping the plan's `DELETE`-then-reinsert
+approach (which is what `CONTRACTS.md` T03 specifies). `schema.py` is
+**not** listed in T03's File / Module Ownership row in `CONTRACTS.md`
+(only `town_relationships/generate.py` + the test are) — flagged in
+Director Notes. Its only callers are `derive_relationships` and
+`tests/test_relationships_schema.py`; the latter's 3 tests still pass
+unchanged, and nothing else in the tree touches `town_relationships/`.
+
+Full suite: 340 passed (335 on merged `main` + 4 T02 + 1 T03).
+
 ## 2026-08-31 — Samwise1 — T01: `town_state.current_date` collides with the SQLite `CURRENT_DATE` keyword
 
 The plan's Task 1 names a `town_state` column `current_date`. `current_date`
