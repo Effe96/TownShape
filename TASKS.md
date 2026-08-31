@@ -244,8 +244,15 @@ is merged.
 
 ### T10: Fix `military_service`/`school_enrollments` accumulation in `advance_town`
 
-- **Status:** unclaimed
-- **Owner:** —
+- **Status:** in-progress
+- **Owner:** Frodo
+- **Decision:** going with option 2 (skip residents who already have an
+  open span) — closest semantic fit for a continuous service/enrollment
+  span, and it's an additive filter in `advance_town`'s orchestration
+  rather than a signature change to `generate_military_service`/
+  `generate_school_enrollments` (both stay usable standalone by
+  `generate_town_database` exactly as before). Plus the unambiguous
+  self-pair guards in both relationship derivers regardless.
 - **Handoff Notes:** From T09's final review (see `LOG.md` 2026-08-31,
   Samwise1). `advance_town` re-runs `generate_military_service` (and
   `generate_school_enrollments`) every simulated year and just appends,

@@ -50,6 +50,7 @@ Every new/changed RNG draw goes through `town_shaper.seeding.rng_for(seed, *part
 | T06 | `town_db/job_market.py` (new), `tests/test_db_job_market.py` (new) |
 | T07 | `town_db/simulation.py` (new), `tests/test_db_simulation.py` (new) |
 | T08 | `tests/test_db_simulation_integration.py` (new) |
+| T10 | `town_db/simulation.py`, `town_relationships/military.py`, `town_relationships/school.py`, `tests/test_db_simulation_integration.py` |
 
 Stream A (T01–T03, Samwise1) and Stream B (T04–T06, Frodo) touch disjoint file sets — no
 coordination needed between those two branches. T07 and T08 touch only new files but read
