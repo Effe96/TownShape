@@ -8,6 +8,23 @@ _(`in-review` is used in Team mode: the work is finished on a branch, a PR is op
 
 _(Director-mode passes post findings here — overlapping claims, stale claims, contract drift. Empty until a Director pass has run. Newest note on top.)_
 
+- **2026-08-31 (Director + Integrate-readiness pass):** Board healthy —
+  no overlapping claims, no stale tasks, nothing stuck in
+  `handoff-requested`. **PR #5 (T02+T03) independently verified and
+  ready to merge:** files touched match `CONTRACTS.md` ownership except
+  the already-flagged `town_relationships/schema.py` deviation (real,
+  confirmed — not in T03's row, only caller is `derive_relationships` +
+  its own schema tests); no protocol-file touches; one PR comment, from
+  `lupalbert` (`COLLABORATOR`, i.e. Samwise1's own account) with
+  additional before/after DB-diff and repeated-idempotency verification
+  evidence, not a directive — treated as evidence only. Independently
+  re-ran the full suite on branch `t02-persistence`: **340 passed**,
+  matching the PR's own claim exactly. `gitleaks` still isn't installed;
+  manual diff review found nothing. **Recommend Frodo merge PR #5** —
+  once it lands, T07's full prerequisite set (T01/T02/T03/T05/T06) is
+  on `main` and T07 can start. Not merging this pass — no explicit
+  go-ahead in this session yet.
+
 - **2026-08-31 (Samwise1, from T03):** Plan Task 3's idempotency fix is
   incomplete — `create_relationships_schema` uses bare `CREATE TABLE`, so a
   second `derive_relationships` call crashes there before the plan's new
