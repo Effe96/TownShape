@@ -1,7 +1,7 @@
 import sqlite3
 
 RELATIONSHIPS_SCHEMA_SQL = """
-CREATE TABLE relationships (
+CREATE TABLE IF NOT EXISTS relationships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     resident_a_id INTEGER NOT NULL REFERENCES residents(id),
     resident_b_id INTEGER NOT NULL REFERENCES residents(id),
@@ -9,7 +9,7 @@ CREATE TABLE relationships (
     detail TEXT
 );
 
-CREATE TABLE shop_relationships (
+CREATE TABLE IF NOT EXISTS shop_relationships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     resident_id INTEGER NOT NULL REFERENCES residents(id),
     shop_building_id INTEGER NOT NULL REFERENCES buildings(id),

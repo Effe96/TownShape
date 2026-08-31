@@ -15,10 +15,12 @@ from town_relationships.work import derive_coworker_relationships
 
 
 def derive_relationships(db_path: str, reference_date: date = DEFAULT_YEAR_START) -> None:
-    """Safe to call at most once per database: does not check for or clean up
-    pre-existing rows in relationships/shop_relationships."""
+    """Safe to call any number of times on the same database -- each call clears and
+    re-derives relationships/shop_relationships from current town_db state."""
     conn = connect(db_path)
     create_relationships_schema(conn)
+    conn.execute("DELETE FROM relationships")
+    conn.execute("DELETE FROM shop_relationships")
 
     residents = _fetch_residents(conn)
     buildings = _fetch_buildings(conn)
