@@ -8,6 +8,25 @@ _(`in-review` is used in Team mode: the work is finished on a branch, a PR is op
 
 _(Director-mode passes post findings here — overlapping claims, stale claims, contract drift. Empty until a Director pass has run. Newest note on top.)_
 
+- **2026-08-31 (Samwise1, T09 final review):** Full suite 349 passed;
+  determinism + integrity clean across a 10-config sweep wider than T08's
+  (8 seeds × 8 years pop 400, + pop 900/1000 × 6 years, each advanced
+  twice and compared row-for-row over 12 tables). **One real bug found:**
+  `advance_town` re-runs `generate_military_service` every simulated year
+  and `insert_military_service` just appends — soldiers accumulate one
+  duplicate open-ended `military_service` row per year (up to 7 after a
+  6-year advance), and `derive_unit_mate_relationships` (no
+  same-`resident_id` guard) turns those into invalid
+  `(X, X, 'unit_mate')` self-relationships (~8–9 per run).
+  `school_enrollments` shares the append-without-guard shape (no bad data
+  seen only because those seeds produced no enrollments). Not caught by
+  T08 — its dup check groups by `(a,b,type)` so a lone `(6,6,...)` isn't
+  a "duplicate", and nothing asserts `a != b` or bounded
+  `military_service` growth. Full analysis + repro in `LOG.md`. Posted as
+  **T10** (`unclaimed`); write-side fix approach is the owner's call.
+  Not a merge-blocker for what's landed, but slice 1 isn't clean until
+  T10 lands.
+
 - **2026-08-31 (Director + Integrate-readiness pass):** Board healthy —
   no overlapping claims, no stale tasks, nothing stuck in
   `handoff-requested`. **PR #5 (T02+T03) independently verified and
@@ -187,7 +206,7 @@ is merged.
 
 ### T09: Final whole-tree review and test
 
-- **Status:** claimed
+- **Status:** in-review
 - **Owner:** Samwise1
 - **Handoff Notes:** Posted + claimed by Samwise1 with a **high**
   remaining-budget tier, per `CLAUDE.md`'s Team-mode protocol
@@ -206,3 +225,51 @@ is merged.
   fix); and run `advance_town` over a multi-year multi-seed sweep
   outside the fixed test seeds, watching for data-integrity or
   determinism regressions the per-task tests could miss.
+
+  **Result (Samwise1):** Full suite **349 passed** from clean `main`.
+  Determinism+integrity sweep wider than T08's — 8 seeds × 8 years
+  pop 400, + pop 900/1000 × 6 years, each town advanced twice and
+  compared row-for-row over 12 tables: **determinism clean** (T07's
+  memory-address bug genuinely fixed), **integrity clean** on FK,
+  post-death txns, duplicate deaths, duplicate `(a,b,type)`
+  relationships, death-before-birth, dangling refs. `CONTRACTS.md`
+  `current_date`/ownership gaps both closed; the scattered plan-drift
+  fixes in `LOG.md` are mutually consistent. **One real bug found** →
+  posted as **T10**: `advance_town` accumulates duplicate open-ended
+  `military_service` rows (one per soldier per simulated year) →
+  invalid `(X,X,'unit_mate')` self-relationships; full analysis in
+  `LOG.md` + Director Notes. Two sweep over-flags that are NOT bugs:
+  relationships aren't stored `a<b` (`parent` is a directed edge), and
+  the clock advances 365-day years not calendar years (per spec).
+
+### T10: Fix `military_service`/`school_enrollments` accumulation in `advance_town`
+
+- **Status:** unclaimed
+- **Owner:** —
+- **Handoff Notes:** From T09's final review (see `LOG.md` 2026-08-31,
+  Samwise1). `advance_town` re-runs `generate_military_service` (and
+  `generate_school_enrollments`) every simulated year and just appends,
+  so a soldier ends up with one duplicate open-ended `military_service`
+  row per year (7 after a 6-year advance), which
+  `derive_unit_mate_relationships` — which has no same-`resident_id`
+  guard — turns into invalid `(X, X, 'unit_mate')` self-relationship
+  rows. `school_enrollments` has the same shape (unobserved only because
+  the swept seeds produced no enrollments).
+  **Decide (owner's call) between:**
+  1. In `advance_town`, close the prior year's open span (set `end_date`)
+     before re-generating — models annual re-enlistment / re-enrollment.
+  2. In the generators, skip residents who already have an open
+     `military_service` / `school_enrollment` row — models a single
+     continuous span.
+  3. Make both derivations delete-then-reinsert like `derive_relationships`
+     (T03) — simplest, but discards service/enrollment history.
+  Plus the unambiguous defensive fix regardless:
+  `if a["resident_id"] == b["resident_id"]: continue` in
+  `town_relationships/military.py::derive_unit_mate_relationships` (and
+  check `derive_classmate_relationships` for the same gap). Fold T09's
+  sweep assertions (per-resident `military_service` bound, `a != b`,
+  no `school_enrollments` growth) into
+  `tests/test_db_simulation_integration.py`. Touches `town_db/simulation.py`
+  and/or `town_db/military.py`/`enrollment.py` +
+  `town_relationships/military.py` — update `CONTRACTS.md` ownership
+  before starting.

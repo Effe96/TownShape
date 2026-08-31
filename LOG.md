@@ -12,6 +12,70 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-08-31 — Samwise1 — T09 final review: suite + determinism clean; found one real cross-year bug (military_service accumulation → unit_mate self-loops)
+
+**Ran:** full suite from clean `main` (`0495883`) — **349 passed**. Plus a
+wider determinism+integrity sweep than T08's: 8 seeds × 8 years at
+pop 400 + two towns at pop 900/1000 × 6 years, each advanced twice and
+compared row-for-row across 12 tables.
+
+**Determinism: clean.** All 10 independent-run pairs are byte-identical
+across `residents`, `households`, `purchases`, `tax_payments`, `births`,
+`deaths`, `skirmish_events`, `school_enrollments`, `military_service`,
+`relationships`, `shop_relationships`, `town_state`. T07's memory-address
+determinism bug is genuinely fixed.
+
+**Integrity: clean** on FK checks, no post-death purchases/taxes, no
+duplicate `deaths` rows, no duplicate `(a,b,type)` relationship rows, no
+death-before-birth, no dangling death/birth resident refs, `CONTRACTS.md`
+`current_date`/ownership gaps both closed.
+
+**BUG FOUND — `advance_town` appends `military_service` rows every
+simulated year with no clear/guard:**
+
+- Fresh `generate_town_database`: 8 `military_service` rows, 0 residents
+  with more than one. After `advance_town(years=1)`: 16 rows, every
+  soldier now has 2. `years=3` → 4 each. `years=6` → up to **7 rows per
+  resident**, all with `end_date IS NULL`. It grows by one duplicate
+  open-ended service record per soldier per simulated year, unbounded.
+- Knock-on: `town_relationships/military.py::derive_unit_mate_relationships`
+  pairs every two service records in the same garrison with overlapping
+  dates and does **not** skip same-`resident_id` pairs. Two+ open-ended
+  rows for resident X in garrison G ⇒ `canonical_pair(X, X, "unit_mate")`
+  ⇒ a semantically invalid `(X, X, 'unit_mate')` self-relationship. ~8–9
+  per run in the sweep.
+- Root cause: `advance_town` re-runs `generate_military_service` each year
+  (copied from `generate.py`'s one-shot structure) and `insert_military_service`
+  just appends. Contrast `derive_relationships`, which T03 deliberately
+  made delete-then-reinsert for exactly this reason. `military_service`
+  (and `school_enrollments` — same shape, a stateful span not a per-year
+  event) got no equivalent treatment. `purchases`/`tax_payments` are
+  correctly per-year (dated events), so their yearly growth is fine.
+- Why the existing tests miss it: T08's dup check groups by
+  `(resident_a_id, resident_b_id, relationship_type)`, so a single
+  `(6,6,'unit_mate')` row isn't a "duplicate"; nothing asserts
+  `resident_a_id != resident_b_id`, per-resident `military_service` row
+  counts, or bounded growth. FK-clean and deterministic, so those tests
+  pass too.
+
+Not fixing here — the write-side fix has a real design choice (close the
+prior year's span with an `end_date`? skip re-generating for
+already-serving residents? make military/school derivation
+delete-then-reinsert like relationships?) that's the owner's call. The
+`derive_unit_mate_relationships` self-pair guard
+(`if a["resident_id"] == b["resident_id"]: continue`) is an unambiguous
+defensive fix but only masks the symptom. Posted as **T10** (unclaimed)
+with these options. Repro scripts were throwaway; the sweep logic is
+worth folding into `tests/test_db_simulation_integration.py` as part of
+T10.
+
+Two things my sweep over-flagged that are **not** bugs: (1) relationships
+aren't stored `resident_a_id < resident_b_id` — correct, `parent` is a
+directed edge (a is parent *of* b); (2) the `town_state` clock advances
+by `years × 365` days, not calendar years, so an 8-year advance from
+1300-01-01 lands on 1308-12-30 (two leap days in span) — that's the
+plan's explicit "a year is exactly 365 days" rule.
+
 ## 2026-08-31 — Frodo — TASKS.md race: two T09 posts, reconciled
 
 Pushed T08's `done` status + a fresh unclaimed T09 ("Final whole-tree
