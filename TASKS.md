@@ -118,28 +118,24 @@ is merged.
 
 ### T02: Extract `town_db/persistence.py`, wire `town_state` into `generate_town_database`
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Samwise1
-- **Handoff Notes:** Done — PR #5 open
-  (https://github.com/Effe96/TownShape/pull/5, branch `t02-persistence`,
-  shared with T03). `town_db/persistence.py` holds all nine `insert_*`
-  helpers; `town_db/generate.py` calls them, drops the local
-  `_insert_residents`, adds `YEAR_LENGTH_DAYS = 365`, and writes the
-  `town_state` row. New `tests/test_db_persistence.py` (2) + 2 in
-  `tests/test_db_generate.py` (`current_date` read quoted). Full suite
-  340 passed.
+- **Handoff Notes:** Merged via PR #5 (squash, `Agent: Samwise1`).
+  `town_db/persistence.py` holds all nine `insert_*` helpers;
+  `town_db/generate.py` calls them, adds `YEAR_LENGTH_DAYS = 365`, and
+  writes the `town_state` row. Full suite green on merged `main` (340
+  passed).
 
 ### T03: Make `derive_relationships` idempotent
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Samwise1
-- **Handoff Notes:** Done — same PR #5 (branch `t02-persistence`).
-  `DELETE`s added in `town_relationships/generate.py`; plan's fix was
-  incomplete so `IF NOT EXISTS` also added to
+- **Handoff Notes:** Merged via PR #5 (squash, `Agent: Samwise1`), same
+  branch as T02. `DELETE`s added in `town_relationships/generate.py`;
+  plan's fix was incomplete so `IF NOT EXISTS` also added to
   `town_relationships/schema.py` (deviation from T03's ownership row —
-  see Director Notes / `LOG.md`). New idempotency test. Full suite
-  340 passed. With T05/T06 merged, T07's prerequisites are all in
-  review once PR #5 lands.
+  see `LOG.md`). **T07's full prerequisite set (T01/T02/T03/T05/T06) is
+  now on `main`.**
 
 ### T04: Extract `town_db/succession.py`
 

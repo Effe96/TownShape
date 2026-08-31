@@ -14,7 +14,11 @@ Full detail lives in `docs/superpowers/plans/2026-08-28-town-year-advance-implem
 downstream tasks (T06, T07, T08) consume from upstream ones (T01–T05):
 
 - **`town_state` table** (T01) — columns `id, year_start, current_date, aggression, magic_prevalence`,
-  singleton row `id = 1`. `town_state` must never depend on `generation_parameters`.
+  singleton row `id = 1`. `town_state` must never depend on `generation_parameters`. **`current_date`
+  collides with SQLite's `CURRENT_DATE` keyword** — a bare `SELECT current_date` returns today's
+  date, not the column (writes are unaffected). Every *read* must quote the identifier:
+  `SELECT "current_date" FROM town_state` or `SELECT *`. See `LOG.md` (2026-08-31, Samwise1) for
+  the full verification.
 - **`town_db/persistence.py`** (T02) — `insert_residents`, `insert_disease_events`,
   `insert_skirmish_events`, `insert_births`, `insert_deaths`, `insert_purchases`,
   `insert_tax_payments`, `insert_school_enrollments`, `insert_military_service`.
@@ -40,7 +44,7 @@ Every new/changed RNG draw goes through `town_shaper.seeding.rng_for(seed, *part
 |---|---|
 | T01 | `town_db/schema.py`, `tests/test_db_schema.py` |
 | T02 | `town_db/persistence.py` (new), `town_db/generate.py`, `tests/test_db_persistence.py` (new), `tests/test_db_generate.py` |
-| T03 | `town_relationships/generate.py`, `tests/test_relationships_generate.py` |
+| T03 | `town_relationships/generate.py`, `town_relationships/schema.py`, `tests/test_relationships_generate.py` |
 | T04 | `town_db/succession.py` (new), `town_db/edits.py`, `tests/test_db_succession.py` (new) |
 | T05 | `town_db/household_formation.py` (new), `tests/test_db_household_formation.py` (new) |
 | T06 | `town_db/job_market.py` (new), `tests/test_db_job_market.py` (new) |

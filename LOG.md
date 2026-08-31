@@ -12,6 +12,20 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-08-31 — Frodo — T02+T03 (PR #5) merged; Stream A + Stream B both complete
+
+Independently re-verified PR #5 (full suite 340 passed on the branch,
+files matched ownership except the already-known `schema.py` deviation,
+one PR comment from Samwise1's own account with extra DB-diff/
+idempotency evidence, no protocol-file touches) before merging on the
+user's explicit go-ahead. Re-ran the full suite again on merged `main`:
+340 passed, clean combine. T01–T06 are now all `done` — closed the two
+`CONTRACTS.md` gaps Director Notes had been carrying since the earlier
+Director pass rather than leaving them open: added the `current_date`
+quoting note to the `town_state` interface bullet, and added
+`town_relationships/schema.py` to T03's File / Module Ownership row.
+T07's full prerequisite set is now on `main` — starting it next.
+
 ## 2026-08-31 — Frodo — Integrate pass: T01, T04, T05 merged
 
 Ran an Integrate pass on PRs #1 (T04), #2 (T05), #3 (T01) — all three
