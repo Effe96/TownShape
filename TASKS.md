@@ -174,6 +174,23 @@ is merged.
   T01–T06 together. Full suite green on merged `main` (346 passed).
   **T08 is now unblocked — last task on the board.**
 
+### T09: Final whole-tree review and test
+
+- **Status:** claimed
+- **Owner:** Samwise1
+- **Handoff Notes:** Posted + claimed by Samwise1 with a **high**
+  remaining-budget tier (first-push-wins per `CLAUDE.md` Team mode; if
+  someone had a higher tier and lost the race, pull and take it back).
+  All of T01–T08 are merged to `main` (PRs #1–#7). Scope: read the full
+  capability-2 slice-1 diff end to end against
+  `docs/superpowers/plans/2026-08-28-town-year-advance-implementation.md`
+  and `CONTRACTS.md`, run the entire suite from a clean checkout, and
+  sanity-check `advance_town` over a multi-year multi-seed run for
+  data-integrity/determinism regressions the per-task tests could miss.
+  Note on entry: T08's block below still reads `in-review` though PR #7
+  is merged (commit `f6ff600`) — Frodo's Integrate bookkeeping to flip
+  to `done`; left as-is here.
+
 ### T08: Integration tests — seed sweep, determinism, data integrity
 
 - **Status:** done
