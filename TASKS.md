@@ -1,0 +1,133 @@
+# Task Board
+
+Status values: `unclaimed` | `claimed` | `in-progress` | `handoff-requested` | `blocked` | `in-review` | `done`
+
+_(`in-review` is used in Team mode: the work is finished on a branch, a PR is open, and it's waiting on an Integrate-mode pass before landing on `main` as `done`. The ad hoc flow can skip it entirely and go straight from `in-progress`/`handoff-requested` to `done`.)_
+
+## Director Notes
+
+_(Director-mode passes post findings here — overlapping claims, stale claims, contract drift. Empty until a Director pass has run. Newest note on top.)_
+
+## Tasks
+
+<!--
+Copy this block for each new task. Keep each task in its own delimited
+block, with a blank line before and after — this is what keeps git
+merge conflicts on this file small and localized when two people edit
+it at once.
+
+### T<NN>: <short task title>
+
+- **Status:** unclaimed
+- **Owner:** —
+- **Handoff Notes:** —
+-->
+
+All 8 tasks below implement `docs/superpowers/plans/2026-08-28-town-year-advance-implementation.md`
+(capability 2, slice 1 — town year-advance). Each task's Handoff Notes point at
+that plan's matching `## Task N` section, which already has the exact files,
+code, and tests to write — treat it as the spec, follow it TDD-style
+(red → green → commit), and flag drift from it in `LOG.md` rather than
+silently deviating. Branch per task: `t<NN>-<slug>` off `main`.
+
+Two independent streams run in parallel (no file overlap — see
+`CONTRACTS.md`'s File / Module Ownership):
+
+- **Stream A** (T01 → T02 → T03): schema + persistence + idempotent
+  relationships. Sequential — T02 needs T01's `town_state` table, T03 is
+  independent but bundled here to keep one branch owner per stream.
+- **Stream B** (T04 → T05, T06): succession extraction, then household
+  formation and job market (T06 needs T04's `succession.py`; T05 doesn't
+  depend on T04 and can be done in either order relative to it).
+
+T07 and T08 are downstream of *both* streams — don't start T07 until T01,
+T02, T03, T05, and T06 are all merged to `main`; don't start T08 until T07
+is merged.
+
+### T01: `town_state` schema table
+
+- **Status:** claimed
+- **Owner:** Samwise1
+- **Handoff Notes:** Plan section "Task 1". Modify `town_db/schema.py`,
+  extend `tests/test_db_schema.py` (incl. `EXPECTED_TABLES`). Trivial,
+  first task in Stream A — unblocks T02.
+
+### T02: Extract `town_db/persistence.py`, wire `town_state` into `generate_town_database`
+
+- **Status:** claimed
+- **Owner:** Samwise1
+- **Handoff Notes:** Plan section "Task 2". Depends on T01 being merged
+  first (needs the `town_state` table). Create `town_db/persistence.py`,
+  modify `town_db/generate.py` (full replacement given in the plan), add
+  `tests/test_db_persistence.py`, extend `tests/test_db_generate.py`. This
+  is the biggest regression-risk task in Stream A — run the *entire*
+  suite (`python -m pytest tests/ -v`) before opening the PR, not just
+  the new test files, since every other `town_db` test transitively
+  depends on `generate_town_database`.
+
+### T03: Make `derive_relationships` idempotent
+
+- **Status:** claimed
+- **Owner:** Samwise1
+- **Handoff Notes:** Plan section "Task 3". Independent of T01/T02's
+  content (touches `town_relationships/generate.py` only) but keep it on
+  the same branch/PR sequence as T01→T02 to avoid a second Stream-A
+  owner. Small — two `DELETE` statements plus a test.
+
+### T04: Extract `town_db/succession.py`
+
+- **Status:** claimed
+- **Owner:** Frodo
+- **Handoff Notes:** Plan section "Task 4". Creates
+  `town_db/succession.py`, modifies `town_db/edits.py` (removes the
+  duplicated private helpers, imports the extracted versions instead),
+  adds `tests/test_db_succession.py`. Run `tests/test_db_edits.py`
+  alongside the new tests — regression guard for the extraction. First
+  task in Stream B — unblocks T06.
+
+### T05: Household formation (`town_db/household_formation.py`)
+
+- **Status:** claimed
+- **Owner:** Frodo
+- **Handoff Notes:** Plan section "Task 5". New file, no dependency on
+  T04 — can be done before or after it. Uses `town_db.ages`,
+  `town_db.names.draw_surname`, `town_shaper.seeding.rng_for`. Add
+  `tests/test_db_household_formation.py`.
+
+### T06: Job market (`town_db/job_market.py`)
+
+- **Status:** claimed
+- **Owner:** Frodo
+- **Handoff Notes:** Plan section "Task 6". Depends on T04
+  (`town_db.succession.primary_occupation_info` / `promote_apprentice`)
+  being merged first. Add `tests/test_db_job_market.py`.
+
+### T07: Orchestrator (`town_db/simulation.py`)
+
+- **Status:** claimed
+- **Owner:** Frodo
+- **Handoff Notes:** Plan section "Task 7". **Blocked until T01, T02,
+  T03, T05, and T06 are all merged to `main`** — this ties every other
+  task's output together (`town_state`, the `insert_*`/`YEAR_LENGTH_DAYS`
+  helpers, idempotent `derive_relationships`, `generate_household_formations`,
+  `fill_job_vacancies`). Before starting, double-check the plan's
+  `generate_births_and_deaths` call in this task's sample code against
+  the actual current signature in `town_db/vital_records.py` — the plan
+  was written speculatively and this call site is a known place it may
+  have drifted (missing `birth_rate`/`death_rate_by_age` kwargs that
+  `generate.py` passes elsewhere). Add `tests/test_db_simulation.py`, run
+  the full suite before opening the PR.
+
+### T08: Integration tests — seed sweep, determinism, data integrity
+
+- **Status:** claimed
+- **Owner:** Samwise1
+- **Handoff Notes:** Plan section "Task 8". **Blocked until T07 is
+  merged.** Add `tests/test_db_simulation_integration.py` — seed-swept
+  multi-year `advance_town` runs checking FK integrity, no post-death
+  purchases/taxes, no duplicate relationships/deaths. If the household-
+  formation spouse-relationship test doesn't reliably trigger a formation
+  at the given population/seed/year-count, raise `target_population`
+  and/or `years` per the plan's note rather than weakening the assertion.
+  Last task — once merged, post the "Final whole-tree review and test"
+  task per `CLAUDE.md`'s Team-mode protocol.
