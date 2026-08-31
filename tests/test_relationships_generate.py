@@ -125,6 +125,24 @@ def test_derive_relationships_populates_both_tables_end_to_end(tmp_path):
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_derive_relationships_is_idempotent_when_called_twice(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    _build_minimal_town(db_path)
+
+    derive_relationships(db_path)
+    conn = connect(db_path)
+    first_relationship_count = conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
+    first_shop_count = conn.execute("SELECT COUNT(*) FROM shop_relationships").fetchone()[0]
+
+    derive_relationships(db_path)
+    second_relationship_count = conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
+    second_shop_count = conn.execute("SELECT COUNT(*) FROM shop_relationships").fetchone()[0]
+
+    assert first_relationship_count > 0
+    assert second_relationship_count == first_relationship_count
+    assert second_shop_count == first_shop_count
+
+
 def test_derive_relationships_is_deterministic_across_separate_databases(tmp_path):
     db_path_a = str(tmp_path / "town_a.db")
     db_path_b = str(tmp_path / "town_b.db")
