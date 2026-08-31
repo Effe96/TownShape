@@ -92,16 +92,16 @@ is merged.
 
 ### T02: Extract `town_db/persistence.py`, wire `town_state` into `generate_town_database`
 
-- **Status:** claimed
+- **Status:** in-progress
 - **Owner:** Samwise1
-- **Handoff Notes:** Plan section "Task 2". Depends on T01 being merged
-  first (needs the `town_state` table). Create `town_db/persistence.py`,
-  modify `town_db/generate.py` (full replacement given in the plan), add
-  `tests/test_db_persistence.py`, extend `tests/test_db_generate.py`. This
-  is the biggest regression-risk task in Stream A — run the *entire*
-  suite (`python -m pytest tests/ -v`) before opening the PR, not just
-  the new test files, since every other `town_db` test transitively
-  depends on `generate_town_database`.
+- **Handoff Notes:** Plan section "Task 2". T01 merged — `town_state`
+  table is on `main`. Branch `t02-persistence` (T03 rides the same
+  branch). Create `town_db/persistence.py`, modify `town_db/generate.py`
+  (full replacement given in the plan), add `tests/test_db_persistence.py`,
+  extend `tests/test_db_generate.py`. Quote `current_date` in the new
+  `town_state` read tests (plan-drift finding). Run the *entire* suite
+  before opening the PR — every `town_db` test transitively depends on
+  `generate_town_database`.
 
 ### T03: Make `derive_relationships` idempotent
 
