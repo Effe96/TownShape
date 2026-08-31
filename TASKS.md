@@ -90,7 +90,7 @@ is merged.
 
 ### T05: Household formation (`town_db/household_formation.py`)
 
-- **Status:** claimed
+- **Status:** in-progress
 - **Owner:** Frodo
 - **Handoff Notes:** Plan section "Task 5". New file, no dependency on
   T04 — can be done before or after it. Uses `town_db.ages`,
