@@ -8,6 +8,35 @@ _(`in-review` is used in Team mode: the work is finished on a branch, a PR is op
 
 _(Director-mode passes post findings here — overlapping claims, stale claims, contract drift. Empty until a Director pass has run. Newest note on top.)_
 
+- **2026-08-31 (Director pass):** Reviewed `TASKS.md`, `CONTRACTS.md`, and
+  commits through `9f7d592`. No overlapping claims, no stale
+  `claimed`/`in-progress` tasks, no stuck `handoff-requested` tasks. All
+  three open PRs (#1 T04, #2 T05, #3 T01) are freshly opened this session —
+  not stale, just queued for Integrate mode. Two findings:
+  1. **Confirmed Samwise1's `current_date` keyword-collision finding**
+     (independently re-verified against this repo's `sqlite3` — bare
+     `SELECT current_date FROM town_state` returns today's date, not the
+     column; `SELECT "current_date"` and `SELECT *` are both correct; writes
+     are unaffected either way). T01's own PR #3 already quotes its read
+     correctly. Grepped the plan doc for every remaining **bare** read
+     nobody's fixed yet: T02 must fix its own copy of the plan's snippet at
+     plan lines 47 and 299 (`test_generate_town_database_writes_town_state`
+     and its regression-guard counterpart); T07 must fix plan lines 1225,
+     1236, and 1382 (`test_advance_town_updates_town_state`,
+     `test_advance_town_two_years_advances_current_date_twice`, and
+     `advance_town` itself). All the plan's *writes* (INSERT/UPDATE, lines
+     41/56/62/502/1449) are unaffected and need no change.
+  2. **`CONTRACTS.md` drift:** the Interfaces & Data Shapes entry for
+     `town_state` lists the column name but not the quoting requirement —
+     a real implementor reading only `CONTRACTS.md` (not `LOG.md`) would
+     miss this landmine. Director mode can only edit `TASKS.md`, so
+     flagging rather than fixing: recommend Frodo add a one-line note to
+     `CONTRACTS.md`'s `town_state` bullet (e.g. "reads of `current_date`
+     must quote the identifier — it collides with SQLite's `CURRENT_DATE`
+     keyword") next time `main` is touched. The rename alternative Samwise1
+     raised (`current_date` -> `current_sim_date`) remains an option but is
+     the owner's call, not decided here.
+
 - **2026-08-31 (Samwise1, from T01):** `town_state.current_date` is a SQLite
   keyword collision — bare reads return today's date, not the column (writes
   are unaffected). T01 (PR #3) keeps the contract's column name and quotes
