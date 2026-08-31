@@ -12,6 +12,39 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-08-31 — Samwise1 — T01: `town_state.current_date` collides with the SQLite `CURRENT_DATE` keyword
+
+The plan's Task 1 names a `town_state` column `current_date`. `current_date`
+(case-insensitive) is a SQLite built-in that returns today's date. Verified
+behaviour with 3.14's bundled sqlite3:
+
+- **Writes are fine.** In an INSERT column list and in `UPDATE ... SET
+  current_date = ?`, `current_date` is parsed as the column — the row stores
+  and updates the intended value.
+- **Bare reads are silently wrong.** `SELECT ..., current_date, ... FROM
+  town_state` evaluates `current_date` as the builtin and returns
+  `date('now')` (today), not the column. `SELECT *` is fine.
+- Quoting the identifier — `"current_date"` or `[current_date]` — makes a
+  read resolve to the column.
+
+Decision (kept minimal — no `CONTRACTS.md` interface change): the column
+name stays `current_date` as the contract specifies; **every read of it must
+quote the identifier.** T01's schema + tests do this and carry an inline
+note. Downstream impact:
+
+- **T02** (`test_generate_town_database_writes_town_state`, plan Step 5) —
+  the plan's snippet reads `current_date` bare; quote it.
+- **T07** (`advance_town`, plan line ~1382:
+  `SELECT year_start, current_date, aggression, magic_prevalence FROM
+  town_state`) — this feeds the simulation clock. Bare, it reads today's
+  date and the whole year-advance loop is wrong while every test that only
+  checks FK integrity / determinism still passes. Quote it. The plan's T07
+  test assertions (`SELECT current_date FROM town_state`) need the same.
+
+If a rename (`current_date` -> e.g. `current_sim_date`) is preferred instead —
+loud "no such column" failures beat silent wrong values — that's a
+`CONTRACTS.md` change and the owner's call; flagging in Director Notes.
+
 ## 2026-08-31 — Frodo — T05 (household formation): two bugs found in the plan's speculative reference code
 
 `docs/superpowers/plans/2026-08-28-town-year-advance-implementation.md`'s

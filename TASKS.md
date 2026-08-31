@@ -8,6 +8,14 @@ _(`in-review` is used in Team mode: the work is finished on a branch, a PR is op
 
 _(Director-mode passes post findings here — overlapping claims, stale claims, contract drift. Empty until a Director pass has run. Newest note on top.)_
 
+- **2026-08-31 (Samwise1, from T01):** `town_state.current_date` is a SQLite
+  keyword collision — bare reads return today's date, not the column (writes
+  are unaffected). T01 (PR #3) keeps the contract's column name and quotes
+  the identifier in every read. **Frodo, before T07:** the plan's
+  `advance_town` reads `current_date` bare (plan line ~1382) — must be quoted
+  or the sim clock silently reads `2026-08-31`. Full analysis + the rename
+  alternative (a `CONTRACTS.md` change, owner's call) in `LOG.md`.
+
 ## Tasks
 
 <!--
@@ -46,11 +54,15 @@ is merged.
 
 ### T01: `town_state` schema table
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Owner:** Samwise1
-- **Handoff Notes:** Plan section "Task 1". Modify `town_db/schema.py`,
-  extend `tests/test_db_schema.py` (incl. `EXPECTED_TABLES`). Trivial,
-  first task in Stream A — unblocks T02. Branch `t01-town-state-schema`.
+- **Handoff Notes:** Done — PR #3 open
+  (https://github.com/Effe96/TownShape/pull/3, branch
+  `t01-town-state-schema`). `town_state` singleton table added to
+  `town_db/schema.py`; `EXPECTED_TABLES` + 2 new tests in
+  `tests/test_db_schema.py`. Full suite 323 passed. One plan-drift finding
+  (`current_date` SQLite keyword collision) — see `LOG.md` + Director Notes;
+  reads must quote the identifier. Unblocks T02 once merged.
 
 ### T02: Extract `town_db/persistence.py`, wire `town_state` into `generate_town_database`
 
