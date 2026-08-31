@@ -2,8 +2,6 @@
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
-from town_shaper.seeding import rng_for
-
 from town_db.ages import ADULT_AGE_RANGE, age_on
 from town_db.generate import YEAR_LENGTH_DAYS
 from town_db.household_formation import generate_household_formations
@@ -102,7 +100,11 @@ def advance_town(db_path: str, seed, years: int = 1) -> None:
             year_start = current_date
             year_end = year_start + timedelta(days=YEAR_LENGTH_DAYS)
             year_index = (year_start - original_year_start).days // YEAR_LENGTH_DAYS
-            year_seed = rng_for(seed, "town_state", "year", year_index)
+            # A plain hashable value, not an rng_for(...) Random instance -- every downstream
+            # generator treats this as a base seed and re-derives via its own rng_for(seed, ...)
+            # call, which hashes repr(seed). A Random object's repr embeds its memory address,
+            # which differs across process runs and silently breaks determinism.
+            year_seed = (seed, "town_state", "year", year_index)
 
             household_rows = _load_household_rows(conn)
             resident_rows = _load_resident_rows(conn, year_start)
