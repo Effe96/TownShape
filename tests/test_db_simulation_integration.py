@@ -46,6 +46,27 @@ def test_five_year_advance_preserves_data_integrity_across_seeds(tmp_path):
         ).fetchall()
         assert dup_deaths == [], f"seed {seed}"
 
+        # No resident should ever accumulate more than one *open* (still-ongoing) military
+        # service or school enrollment span -- advance_town must not re-issue a new span for a
+        # resident who already has one in progress.
+        open_military = conn.execute(
+            "SELECT resident_id, COUNT(*) c FROM military_service WHERE end_date IS NULL "
+            "GROUP BY resident_id HAVING c > 1"
+        ).fetchall()
+        assert open_military == [], f"seed {seed}"
+
+        open_enrollments = conn.execute(
+            "SELECT resident_id, COUNT(*) c FROM school_enrollments WHERE end_date IS NULL "
+            "GROUP BY resident_id HAVING c > 1"
+        ).fetchall()
+        assert open_enrollments == [], f"seed {seed}"
+
+        # No relationship row should ever pair a resident with themselves.
+        self_relationships = conn.execute(
+            "SELECT COUNT(*) FROM relationships WHERE resident_a_id = resident_b_id"
+        ).fetchone()[0]
+        assert self_relationships == 0, f"seed {seed}"
+
 
 def test_advance_town_is_deterministic(tmp_path):
     db_path_1 = str(tmp_path / "town1.db")

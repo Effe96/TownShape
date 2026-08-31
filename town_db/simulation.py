@@ -78,6 +78,12 @@ def _goods_ids(conn) -> Dict[str, int]:
     return {name: good_id for good_id, name in conn.execute("SELECT id, name FROM goods").fetchall()}
 
 
+def _residents_with_open_span(conn, table: str) -> set:
+    return {
+        row[0] for row in conn.execute(f"SELECT resident_id FROM {table} WHERE end_date IS NULL").fetchall()
+    }
+
+
 def advance_town(db_path: str, seed, years: int = 1) -> None:
     if years <= 0:
         raise ValueError("years must be a positive integer")
@@ -149,13 +155,21 @@ def advance_town(db_path: str, seed, years: int = 1) -> None:
             tax_payments = generate_tax_payments(year_seed, all_household_rows, all_resident_rows, year_start)
             insert_tax_payments(conn, tax_payments)
 
+            # A resident already in an open (still-ongoing) span keeps it rather than getting a
+            # new duplicate row every simulated year -- generate_school_enrollments/
+            # generate_military_service have no notion of "already enrolled/serving" since they
+            # were written for one-shot generation, where nothing pre-exists.
             school_ids = _building_ids(conn, "school")
             university_ids = _building_ids(conn, "university")
             enrollments = generate_school_enrollments(year_seed, all_resident_rows, school_ids, university_ids, year_start)
+            already_enrolled = _residents_with_open_span(conn, "school_enrollments")
+            enrollments = [e for e in enrollments if e["resident_db_id"] not in already_enrolled]
             insert_school_enrollments(conn, enrollments)
 
             garrison_ids = _building_ids(conn, "garrison") + _building_ids(conn, "guard_post")
             military = generate_military_service(all_resident_rows, garrison_ids, year_start)
+            already_serving = _residents_with_open_span(conn, "military_service")
+            military = [m for m in military if m["resident_db_id"] not in already_serving]
             insert_military_service(conn, military)
 
             conn.execute('UPDATE town_state SET "current_date" = ? WHERE id = 1', (year_end.isoformat(),))
