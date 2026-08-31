@@ -167,7 +167,7 @@ is merged.
 
 ### T07: Orchestrator (`town_db/simulation.py`)
 
-- **Status:** claimed
+- **Status:** in-progress
 - **Owner:** Frodo
 - **Handoff Notes:** Plan section "Task 7". **Blocked until T01, T02,
   T03, T05, and T06 are all merged to `main`** — this ties every other
