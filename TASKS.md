@@ -174,23 +174,6 @@ is merged.
   T01–T06 together. Full suite green on merged `main` (346 passed).
   **T08 is now unblocked — last task on the board.**
 
-### T09: Final whole-tree review and test
-
-- **Status:** claimed
-- **Owner:** Samwise1
-- **Handoff Notes:** Posted + claimed by Samwise1 with a **high**
-  remaining-budget tier (first-push-wins per `CLAUDE.md` Team mode; if
-  someone had a higher tier and lost the race, pull and take it back).
-  All of T01–T08 are merged to `main` (PRs #1–#7). Scope: read the full
-  capability-2 slice-1 diff end to end against
-  `docs/superpowers/plans/2026-08-28-town-year-advance-implementation.md`
-  and `CONTRACTS.md`, run the entire suite from a clean checkout, and
-  sanity-check `advance_town` over a multi-year multi-seed run for
-  data-integrity/determinism regressions the per-task tests could miss.
-  Note on entry: T08's block below still reads `in-review` though PR #7
-  is merged (commit `f6ff600`) — Frodo's Integrate bookkeeping to flip
-  to `done`; left as-is here.
-
 ### T08: Integration tests — seed sweep, determinism, data integrity
 
 - **Status:** done
@@ -204,17 +187,22 @@ is merged.
 
 ### T09: Final whole-tree review and test
 
-- **Status:** unclaimed
-- **Owner:** —
-- **Handoff Notes:** All 8 tasks (T01–T08) merged to `main`, full suite
-  green (349 passed). Per `CLAUDE.md`'s Team-mode protocol: claim this
-  by stating your rough remaining-budget tier (high/medium/low) —
-  whoever states the highest tier among interested collaborators takes
-  it, or first-push-wins if nobody states one. Scope: a whole-tree
-  review of the merged capability-2-slice-1 work (not just a re-run of
-  the suite, which is already green) — read `docs/superpowers/specs/2026-08-28-town-year-advance-design.md`
-  against what actually landed, sanity-check the plan-drift fixes noted
-  across `LOG.md` (the `current_date` keyword collision, T05's
+- **Status:** claimed
+- **Owner:** Samwise1
+- **Handoff Notes:** Posted + claimed by Samwise1 with a **high**
+  remaining-budget tier, per `CLAUDE.md`'s Team-mode protocol
+  (first-push-wins race with an equivalent draft Frodo posted at nearly
+  the same moment — merged/reconciled here into one block; Samwise1's
+  claim stands). All 8 tasks (T01–T08) merged to `main` (PRs #1–#7),
+  full suite green (349 passed). Scope: a whole-tree review of the
+  merged capability-2-slice-1 work, not just a suite re-run (already
+  green) — read the full diff end to end against
+  `docs/superpowers/plans/2026-08-28-town-year-advance-implementation.md`,
+  `docs/superpowers/specs/2026-08-28-town-year-advance-design.md`, and
+  `CONTRACTS.md`; sanity-check that the plan-drift fixes scattered
+  across `LOG.md` are consistent with each other and with
+  `CONTRACTS.md` (the `current_date` keyword collision, T05's
   spouse-pool fix, T03's `schema.py` deviation, T07/T08's determinism
-  fix) are consistent with each other and with `CONTRACTS.md`, and spot
-  anything that fell through the cracks of the individual task reviews.
+  fix); and run `advance_town` over a multi-year multi-seed sweep
+  outside the fixed test seeds, watching for data-integrity or
+  determinism regressions the per-task tests could miss.

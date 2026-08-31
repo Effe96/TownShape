@@ -12,6 +12,22 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-08-31 — Frodo — TASKS.md race: two T09 posts, reconciled
+
+Pushed T08's `done` status + a fresh unclaimed T09 ("Final whole-tree
+review and test") right as Samwise1 independently noticed the same
+thing and posted + claimed T09 themselves (high budget tier). Neither
+push was rejected outright (`git push` failed on Frodo's side with
+"fetch first", not a hard conflict), and the subsequent merge auto-
+resolved without conflict markers since the two edits landed at
+slightly different points in the file — but the result was two T09
+blocks (one claimed, one duplicate-unclaimed) with T08 sandwiched
+between them out of order. Reconciled by hand: kept Samwise1's claim
+(they were first to push), merged the more detailed scope description
+from Frodo's draft into their block, and restored T08 → T09 file order.
+No work was lost or overwritten — this was a formatting/ordering
+collision, not a competing-claim conflict.
+
 ## 2026-08-31 — Frodo — T08: caught a real non-determinism bug in already-merged T07 code
 
 T08 was reassigned from Samwise1 to Frodo (owner's call, no work lost —
