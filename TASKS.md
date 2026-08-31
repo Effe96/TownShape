@@ -244,39 +244,22 @@ is merged.
 
 ### T10: Fix `military_service`/`school_enrollments` accumulation in `advance_town`
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Owner:** Frodo
-- **Decision:** going with option 2 (skip residents who already have an
-  open span) — closest semantic fit for a continuous service/enrollment
-  span, and it's an additive filter in `advance_town`'s orchestration
-  rather than a signature change to `generate_military_service`/
-  `generate_school_enrollments` (both stay usable standalone by
-  `generate_town_database` exactly as before). Plus the unambiguous
-  self-pair guards in both relationship derivers regardless.
-- **Handoff Notes:** From T09's final review (see `LOG.md` 2026-08-31,
-  Samwise1). `advance_town` re-runs `generate_military_service` (and
-  `generate_school_enrollments`) every simulated year and just appends,
-  so a soldier ends up with one duplicate open-ended `military_service`
-  row per year (7 after a 6-year advance), which
-  `derive_unit_mate_relationships` — which has no same-`resident_id`
-  guard — turns into invalid `(X, X, 'unit_mate')` self-relationship
-  rows. `school_enrollments` has the same shape (unobserved only because
-  the swept seeds produced no enrollments).
-  **Decide (owner's call) between:**
-  1. In `advance_town`, close the prior year's open span (set `end_date`)
-     before re-generating — models annual re-enlistment / re-enrollment.
-  2. In the generators, skip residents who already have an open
-     `military_service` / `school_enrollment` row — models a single
-     continuous span.
-  3. Make both derivations delete-then-reinsert like `derive_relationships`
-     (T03) — simplest, but discards service/enrollment history.
-  Plus the unambiguous defensive fix regardless:
-  `if a["resident_id"] == b["resident_id"]: continue` in
-  `town_relationships/military.py::derive_unit_mate_relationships` (and
-  check `derive_classmate_relationships` for the same gap). Fold T09's
-  sweep assertions (per-resident `military_service` bound, `a != b`,
-  no `school_enrollments` growth) into
-  `tests/test_db_simulation_integration.py`. Touches `town_db/simulation.py`
-  and/or `town_db/military.py`/`enrollment.py` +
-  `town_relationships/military.py` — update `CONTRACTS.md` ownership
-  before starting.
+- **Handoff Notes:** Done — PR #8 open
+  (https://github.com/Effe96/TownShape/pull/8, branch
+  `t10-service-enrollment-accumulation`). Went with option 2 (skip
+  residents who already have an open span) — `advance_town` now filters
+  out any generated `military_service`/`school_enrollments` record whose
+  resident already has an open (`end_date IS NULL`) span before
+  inserting. `generate_military_service`/`generate_school_enrollments`
+  themselves unchanged, so `generate_town_database`'s one-shot call
+  sites are unaffected. Added the self-pair guard to both
+  `derive_unit_mate_relationships` and `derive_classmate_relationships`
+  regardless. T09's sweep assertions folded into the existing seed-sweep
+  test in `tests/test_db_simulation_integration.py` per its own
+  recommendation. Verified directly (seed `("town", 7)`, pop 400, 6-year
+  advance): before, `military_service` grew 8 → 56 rows with 45 invalid
+  self-relationships; after, 9 rows (one genuinely new soldier), zero
+  residents with >1 open span, zero self-relationships. Full suite (349
+  passed). Waiting on Integrate mode before `done`.

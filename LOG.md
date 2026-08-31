@@ -12,6 +12,42 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-08-31 — Frodo — T10: fixed the military_service/school_enrollments accumulation bug from T09
+
+Picked option 2 of T09's three proposed fixes (see below): `advance_town`
+now filters out any generated `military_service`/`school_enrollments`
+record whose resident already has an open (`end_date IS NULL`) span of
+that type, before calling `insert_military_service`/
+`insert_school_enrollments`. Chose this over closing-the-prior-span
+(option 1) or delete-then-reinsert (option 3) because a service/
+enrollment span is naturally continuous — a soldier doesn't "re-enlist"
+every year, they just keep serving — so skipping re-generation for
+someone already in progress is the closest semantic fit, and it's a
+minimal additive filter in `advance_town`'s orchestration layer rather
+than a signature change to `generate_military_service`/
+`generate_school_enrollments`, both of which stay exactly as
+`generate_town_database` already uses them for one-shot generation.
+
+Also added the unambiguous self-pair guard
+(`if a["resident_id"] == b["resident_id"]: continue`) to both
+`derive_unit_mate_relationships` (confirmed the actual bug) and
+`derive_classmate_relationships` (same structural gap, not confirmed to
+have fired in practice yet — `age_at_start` differs year to year for
+the same resident, which usually routes duplicate school-enrollment
+records into different cohort buckets, but there's no reason to leave
+the same unguarded pairing loop in place).
+
+Verified pre/post with the exact numbers rather than estimating: seed
+`("town", 7)`, pop 400, 6-year advance. Pre-fix (checked out the parent
+commit's files temporarily to measure, then restored): `military_service`
+grew 8 → 56 rows, 45 invalid `(X, X, 'unit_mate')` self-relationships.
+Post-fix: 9 rows (one genuinely new soldier over 6 years — not a
+duplicate), zero residents with more than one open span, zero
+self-relationships. T09's sweep assertions (per-resident open-span
+bound for both tables, no self-relationships) folded into the existing
+`test_five_year_advance_preserves_data_integrity_across_seeds` per T09's
+own recommendation, rather than a new test function.
+
 ## 2026-08-31 — Samwise1 — T09 final review: suite + determinism clean; found one real cross-year bug (military_service accumulation → unit_mate self-loops)
 
 **Ran:** full suite from clean `main` (`0495883`) — **349 passed**. Plus a
