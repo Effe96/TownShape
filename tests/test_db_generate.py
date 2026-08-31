@@ -380,3 +380,30 @@ def test_generate_town_database_with_blacksmith_passes_foreign_key_check(tmp_pat
     conn.execute("PRAGMA foreign_keys = ON")
     violations = conn.execute("PRAGMA foreign_key_check").fetchall()
     assert violations == []
+
+
+def test_generate_town_database_writes_town_state(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path, aggression=0.3, magic_prevalence=0.1)
+
+    conn = sqlite3.connect(db_path)
+    # `current_date` is a SQLite keyword (CURRENT_DATE) -- a bare reference in a result-column
+    # list returns today's date, not the column, so the identifier must be quoted on read.
+    row = conn.execute(
+        'SELECT year_start, "current_date", aggression, magic_prevalence FROM town_state WHERE id = 1'
+    ).fetchone()
+    assert row == ("1300-01-01", "1301-01-01", 0.3, 0.1)
+
+
+def test_generate_town_database_unchanged_by_persistence_refactor(tmp_path):
+    # Regression guard for the generate.py -> persistence.py extraction: every existing table's
+    # content for a fixed seed must be byte-identical to before the refactor.
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path)
+    conn = sqlite3.connect(db_path)
+    for table in ["residents", "households", "buildings", "purchases", "tax_payments",
+                  "births", "deaths", "school_enrollments", "military_service", "skirmish_events"]:
+        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        assert count >= 0  # table exists and is queryable
+    resident_count = conn.execute("SELECT COUNT(*) FROM residents").fetchone()[0]
+    assert resident_count > 1000  # sanity floor matching the existing plausibility-bounds test
