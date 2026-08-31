@@ -206,7 +206,7 @@ is merged.
 
 ### T09: Final whole-tree review and test
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Samwise1
 - **Handoff Notes:** Posted + claimed by Samwise1 with a **high**
   remaining-budget tier, per `CLAUDE.md`'s Team-mode protocol
@@ -241,25 +241,22 @@ is merged.
   `LOG.md` + Director Notes. Two sweep over-flags that are NOT bugs:
   relationships aren't stored `a<b` (`parent` is a directed edge), and
   the clock advances 365-day years not calendar years (per spec).
+  Closed out by Frodo now that T10 (the bug it found) has landed.
 
 ### T10: Fix `military_service`/`school_enrollments` accumulation in `advance_town`
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Frodo
-- **Handoff Notes:** Done — PR #8 open
-  (https://github.com/Effe96/TownShape/pull/8, branch
-  `t10-service-enrollment-accumulation`). Went with option 2 (skip
-  residents who already have an open span) — `advance_town` now filters
-  out any generated `military_service`/`school_enrollments` record whose
-  resident already has an open (`end_date IS NULL`) span before
-  inserting. `generate_military_service`/`generate_school_enrollments`
-  themselves unchanged, so `generate_town_database`'s one-shot call
-  sites are unaffected. Added the self-pair guard to both
-  `derive_unit_mate_relationships` and `derive_classmate_relationships`
-  regardless. T09's sweep assertions folded into the existing seed-sweep
-  test in `tests/test_db_simulation_integration.py` per its own
-  recommendation. Verified directly (seed `("town", 7)`, pop 400, 6-year
-  advance): before, `military_service` grew 8 → 56 rows with 45 invalid
-  self-relationships; after, 9 rows (one genuinely new soldier), zero
-  residents with >1 open span, zero self-relationships. Full suite (349
-  passed). Waiting on Integrate mode before `done`.
+- **Handoff Notes:** Merged via PR #8 (squash, `Agent: Frodo`). Went
+  with option 2 (skip residents who already have an open span) —
+  `advance_town` now filters out any generated `military_service`/
+  `school_enrollments` record whose resident already has an open
+  (`end_date IS NULL`) span before inserting. Added the self-pair guard
+  to both `derive_unit_mate_relationships` and
+  `derive_classmate_relationships`. Verified directly (seed
+  `("town", 7)`, pop 400, 6-year advance): before, `military_service`
+  grew 8 → 56 rows with 45 invalid self-relationships; after, 9 rows
+  (one genuinely new soldier), zero residents with >1 open span, zero
+  self-relationships. Full suite green on merged `main` (349 passed).
+  **Capability-2 slice-1 (town year-advance) is now fully complete —
+  T01–T10 all `done`.**
