@@ -263,10 +263,12 @@ is merged.
 
 ### T11: Household wealth & income model
 
-- **Status:** in-review
+- **Status:** done
 - **Owner:** Frodo
-- **Handoff Notes:** PR #9 (`t11-household-wealth-model` → `main`), awaiting
-  an Integrate-mode pass. Implements
+- **Handoff Notes:** Merged via PR #9 (squash, `Agent: Frodo`) after an
+  Integrate-mode pass (protected files untouched, `CONTRACTS.md` style/
+  interfaces clean, manual secret scan clean — `gitleaks` not installed,
+  full suite green). Implements
   `docs/superpowers/plans/2026-08-31-household-wealth-model-implementation.md`
   (spec: `docs/superpowers/specs/2026-08-31-household-wealth-model-design.md`),
   the highest-priority gap in `docs/narrative-gaps.md` (SES has no effect
