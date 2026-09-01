@@ -1,3 +1,4 @@
+import itertools
 from typing import Any, Dict, List
 
 from town_relationships.pairs import canonical_pair
@@ -13,7 +14,6 @@ def derive_coworker_relationships(residents: List[Dict[str, Any]]) -> List[Dict[
     relationships: List[Dict[str, Any]] = []
     for resident_ids in residents_by_workplace.values():
         resident_ids = sorted(resident_ids)
-        for i in range(len(resident_ids)):
-            for j in range(i + 1, len(resident_ids)):
-                relationships.append(canonical_pair(resident_ids[i], resident_ids[j], "coworker"))
+        for a, b in itertools.combinations(resident_ids, 2):
+            relationships.append(canonical_pair(a, b, "coworker"))
     return relationships

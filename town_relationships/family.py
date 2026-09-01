@@ -1,3 +1,4 @@
+import itertools
 from datetime import date
 from typing import Any, Dict, List
 
@@ -61,9 +62,8 @@ def derive_family_relationships(
                         "relationship_type": "parent", "detail": None,
                     })
 
-        for i in range(len(children)):
-            for j in range(i + 1, len(children)):
-                relationships.append(canonical_pair(children[i]["id"], children[j]["id"], "sibling"))
+        for a, b in itertools.combinations(children, 2):
+            relationships.append(canonical_pair(a["id"], b["id"], "sibling"))
 
         non_extra = parent_candidates + children
         for extra in extra_adults:
@@ -71,10 +71,7 @@ def derive_family_relationships(
                 # Skip household_member if this pair is an asserted parent-child relationship
                 if (extra["id"], other["id"]) not in asserted_parent_pairs and (other["id"], extra["id"]) not in asserted_parent_pairs:
                     relationships.append(canonical_pair(extra["id"], other["id"], "household_member"))
-        for i in range(len(extra_adults)):
-            for j in range(i + 1, len(extra_adults)):
-                relationships.append(
-                    canonical_pair(extra_adults[i]["id"], extra_adults[j]["id"], "household_member")
-                )
+        for a, b in itertools.combinations(extra_adults, 2):
+            relationships.append(canonical_pair(a["id"], b["id"], "household_member"))
 
     return relationships

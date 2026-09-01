@@ -1,3 +1,4 @@
+import itertools
 import json
 from datetime import date
 from typing import Any, Dict, List, Tuple
@@ -23,19 +24,17 @@ def derive_classmate_relationships(
     relationships: List[Dict[str, Any]] = []
     seen_pairs = set()
     for records in by_cohort.values():
-        for i in range(len(records)):
-            for j in range(i + 1, len(records)):
-                a, b = records[i], records[j]
-                if a["resident_id"] == b["resident_id"]:
-                    continue
-                overlap = dates_overlap(a["start_date"], a["end_date"], b["start_date"], b["end_date"])
-                if overlap is None:
-                    continue
-                lo, hi = sorted((a["resident_id"], b["resident_id"]))
-                if (lo, hi) in seen_pairs:
-                    continue
-                seen_pairs.add((lo, hi))
-                overlap_start, overlap_end = overlap
-                detail = json.dumps({"overlap_start": overlap_start, "overlap_end": overlap_end})
-                relationships.append(canonical_pair(a["resident_id"], b["resident_id"], "classmate", detail))
+        for a, b in itertools.combinations(records, 2):
+            if a["resident_id"] == b["resident_id"]:
+                continue
+            overlap = dates_overlap(a["start_date"], a["end_date"], b["start_date"], b["end_date"])
+            if overlap is None:
+                continue
+            lo, hi = sorted((a["resident_id"], b["resident_id"]))
+            if (lo, hi) in seen_pairs:
+                continue
+            seen_pairs.add((lo, hi))
+            overlap_start, overlap_end = overlap
+            detail = json.dumps({"overlap_start": overlap_start, "overlap_end": overlap_end})
+            relationships.append(canonical_pair(a["resident_id"], b["resident_id"], "classmate", detail))
     return relationships
