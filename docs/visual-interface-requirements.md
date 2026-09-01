@@ -65,6 +65,7 @@ Every requirement below traces back to a line in that Brief.
     tight.
     _Traces to: Brief, "Where the need came from" — the
     tune-regenerate-inspect loop._
+    _Note: because the backend opens a fresh DB connection per request, regenerating the town **to the same file path** and refreshing the browser already works without a restart — only pointing the CLI at a different file path needs one._
 
 ### Nice-to-have
 
