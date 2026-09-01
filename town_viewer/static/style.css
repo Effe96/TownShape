@@ -1,0 +1,22 @@
+html, body { margin: 0; height: 100%; font-family: sans-serif; }
+#app { display: flex; height: 100vh; }
+#map { flex: 1; background: #eef2f5; cursor: grab; }
+#map.dragging { cursor: grabbing; }
+#sidebar {
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #ccc;
+  overflow: hidden;
+}
+#search-panel { flex: 1 1 50%; display: flex; flex-direction: column; padding: 8px; overflow: hidden; }
+#search-input { padding: 6px; margin-bottom: 6px; }
+#resident-list { flex: 1; overflow-y: auto; border: 1px solid #ddd; }
+.resident-row { padding: 4px 6px; cursor: pointer; border-bottom: 1px solid #eee; }
+.resident-row:hover { background: #f0f0f0; }
+#pagination { display: flex; justify-content: space-between; align-items: center; padding-top: 6px; }
+#detail-panel { flex: 1 1 50%; overflow-y: auto; padding: 8px; border-top: 1px solid #ccc; }
+#detail-panel .hint { color: #888; }
+.detail-row { margin: 2px 0; }
+.detail-row .label { font-weight: bold; }
+.linked-name { color: #2255aa; cursor: pointer; text-decoration: underline; }

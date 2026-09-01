@@ -1,5 +1,26 @@
 <!doctype html>
 <html>
-<head><title>Town Viewer</title></head>
-<body><p>Town Viewer — under construction.</p></body>
+<head>
+  <meta charset="utf-8">
+  <title>Town Viewer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <canvas id="map"></canvas>
+    <div id="sidebar">
+      <div id="search-panel">
+        <input id="search-input" type="text" placeholder="Search residents by name...">
+        <div id="resident-list"></div>
+        <div id="pagination">
+          <button id="prev-page">&laquo; Prev</button>
+          <span id="page-info"></span>
+          <button id="next-page">Next &raquo;</button>
+        </div>
+      </div>
+      <div id="detail-panel"><p class="hint">Click a building or a resident to see details.</p></div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
 </html>
