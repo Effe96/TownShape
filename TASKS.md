@@ -260,3 +260,26 @@ is merged.
   self-relationships. Full suite green on merged `main` (349 passed).
   **Capability-2 slice-1 (town year-advance) is now fully complete —
   T01–T10 all `done`.**
+
+### T11: Household wealth & income model
+
+- **Status:** claimed
+- **Owner:** Frodo
+- **Handoff Notes:** Implements
+  `docs/superpowers/plans/2026-08-31-household-wealth-model-implementation.md`
+  (spec: `docs/superpowers/specs/2026-08-31-household-wealth-model-design.md`),
+  the highest-priority gap in `docs/narrative-gaps.md` (SES has no effect
+  on spending — a poor resident was empirically out-spending every rich
+  one). New `town_db/economy.py` (income tiers, yearly wealth cycle);
+  changes to `town_db/schema.py` (`households.wealth` column),
+  `town_db/purchases.py` (wealth-tier reweighting), `town_db/persistence.py`
+  (`update_household_wealth`), `town_db/generate.py` and
+  `town_db/simulation.py` (wire the income → purchases/taxes → spend
+  cycle into both one-shot generation and `advance_town`). Single-owner,
+  8 sequential sub-tasks per the plan (each its own commit) — not split
+  across the board the way capability-2-slice-1 was, since the plan
+  itself is a strict dependency chain for one implementer. Plan's Task 8
+  (`test_rich_households_out_spend_poor_households_over_time`) is the
+  actual acceptance bar; tune constants in `town_db/economy.py`/
+  `town_db/purchases.py` if it doesn't hold, per the plan's Global
+  Constraints. Not yet started — claiming to begin now.
