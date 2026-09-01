@@ -62,3 +62,61 @@ def household_ses(household_resident_rows: List[Dict[str, Any]]) -> str:
 
 def starting_wealth_by_ses(ses: str) -> float:
     return STARTING_WEALTH_BY_SES.get(ses, STARTING_WEALTH_BY_SES["poor"])
+
+
+WEALTH_TIER_THRESHOLDS = [(100.0, "poor"), (1000.0, "comfortable")]
+WEALTH_TIER_DEFAULT = "wealthy"
+
+
+def wealth_tier(wealth: float) -> str:
+    for threshold, tier in WEALTH_TIER_THRESHOLDS:
+        if wealth < threshold:
+            return tier
+    return WEALTH_TIER_DEFAULT
+
+
+def _residents_by_household(resident_rows: List[Dict[str, Any]]) -> Dict[int, List[Dict[str, Any]]]:
+    grouped: Dict[int, List[Dict[str, Any]]] = {}
+    for row in resident_rows:
+        grouped.setdefault(row["household_id"], []).append(row)
+    return grouped
+
+
+def seed_starting_wealth(household_rows: List[Dict[str, Any]], resident_rows: List[Dict[str, Any]]) -> None:
+    grouped = _residents_by_household(resident_rows)
+    for household in household_rows:
+        ses = household_ses(grouped.get(household["id"], []))
+        household["wealth"] = starting_wealth_by_ses(ses)
+
+
+def add_yearly_income(
+    seed,
+    household_rows: List[Dict[str, Any]],
+    resident_rows: List[Dict[str, Any]],
+    building_type_by_id: Dict[int, str],
+) -> None:
+    grouped = _residents_by_household(resident_rows)
+    for household in household_rows:
+        income = compute_household_income(seed, grouped.get(household["id"], []), building_type_by_id)
+        household["wealth"] = household.get("wealth", 0.0) + income
+
+
+def subtract_yearly_spend(
+    household_rows: List[Dict[str, Any]],
+    resident_rows: List[Dict[str, Any]],
+    purchases: List[Dict[str, Any]],
+    tax_payments: List[Dict[str, Any]],
+) -> None:
+    household_id_by_resident = {row["db_id"]: row["household_id"] for row in resident_rows}
+    spend_by_household: Dict[int, float] = {}
+    for p in purchases:
+        hh_id = household_id_by_resident.get(p["resident_db_id"])
+        if hh_id is not None:
+            spend_by_household[hh_id] = spend_by_household.get(hh_id, 0.0) + p["total_price"]
+    for t in tax_payments:
+        hh_id = household_id_by_resident.get(t["resident_db_id"])
+        if hh_id is not None:
+            spend_by_household[hh_id] = spend_by_household.get(hh_id, 0.0) + t["amount"]
+    for household in household_rows:
+        spent = spend_by_household.get(household["id"], 0.0)
+        household["wealth"] = max(0.0, household.get("wealth", 0.0) - spent)

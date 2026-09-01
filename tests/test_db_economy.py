@@ -1,8 +1,12 @@
 from town_db.economy import (
+    add_yearly_income,
     compute_household_income,
     daily_income,
     household_ses,
+    seed_starting_wealth,
     starting_wealth_by_ses,
+    subtract_yearly_spend,
+    wealth_tier,
 )
 
 
@@ -83,3 +87,58 @@ def test_household_ses_defaults_to_poor_when_empty():
 
 def test_starting_wealth_by_ses_rich_exceeds_poor():
     assert starting_wealth_by_ses("rich") > starting_wealth_by_ses("poor")
+
+
+def test_seed_starting_wealth_sets_wealth_by_household_ses():
+    households = [{"id": 1}, {"id": 2}]
+    residents = [
+        {"household_id": 1, "ses": "rich"},
+        {"household_id": 2, "ses": "poor"},
+    ]
+    seed_starting_wealth(households, residents)
+    assert households[0]["wealth"] == starting_wealth_by_ses("rich")
+    assert households[1]["wealth"] == starting_wealth_by_ses("poor")
+
+
+def test_add_yearly_income_increases_wealth_by_computed_income():
+    households = [{"id": 1, "wealth": 100.0}]
+    residents = [{
+        "db_id": 1, "household_id": 1, "age_bracket": "adult", "death_date": None,
+        "occupation": "shopkeep", "workplace_building_id": 10, "ses": "poor", "is_noble": False,
+    }]
+    building_type_by_id = {10: "shop"}
+    add_yearly_income(("town", 1), households, residents, building_type_by_id)
+    expected_income = compute_household_income(("town", 1), residents, building_type_by_id)
+    assert households[0]["wealth"] == 100.0 + expected_income
+
+
+def test_add_yearly_income_defaults_missing_wealth_to_zero():
+    households = [{"id": 1}]  # no "wealth" key yet
+    residents = [{
+        "db_id": 1, "household_id": 1, "age_bracket": "adult", "death_date": None,
+        "occupation": None, "workplace_building_id": None, "ses": "poor", "is_noble": False,
+    }]
+    add_yearly_income(("town", 1), households, residents, {})
+    assert households[0]["wealth"] >= 0.0
+
+
+def test_subtract_yearly_spend_reduces_wealth_by_purchases_and_taxes():
+    households = [{"id": 1, "wealth": 100.0}]
+    residents = [{"db_id": 1, "household_id": 1}]
+    purchases = [{"resident_db_id": 1, "total_price": 20.0}, {"resident_db_id": 1, "total_price": 5.0}]
+    tax_payments = [{"resident_db_id": 1, "amount": 10.0}]
+    subtract_yearly_spend(households, residents, purchases, tax_payments)
+    assert households[0]["wealth"] == 100.0 - 20.0 - 5.0 - 10.0
+
+
+def test_subtract_yearly_spend_floors_at_zero():
+    households = [{"id": 1, "wealth": 10.0}]
+    residents = [{"db_id": 1, "household_id": 1}]
+    purchases = [{"resident_db_id": 1, "total_price": 500.0}]
+    subtract_yearly_spend(households, residents, purchases, [])
+    assert households[0]["wealth"] == 0.0
+
+
+def test_wealth_tier_orders_poor_below_comfortable_below_wealthy():
+    tiers = [wealth_tier(0.0), wealth_tier(500.0), wealth_tier(5000.0)]
+    assert tiers == ["poor", "comfortable", "wealthy"]
