@@ -46,3 +46,20 @@ def get_building_detail(conn: sqlite3.Connection, building_id: int) -> Optional[
     ]
     building["residents"] = residents
     return building
+
+
+def search_residents(
+    conn: sqlite3.Connection, query: str = "", page: int = 1, page_size: int = 50
+) -> Dict[str, Any]:
+    offset = (page - 1) * page_size
+    like = f"%{query}%"
+    total = conn.execute(
+        "SELECT COUNT(*) FROM residents WHERE first_name LIKE ? OR last_name LIKE ?", (like, like)
+    ).fetchone()[0]
+    rows = conn.execute(
+        "SELECT id, first_name, last_name, occupation FROM residents "
+        "WHERE first_name LIKE ? OR last_name LIKE ? ORDER BY last_name, first_name LIMIT ? OFFSET ?",
+        (like, like, page_size, offset),
+    ).fetchall()
+    residents = [{"id": r[0], "first_name": r[1], "last_name": r[2], "occupation": r[3]} for r in rows]
+    return {"residents": residents, "total": total, "page": page, "page_size": page_size}

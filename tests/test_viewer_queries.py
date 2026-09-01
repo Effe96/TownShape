@@ -104,3 +104,44 @@ def test_get_building_detail_returns_none_for_missing_building(tmp_path):
     conn.close()
 
     assert result is None
+
+
+from town_viewer.queries import search_residents
+
+
+def test_search_residents_with_no_query_returns_all_paginated(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    result = search_residents(conn, page=1, page_size=2)
+    conn.close()
+
+    assert result["total"] == 4
+    assert result["page"] == 1
+    assert result["page_size"] == 2
+    assert len(result["residents"]) == 2
+
+
+def test_search_residents_filters_by_name_case_insensitively(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    result = search_residents(conn, query="mira")
+    conn.close()
+
+    assert result["total"] == 1
+    assert result["residents"][0]["first_name"] == "Mira"
+
+
+def test_search_residents_second_page_is_the_remainder(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    result = search_residents(conn, page=2, page_size=3)
+    conn.close()
+
+    assert result["total"] == 4
+    assert len(result["residents"]) == 1
