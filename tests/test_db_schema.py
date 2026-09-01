@@ -234,3 +234,23 @@ def test_illnesses_table_accepts_a_row_referencing_a_resident_and_disease_event(
     row = conn.execute("SELECT resident_id, disease_event_id, start_date, end_date, severity FROM illnesses").fetchone()
     assert row == (1, 1, "1300-01-05", "1300-01-20", 0.5)
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_households_wealth_defaults_to_zero(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute("INSERT INTO households (id, family_name, race) VALUES (1, 'Smith', 'human')")
+    conn.commit()
+    row = conn.execute("SELECT wealth FROM households WHERE id = 1").fetchone()
+    assert row == (0.0,)
+
+
+def test_households_wealth_accepts_an_explicit_value(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO households (id, family_name, race, wealth) VALUES (1, 'Smith', 'human', 250.5)"
+    )
+    conn.commit()
+    row = conn.execute("SELECT wealth FROM households WHERE id = 1").fetchone()
+    assert row == (250.5,)

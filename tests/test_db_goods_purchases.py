@@ -19,6 +19,10 @@ def _resident(db_id, household_id, age_bracket="adult", death_date=None):
     }
 
 
+def _household_with_wealth(id_, wealth):
+    return {"id": id_, "family_name": "Smith", "race": "human", "wealth": wealth}
+
+
 def test_insert_goods_populates_the_catalog(tmp_path):
     conn = connect(str(tmp_path / "town.db"))
     create_schema(conn)
@@ -260,3 +264,39 @@ def test_generate_purchases_with_weapons_goods_present_in_catalog_matches_pool_w
         ("town", 1), households, residents, non_weapons_goods_ids, [10], YEAR_START, weeks=52
     )
     assert with_weapons_in_catalog == without_weapons_in_catalog
+
+
+def test_wealthy_households_shop_more_often_than_poor_ones():
+    poor_households = [_household_with_wealth(i, 0.0) for i in range(1, 21)]
+    wealthy_households = [_household_with_wealth(i, 5000.0) for i in range(1, 21)]
+    residents = [_resident(i, i) for i in range(1, 21)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+
+    poor_purchases = generate_purchases(("town", 1), poor_households, residents, goods_ids, [10], YEAR_START, weeks=52)
+    wealthy_purchases = generate_purchases(("town", 1), wealthy_households, residents, goods_ids, [10], YEAR_START, weeks=52)
+    assert len(wealthy_purchases) > len(poor_purchases)
+
+
+def test_wealthy_households_buy_more_luxury_goods_than_poor_ones():
+    poor_households = [_household_with_wealth(i, 0.0) for i in range(1, 41)]
+    wealthy_households = [_household_with_wealth(i, 5000.0) for i in range(1, 41)]
+    residents = [_resident(i, i) for i in range(1, 41)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    luxury_good_ids = {goods_ids[g["name"]] for g in GOODS_CATALOG if g["category"] == "luxury"}
+
+    poor_purchases = generate_purchases(("town", 1), poor_households, residents, goods_ids, [10], YEAR_START, weeks=52)
+    wealthy_purchases = generate_purchases(("town", 1), wealthy_households, residents, goods_ids, [10], YEAR_START, weeks=52)
+    poor_luxury = sum(1 for p in poor_purchases if p["good_id"] in luxury_good_ids)
+    wealthy_luxury = sum(1 for p in wealthy_purchases if p["good_id"] in luxury_good_ids)
+    assert wealthy_luxury > poor_luxury
+
+
+def test_expensive_goods_are_still_only_ever_bought_one_at_a_time_regardless_of_wealth():
+    households = [_household_with_wealth(i, 5000.0) for i in range(1, 21)]
+    residents = [_resident(i, i) for i in range(1, 21)]
+    goods_ids = {g["name"]: i + 1 for i, g in enumerate(GOODS_CATALOG)}
+    price_by_id = {goods_ids[g["name"]]: g["typical_price"] for g in GOODS_CATALOG}
+    purchases = generate_purchases(("town", 1), households, residents, goods_ids, [10], YEAR_START, weeks=52)
+    for p in purchases:
+        if price_by_id[p["good_id"]] >= 1.0:
+            assert p["quantity"] == 1

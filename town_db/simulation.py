@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from town_db.ages import ADULT_AGE_RANGE, age_on
+from town_db.economy import add_yearly_income, subtract_yearly_spend
 from town_db.generate import YEAR_LENGTH_DAYS
 from town_db.household_formation import generate_household_formations
 from town_db.job_market import fill_job_vacancies
@@ -18,6 +19,7 @@ from town_db.persistence import (
     insert_school_enrollments,
     insert_skirmish_events,
     insert_tax_payments,
+    update_household_wealth,
 )
 from town_db.purchases import SHOP_BUILDING_TYPES, generate_purchases
 from town_db.schema import connect
@@ -33,8 +35,8 @@ def _age_bracket(age: int) -> str:
 
 
 def _load_household_rows(conn) -> List[Dict[str, Any]]:
-    rows = conn.execute("SELECT id, family_name, race FROM households").fetchall()
-    return [{"id": r[0], "family_name": r[1], "race": r[2]} for r in rows]
+    rows = conn.execute("SELECT id, family_name, race, wealth FROM households").fetchall()
+    return [{"id": r[0], "family_name": r[1], "race": r[2], "wealth": r[3]} for r in rows]
 
 
 def _load_resident_rows(conn, year_start: date) -> List[Dict[str, Any]]:
@@ -78,6 +80,24 @@ def _goods_ids(conn) -> Dict[str, int]:
     return {name: good_id for good_id, name in conn.execute("SELECT id, name FROM goods").fetchall()}
 
 
+def _building_type_by_id(conn) -> Dict[int, str]:
+    return {r[0]: r[1] for r in conn.execute("SELECT id, building_type FROM buildings").fetchall()}
+
+
+def _append_new_households(conn, household_rows: List[Dict[str, Any]]) -> None:
+    """generate_household_formations inserts new households directly via SQL, bypassing this
+    in-memory list -- append any the list doesn't know about yet, without touching existing
+    entries (which already carry this year's added income, computed above, and must not be
+    overwritten by a stale DB re-read of their pre-income wealth). A newly-formed household has
+    no wealth of its own yet this year -- its movers' income was already added to their *old*
+    households before generate_household_formations ran -- so it starts at the schema default
+    (0.0), same as any other freshly-inserted household row."""
+    known_ids = {h["id"] for h in household_rows}
+    for row in conn.execute("SELECT id, family_name, race, wealth FROM households").fetchall():
+        if row[0] not in known_ids:
+            household_rows.append({"id": row[0], "family_name": row[1], "race": row[2], "wealth": row[3]})
+
+
 def _residents_with_open_span(conn, table: str) -> set:
     return {
         row[0] for row in conn.execute(f"SELECT resident_id FROM {table} WHERE end_date IS NULL").fetchall()
@@ -115,6 +135,9 @@ def advance_town(db_path: str, seed, years: int = 1) -> None:
             household_rows = _load_household_rows(conn)
             resident_rows = _load_resident_rows(conn, year_start)
 
+            building_type_by_id = _building_type_by_id(conn)
+            add_yearly_income(year_seed, household_rows, resident_rows, building_type_by_id)
+
             disease_rows = generate_disease_events(year_seed, year_start)
             insert_disease_events(conn, disease_rows)
 
@@ -138,7 +161,8 @@ def advance_town(db_path: str, seed, years: int = 1) -> None:
             generate_household_formations(conn, year_seed, year_start, year_end)
             fill_job_vacancies(conn, year_seed, year_start, year_end)
 
-            all_household_rows = _load_household_rows(conn)
+            _append_new_households(conn, household_rows)
+            all_household_rows = household_rows
             all_resident_rows = _load_resident_rows(conn, year_start)
 
             goods_ids = _goods_ids(conn)
@@ -154,6 +178,9 @@ def advance_town(db_path: str, seed, years: int = 1) -> None:
 
             tax_payments = generate_tax_payments(year_seed, all_household_rows, all_resident_rows, year_start)
             insert_tax_payments(conn, tax_payments)
+
+            subtract_yearly_spend(household_rows, all_resident_rows, purchases, tax_payments)
+            update_household_wealth(conn, household_rows)
 
             # A resident already in an open (still-ongoing) span keeps it rather than getting a
             # new duplicate row every simulated year -- generate_school_enrollments/

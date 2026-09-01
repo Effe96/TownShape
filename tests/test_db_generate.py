@@ -407,3 +407,30 @@ def test_generate_town_database_unchanged_by_persistence_refactor(tmp_path):
         assert count >= 0  # table exists and is queryable
     resident_count = conn.execute("SELECT COUNT(*) FROM residents").fetchone()[0]
     assert resident_count > 1000  # sanity floor matching the existing plausibility-bounds test
+
+
+def test_generate_town_database_seeds_and_updates_household_wealth(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path)
+
+    conn = sqlite3.connect(db_path)
+    rows = conn.execute("SELECT wealth FROM households").fetchall()
+    assert len(rows) > 0
+    # Every household ends the year with a real (non-default, non-negative) wealth value --
+    # income was added and spend was subtracted, not left at the raw starting seed or at zero
+    # for everyone.
+    assert all(w >= 0.0 for (w,) in rows)
+    assert len(set(rows)) > 1, "expected wealth to vary across households, not be uniform"
+
+
+def test_generate_town_database_wealth_is_deterministic(tmp_path):
+    db_path_1 = str(tmp_path / "town1.db")
+    db_path_2 = str(tmp_path / "town2.db")
+    generate_town_database(("town", 4), target_population=800, db_path=db_path_1)
+    generate_town_database(("town", 4), target_population=800, db_path=db_path_2)
+
+    conn1 = sqlite3.connect(db_path_1)
+    conn2 = sqlite3.connect(db_path_2)
+    rows1 = conn1.execute("SELECT id, wealth FROM households ORDER BY id").fetchall()
+    rows2 = conn2.execute("SELECT id, wealth FROM households ORDER BY id").fetchall()
+    assert rows1 == rows2

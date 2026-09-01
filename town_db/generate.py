@@ -5,6 +5,7 @@ from typing import Dict
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION
 from town_shaper.generate import generate_town
 
+from town_db.economy import add_yearly_income, seed_starting_wealth, subtract_yearly_spend
 from town_db.enrollment import generate_school_enrollments
 from town_db.goods import insert_goods
 from town_db.households import DEFAULT_INTERMARRIAGE_RATE, build_households_and_residents
@@ -20,6 +21,7 @@ from town_db.persistence import (
     insert_school_enrollments,
     insert_skirmish_events,
     insert_tax_payments,
+    update_household_wealth,
 )
 from town_db.purchases import SHOP_BUILDING_TYPES, generate_purchases
 from town_db.schema import connect, create_schema
@@ -99,13 +101,20 @@ def generate_town_database(
     for row in resident_rows:
         row["home_zone_type"] = zone_type_by_building_id.get(row["home_building_id"])
 
+    seed_starting_wealth(household_rows, resident_rows)
+
     for household in household_rows:
         conn.execute(
-            "INSERT INTO households (id, family_name, race) VALUES (?, ?, ?)",
-            (household["id"], household["family_name"], household["race"]),
+            "INSERT INTO households (id, family_name, race, wealth) VALUES (?, ?, ?, ?)",
+            (household["id"], household["family_name"], household["race"], household["wealth"]),
         )
 
     insert_residents(conn, resident_rows)
+
+    building_type_by_id = {
+        b.id: b.building_type for d in town.districts for b in d.buildings
+    }
+    add_yearly_income(seed, household_rows, resident_rows, building_type_by_id)
 
     # Vital records run BEFORE purchases and taxes so that residents who die
     # partway through the year stop shopping and paying tax on their death
@@ -154,6 +163,9 @@ def generate_town_database(
 
     tax_payments = generate_tax_payments(seed, household_rows, resident_rows, year_start)
     insert_tax_payments(conn, tax_payments)
+
+    subtract_yearly_spend(household_rows, resident_rows, purchases, tax_payments)
+    update_household_wealth(conn, household_rows)
 
     all_resident_rows = resident_rows + new_resident_rows
 

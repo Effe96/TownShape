@@ -1,4 +1,4 @@
-from town_db.persistence import insert_deaths, insert_residents
+from town_db.persistence import insert_deaths, insert_residents, update_household_wealth
 from town_db.schema import connect, create_schema
 
 
@@ -48,3 +48,17 @@ def test_insert_deaths_accepts_disease_or_skirmish_cause_and_updates_resident(tm
     assert death_row == ("1300-06-01", "illness", None, None)
     resident_row = conn.execute("SELECT death_date FROM residents WHERE id = ?", (resident_db_id,)).fetchone()
     assert resident_row == ("1300-06-01",)
+
+
+def test_update_household_wealth_writes_each_households_current_wealth(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute("INSERT INTO households (id, family_name, race) VALUES (1, 'Smith', 'human')")
+    conn.execute("INSERT INTO households (id, family_name, race) VALUES (2, 'Doe', 'human')")
+    conn.commit()
+
+    update_household_wealth(conn, [{"id": 1, "wealth": 123.45}, {"id": 2, "wealth": 0.0}])
+    conn.commit()
+
+    rows = dict(conn.execute("SELECT id, wealth FROM households").fetchall())
+    assert rows == {1: 123.45, 2: 0.0}

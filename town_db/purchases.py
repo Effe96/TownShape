@@ -6,7 +6,13 @@ from town_shaper.seeding import rng_for
 from town_db.goods import GOODS_CATALOG
 
 SHOP_BUILDING_TYPES = {"shop", "tavern", "market_stall"}
-WEEKLY_PURCHASE_COUNT_WEIGHTS = [40, 30, 20, 10]  # for 0, 1, 2, 3 purchases
+WEEKLY_PURCHASE_COUNT_WEIGHTS_BY_TIER = {
+    "poor": [55, 30, 10, 5],
+    "comfortable": [40, 30, 20, 10],
+    "wealthy": [20, 25, 30, 25],
+}
+QUANTITY_MULTIPLIER_BY_TIER = {"poor": 0.7, "comfortable": 1.0, "wealthy": 1.4}
+LUXURY_WEIGHT_MULTIPLIER_BY_TIER = {"poor": 0.3, "comfortable": 1.0, "wealthy": 2.0}
 
 
 def generate_purchases(
@@ -21,6 +27,8 @@ def generate_purchases(
     arcane_shop_building_ids: Optional[List[int]] = None,
     blacksmith_building_ids: Optional[List[int]] = None,
 ) -> List[Dict[str, Any]]:
+    from town_db.economy import wealth_tier
+
     if not shop_building_ids or not goods_ids:
         return []
 
@@ -72,18 +80,28 @@ def generate_purchases(
             ]
             if not buyers:
                 continue
-            count = rng.choices([0, 1, 2, 3], weights=WEEKLY_PURCHASE_COUNT_WEIGHTS, k=1)[0]
+            tier = wealth_tier(household.get("wealth", 0.0))
+            tier_good_weights = [
+                w * LUXURY_WEIGHT_MULTIPLIER_BY_TIER[tier] if category_by_name[name] == "luxury" else w
+                for name, w in zip(goods_names, good_weights)
+            ]
+            count = rng.choices([0, 1, 2, 3], weights=WEEKLY_PURCHASE_COUNT_WEIGHTS_BY_TIER[tier], k=1)[0]
             for _ in range(count):
                 buyer = rng.choice(buyers)
-                good_name = rng.choices(goods_names, weights=good_weights, k=1)[0]
+                good_name = rng.choices(goods_names, weights=tier_good_weights, k=1)[0]
                 if category_by_name[good_name] == "magic":
                     shop_id = rng.choice(arcane_shop_building_ids)
                 elif category_by_name[good_name] == "weapons":
                     shop_id = rng.choice(blacksmith_building_ids)
                 else:
                     shop_id = rng.choice(shop_building_ids)
-                # Expensive goods are bought one at a time; cheap staples in bulk.
-                quantity = 1 if price_by_name[good_name] >= 1.0 else rng.randint(1, 5)
+                # Expensive goods are bought one at a time, regardless of wealth -- the wealth
+                # effect on those goods is entirely via good *selection* (the luxury reweighting
+                # above), not quantity. Only the cheap/bulk case scales with wealth tier.
+                if price_by_name[good_name] >= 1.0:
+                    quantity = 1
+                else:
+                    quantity = max(1, round(rng.randint(1, 5) * QUANTITY_MULTIPLIER_BY_TIER[tier]))
                 unit_price = round(price_by_name[good_name] * rng.uniform(0.85, 1.15), 2)
                 # Cap the within-week day so a buyer who dies mid-week never
                 # shops after their own death date.
