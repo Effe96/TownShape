@@ -1,5 +1,5 @@
 html, body { margin: 0; height: 100%; font-family: sans-serif; }
-#app { display: flex; height: 100vh; }
+#app { display: flex; height: 100vh; position: relative; }
 #map { flex: 1; background: #eef2f5; cursor: grab; }
 #map.dragging { cursor: grabbing; }
 #sidebar {
@@ -20,3 +20,16 @@ html, body { margin: 0; height: 100%; font-family: sans-serif; }
 .detail-row { margin: 2px 0; }
 .detail-row .label { font-weight: bold; }
 .linked-name { color: #2255aa; cursor: pointer; text-decoration: underline; }
+#legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  max-width: 220px;
+}
+#legend .swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border: 1px solid #666; }
+#legend .row { margin: 1px 0; }

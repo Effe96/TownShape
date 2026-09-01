@@ -121,6 +121,7 @@ function loadMap() {
       resizeCanvas();
       fitViewToBounds();
       draw();
+      renderLegend();
     });
 }
 
@@ -295,4 +296,23 @@ function selectResident(residentId) {
       if (home) { view.offsetX = home.x; view.offsetY = home.y; }
       draw();
     });
+}
+
+function renderLegend() {
+  const zoneTypes = [...new Set(mapData.districts.map((d) => d.zone_type))].sort();
+  const landmarkTypesPresent = [...new Set(mapData.buildings.map((b) => b.building_type))]
+    .filter((t) => t in LANDMARK_COLORS)
+    .sort();
+
+  const zoneRows = zoneTypes
+    .map((zt) => `<div class="row"><span class="swatch" style="background:${ZONE_COLORS[zt] || DEFAULT_ZONE_COLOR}"></span>${zt}</div>`)
+    .join("");
+  const landmarkRows = landmarkTypesPresent
+    .map((bt) => `<div class="row"><span class="swatch" style="background:${LANDMARK_COLORS[bt]}"></span>${bt}</div>`)
+    .join("");
+
+  document.getElementById("legend").innerHTML = `
+    <div><strong>Zones</strong></div>${zoneRows}
+    <div><strong>Landmarks</strong></div>${landmarkRows || "<div class=\"row hint\">none</div>"}
+  `;
 }
