@@ -13,6 +13,9 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=5000)
     args = parser.parse_args()
 
+    if not os.path.isfile(args.db_path):
+        sys.exit(f"No such town DB: {args.db_path}")
+
     app = create_app(args.db_path)
     print(f"Serving {args.db_path} at http://127.0.0.1:{args.port}")
     app.run(port=args.port)

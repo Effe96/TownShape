@@ -37,7 +37,11 @@ def create_app(db_path: str) -> Flask:
     @app.get("/api/residents")
     def residents_list():
         query = request.args.get("q", "")
-        page = int(request.args.get("page", 1))
+        try:
+            page = int(request.args.get("page", 1))
+        except ValueError:
+            page = 1
+        page = max(page, 1)
         conn = connect(db_path)
         try:
             return jsonify(search_residents(conn, query, page))

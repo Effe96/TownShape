@@ -106,6 +106,17 @@ def test_get_building_detail_returns_none_for_missing_building(tmp_path):
     assert result is None
 
 
+def test_get_building_detail_returns_empty_residents_list_for_an_empty_building(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    temple = get_building_detail(conn, 1)  # the temple, nobody lives or works here in the fixture
+    conn.close()
+
+    assert temple["residents"] == []
+
+
 from town_viewer.queries import search_residents
 
 
@@ -145,6 +156,18 @@ def test_search_residents_second_page_is_the_remainder(tmp_path):
 
     assert result["total"] == 4
     assert len(result["residents"]) == 1
+
+
+def test_search_residents_with_no_matches_returns_empty_with_zero_total(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    result = search_residents(conn, query="nonexistentname")
+    conn.close()
+
+    assert result["total"] == 0
+    assert result["residents"] == []
 
 
 from town_viewer.queries import get_resident_detail

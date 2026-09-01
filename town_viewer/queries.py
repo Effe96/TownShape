@@ -90,13 +90,22 @@ def get_resident_detail(conn: sqlite3.Connection, resident_id: int) -> Optional[
 
     relationship_rows = conn.execute(
         """
-        SELECT resident_b_id, res.first_name, res.last_name, relationship_type, 'a'
-        FROM relationships JOIN residents res ON res.id = relationships.resident_b_id
-        WHERE resident_a_id = ?
-        UNION ALL
-        SELECT resident_a_id, res.first_name, res.last_name, relationship_type, 'b'
-        FROM relationships JOIN residents res ON res.id = relationships.resident_a_id
-        WHERE resident_b_id = ?
+        SELECT * FROM (
+            SELECT resident_b_id, res.first_name, res.last_name, relationship_type, 'a'
+            FROM relationships JOIN residents res ON res.id = relationships.resident_b_id
+            WHERE resident_a_id = ?
+            UNION ALL
+            SELECT resident_a_id, res.first_name, res.last_name, relationship_type, 'b'
+            FROM relationships JOIN residents res ON res.id = relationships.resident_a_id
+            WHERE resident_b_id = ?
+        )
+        ORDER BY CASE relationship_type
+            WHEN 'spouse' THEN 0
+            WHEN 'parent' THEN 1
+            WHEN 'sibling' THEN 2
+            WHEN 'household_member' THEN 3
+            ELSE 4
+        END
         """,
         (resident_id, resident_id),
     ).fetchall()
