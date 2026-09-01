@@ -19,6 +19,11 @@ const LANDMARK_COLORS = {
   arcane_shop: "#9400d3",
   harbormaster_office: "#00008b",
 };
+const COMMON_BUILDING_COLORS = {
+  tavern: "#b5651d",
+  shop: "#daa520",
+};
+const ALL_TYPED_COLORS = { ...LANDMARK_COLORS, ...COMMON_BUILDING_COLORS };
 const GENERIC_BUILDING_COLOR = "#555555";
 const LANDMARK_SIZE = 10;
 const GENERIC_SIZE = 5;
@@ -28,7 +33,7 @@ function buildingHalfSize(buildingType) {
 }
 
 function buildingColor(buildingType) {
-  return LANDMARK_COLORS[buildingType] || GENERIC_BUILDING_COLOR;
+  return ALL_TYPED_COLORS[buildingType] || GENERIC_BUILDING_COLOR;
 }
 
 let mapData = { districts: [], buildings: [], water_features: [] };
@@ -301,14 +306,14 @@ function selectResident(residentId) {
 function renderLegend() {
   const zoneTypes = [...new Set(mapData.districts.map((d) => d.zone_type))].sort();
   const landmarkTypesPresent = [...new Set(mapData.buildings.map((b) => b.building_type))]
-    .filter((t) => t in LANDMARK_COLORS)
+    .filter((t) => t in ALL_TYPED_COLORS)
     .sort();
 
   const zoneRows = zoneTypes
     .map((zt) => `<div class="row"><span class="swatch" style="background:${ZONE_COLORS[zt] || DEFAULT_ZONE_COLOR}"></span>${zt}</div>`)
     .join("");
   const landmarkRows = landmarkTypesPresent
-    .map((bt) => `<div class="row"><span class="swatch" style="background:${LANDMARK_COLORS[bt]}"></span>${bt}</div>`)
+    .map((bt) => `<div class="row"><span class="swatch" style="background:${ALL_TYPED_COLORS[bt]}"></span>${bt}</div>`)
     .join("");
 
   document.getElementById("legend").innerHTML = `
