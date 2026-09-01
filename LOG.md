@@ -12,6 +12,25 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-09-01 — Frodo — dead-code/stdlib cleanup, PR #10 merged
+
+Ran `/ponytail:ponytail-audit` (repo-wide over-engineering/dead-code scan,
+correctness explicitly out of scope) and applied its three findings on
+branch `ponytail-cleanup-dead-code`, merged via PR #10 (squash,
+`Agent: Frodo`) after an Integrate pass (no protected-file touches, no
+secrets — manual scan, `gitleaks` still not installed — zero PR comments,
+full suite green): deleted `population-gen.py` (655 dead lines — a legacy
+predecessor to `town_shaper`/`town_db`, named as superseded in
+`docs/superpowers/specs/2026-08-13-town-shaper-spatial-generation-design.md`,
+zero imports anywhere active); replaced a hand-rolled all-pairs loop
+(`for i in range(len(x)): for j in range(i+1, len(x))`) with
+`itertools.combinations(x, 2)` in the 6 places it was duplicated across
+`town_relationships/{family,military,neighbors,school,work}.py`; replaced a
+hand-rolled upper-median (`sorted(x)[len(x)//2]`) with
+`statistics.median_high(x)` in `tests/test_db_simulation_integration.py`.
+No behavior change intended — same relationship pairs, same median
+semantics. Net: -660 lines. Full suite: 376 passed, unchanged from before.
+
 ## 2026-09-01 — Frodo — T11: household wealth & income model, PR #9 open
 
 Implemented `docs/superpowers/plans/2026-08-31-household-wealth-model-implementation.md`
