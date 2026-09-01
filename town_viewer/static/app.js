@@ -202,3 +202,40 @@ canvas.addEventListener("mouseup", (e) => {
   const building = findBuildingAt(world.x, world.y);
   if (building) selectBuilding(building.id);
 });
+
+let currentPage = 1;
+
+function renderResidentList(data) {
+  const list = document.getElementById("resident-list");
+  list.innerHTML = data.residents
+    .map((r) => `<div class="resident-row" data-resident-id="${r.id}">${r.first_name} ${r.last_name}${r.occupation ? " — " + r.occupation : ""}</div>`)
+    .join("");
+  list.querySelectorAll(".resident-row").forEach((el) => {
+    el.addEventListener("click", () => selectResident(parseInt(el.dataset.residentId, 10)));
+  });
+
+  const totalPages = Math.max(1, Math.ceil(data.total / data.page_size));
+  document.getElementById("page-info").textContent = `Page ${data.page} of ${totalPages} (${data.total} residents)`;
+  document.getElementById("prev-page").disabled = data.page <= 1;
+  document.getElementById("next-page").disabled = data.page >= totalPages;
+}
+
+function loadResidents() {
+  const query = document.getElementById("search-input").value;
+  fetch(`/api/residents?q=${encodeURIComponent(query)}&page=${currentPage}`)
+    .then((r) => r.json())
+    .then(renderResidentList);
+}
+
+document.getElementById("search-input").addEventListener("input", () => {
+  currentPage = 1;
+  loadResidents();
+});
+document.getElementById("prev-page").addEventListener("click", () => {
+  if (currentPage > 1) { currentPage -= 1; loadResidents(); }
+});
+document.getElementById("next-page").addEventListener("click", () => {
+  currentPage += 1; loadResidents();
+});
+
+loadResidents();
