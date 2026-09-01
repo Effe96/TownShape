@@ -1,4 +1,5 @@
 import sqlite3
+import statistics
 from datetime import date
 
 from town_db.ages import ADULT_AGE_RANGE, age_on
@@ -169,8 +170,8 @@ def test_rich_households_out_spend_poor_households_over_time(tmp_path):
             for hh_id, ses in modal_ses_by_household.items() if ses == "poor"
         ]
         if rich_spends and poor_spends:
-            rich_medians.append(sorted(rich_spends)[len(rich_spends) // 2])
-            poor_medians.append(sorted(poor_spends)[len(poor_spends) // 2])
+            rich_medians.append(statistics.median_high(rich_spends))
+            poor_medians.append(statistics.median_high(poor_spends))
 
     assert rich_medians and poor_medians, "expected both rich and poor households in every swept seed"
     seeds_where_rich_wins = sum(1 for r, p in zip(rich_medians, poor_medians) if r > p)

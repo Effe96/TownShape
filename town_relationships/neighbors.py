@@ -1,3 +1,4 @@
+import itertools
 import json
 from typing import Any, Dict, List, Tuple
 
@@ -40,12 +41,10 @@ def derive_neighbor_relationships(
 
     # Same building, different household: distance 0, always neighbors.
     for occupants in residents_by_building.values():
-        for i in range(len(occupants)):
-            for j in range(i + 1, len(occupants)):
-                a, b = occupants[i], occupants[j]
-                if a["household_id"] != b["household_id"]:
-                    detail = json.dumps({"distance": 0.0})
-                    relationships.append(canonical_pair(a["id"], b["id"], "neighbor", detail))
+        for a, b in itertools.combinations(occupants, 2):
+            if a["household_id"] != b["household_id"]:
+                detail = json.dumps({"distance": 0.0})
+                relationships.append(canonical_pair(a["id"], b["id"], "neighbor", detail))
 
     # Cross-building K-nearest union graph.
     occupied_coords = {bid: building_coords[bid] for bid in residents_by_building if bid in building_coords}
