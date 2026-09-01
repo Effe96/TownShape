@@ -263,7 +263,7 @@ is merged.
 
 ### T11: Household wealth & income model
 
-- **Status:** claimed
+- **Status:** in-progress
 - **Owner:** Frodo
 - **Handoff Notes:** Implements
   `docs/superpowers/plans/2026-08-31-household-wealth-model-implementation.md`
