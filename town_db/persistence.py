@@ -96,3 +96,8 @@ def insert_military_service(conn: sqlite3.Connection, records: List[Dict[str, An
             "VALUES (?, ?, ?, ?, ?)",
             (m["resident_db_id"], m["garrison_building_id"], m["rank"], m["start_date"], m["end_date"]),
         )
+
+
+def update_household_wealth(conn: sqlite3.Connection, household_rows: List[Dict[str, Any]]) -> None:
+    for row in household_rows:
+        conn.execute("UPDATE households SET wealth = ? WHERE id = ?", (row["wealth"], row["id"]))
