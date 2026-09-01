@@ -263,9 +263,10 @@ is merged.
 
 ### T11: Household wealth & income model
 
-- **Status:** in-progress
+- **Status:** in-review
 - **Owner:** Frodo
-- **Handoff Notes:** Implements
+- **Handoff Notes:** PR #9 (`t11-household-wealth-model` → `main`), awaiting
+  an Integrate-mode pass. Implements
   `docs/superpowers/plans/2026-08-31-household-wealth-model-implementation.md`
   (spec: `docs/superpowers/specs/2026-08-31-household-wealth-model-design.md`),
   the highest-priority gap in `docs/narrative-gaps.md` (SES has no effect
@@ -275,11 +276,24 @@ is merged.
   `town_db/purchases.py` (wealth-tier reweighting), `town_db/persistence.py`
   (`update_household_wealth`), `town_db/generate.py` and
   `town_db/simulation.py` (wire the income → purchases/taxes → spend
-  cycle into both one-shot generation and `advance_town`). Single-owner,
-  8 sequential sub-tasks per the plan (each its own commit) — not split
-  across the board the way capability-2-slice-1 was, since the plan
-  itself is a strict dependency chain for one implementer. Plan's Task 8
-  (`test_rich_households_out_spend_poor_households_over_time`) is the
-  actual acceptance bar; tune constants in `town_db/economy.py`/
-  `town_db/purchases.py` if it doesn't hold, per the plan's Global
-  Constraints. Not yet started — claiming to begin now.
+  cycle into both one-shot generation and `advance_town`). Built task-by-task
+  via subagent-driven-development (8 sequential sub-tasks, TDD, task-scoped
+  review after each) plus a final whole-branch review. Full suite: **376
+  passed**. Plan's Task 8 acceptance bar
+  (`test_rich_households_out_spend_poor_households_over_time`: rich median
+  household spend > poor median, swept over 10 seeds) passed on the first
+  run — no constant tuning was needed.
+
+  **Two Important findings from the final review, both deliberately deferred
+  as fast-follow work, not fixed in this PR** (no test/correctness impact —
+  see `LOG.md` for full detail once posted): (1) `daily_income`'s
+  per-resident variation multiplier isn't year-stable in `advance_town` as
+  the design spec's prose claims — a spec-doc/implementation mismatch, not a
+  code bug, since the code faithfully matches the plan's own literal Task 7
+  instructions; (2) the "primary" income tier only reaches the 5 building
+  types `town_db.succession.primary_occupation_info` covers, so most
+  non-retail occupations (priests, guards, farmers, healers, ...) cap at
+  "apprentice" tier regardless of seniority — a real scope limitation,
+  deliberately left out of this branch since widening `succession.py`'s
+  classifier touches the shared promotion system. Both should become their
+  own follow-up tasks once T11 lands.

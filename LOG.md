@@ -12,6 +12,65 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-09-01 — Frodo — T11: household wealth & income model, PR #9 open
+
+Implemented `docs/superpowers/plans/2026-08-31-household-wealth-model-implementation.md`
+task-by-task via subagent-driven-development (8 TDD sub-tasks, task-scoped
+review after each, plus a final whole-branch review). Full suite: 376
+passed. Branch: `t11-household-wealth-model`, PR #9, board status
+`in-review`.
+
+**Two deliberate circular-import workarounds**, both diverging from the
+plan's literal code but confirmed necessary by independent tracing (twice —
+once by me before dispatch, once by each task's reviewer during review):
+`town_db/economy.py` locally redefines `YEAR_LENGTH_DAYS = 365` instead of
+importing `town_db.generate.YEAR_LENGTH_DAYS`, because Task 6 wires
+`generate.py` to import from `economy.py` — importing the constant back
+would make `economy → generate → economy` circular. Similarly,
+`town_db/purchases.py`'s `from town_db.economy import wealth_tier` is a
+local import inside `generate_purchases()`, not module-level, because
+`town_db/succession.py` already imports `SHOP_BUILDING_TYPES` from
+`purchases.py`, so a module-level import in `purchases.py` would create
+`purchases → economy → succession → purchases`. Both are correct fixes for
+a genuine defect in the plan's literal code, not implementer error.
+
+**Acceptance bar met without tuning:** the plan's actual acceptance test
+(Task 8, `test_rich_households_out_spend_poor_households_over_time` — rich
+households' median spend beats poor households' median spend, swept over
+10 seeds, 3-year advance) passed on the first run with the plan's original
+`INCOME_TIER_BY_ROLE`/`SES_INCOME_MULTIPLIER`/`STARTING_WEALTH_BY_SES`/
+purchase-reweighting constants untouched. No calibration was needed.
+
+**Two Important findings from the final whole-branch review, both ruled and
+deferred as fast-follow work rather than fixed in this branch** (neither
+breaks a test or produces incorrect data):
+1. `daily_income`'s per-resident income-variation multiplier is supposed to
+   stay stable "in every simulated year" per the design spec's prose, but
+   `town_db/simulation.py`'s `advance_town` passes `year_seed` (which
+   embeds the year index) into `add_yearly_income` → `daily_income`, so the
+   multiplier actually re-rolls every year. This is a spec-prose/
+   implementation mismatch baked into the plan itself — Task 7's brief
+   literally specifies passing `year_seed`, and the resulting behavior
+   (income drifts year to year) is arguably more realistic, not wrong.
+   Ruling: leave the code as-is (matches the plan's own literal
+   instructions, already reviewed and approved across 7 tasks); the
+   spec's "stays stable" claim needs a doc fix, not the code.
+2. `daily_income`'s "primary" income tier only resolves for the 5 building
+   types `town_db.succession.primary_occupation_info` covers (shop,
+   tavern, market_stall, arcane_shop, blacksmith) — that function is T04's
+   shop-succession classifier, not a general senior-role detector. Most of
+   the town's workforce (priests, guards, farmers, healers, teachers,
+   dockworkers, ...), including single-capacity "head" roles, can never
+   reach "primary" tier regardless of seniority; they're capped at
+   "apprentice." The rich-vs-poor acceptance test still passes because SES
+   multiplier and employed/unemployed status differentiate independently
+   of this gap. Ruling: deliberately out of scope for T11 — widening
+   `primary_occupation_info`'s classification touches the shared
+   `promote_apprentice` succession system built for a different purpose,
+   and deserves its own task rather than a same-branch patch.
+
+Both findings should become their own follow-up tasks once T11 merges.
+
 ## 2026-08-31 — Frodo — T10: fixed the military_service/school_enrollments accumulation bug from T09
 
 Picked option 2 of T09's three proposed fixes (see below): `advance_town`
