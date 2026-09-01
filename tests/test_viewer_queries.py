@@ -145,3 +145,67 @@ def test_search_residents_second_page_is_the_remainder(tmp_path):
 
     assert result["total"] == 4
     assert len(result["residents"]) == 1
+
+
+from town_viewer.queries import get_resident_detail
+
+
+def test_get_resident_detail_includes_household_and_core_fields(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    mira = get_resident_detail(conn, 1)
+    conn.close()
+
+    assert mira["first_name"] == "Mira"
+    assert mira["occupation"] == "merchant"
+    assert mira["home_building_id"] == 4
+    assert mira["workplace_building_id"] == 3
+    assert mira["household"] == {"id": 1, "family_name": "Stonebrook", "race": "human", "wealth": 120.0}
+
+
+def test_get_resident_detail_includes_relationships_both_directions(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    mira = get_resident_detail(conn, 1)  # stored as resident_a in all her relationship rows
+    elin = get_resident_detail(conn, 3)  # stored as resident_b in her parent relationships
+    conn.close()
+
+    mira_types = {(r["resident_id"], r["relationship_type"], r["role"]) for r in mira["relationships"]}
+    assert (2, "spouse", "a") in mira_types
+    assert (3, "parent", "a") in mira_types
+    assert (4, "parent", "a") in mira_types
+
+    elin_types = {(r["resident_id"], r["relationship_type"], r["role"]) for r in elin["relationships"]}
+    assert (1, "parent", "b") in elin_types
+    assert (2, "parent", "b") in elin_types
+    assert (4, "sibling", "a") in elin_types
+
+
+def test_get_resident_detail_includes_shopping_history(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    mira = get_resident_detail(conn, 1)
+    rian = get_resident_detail(conn, 4)
+    conn.close()
+
+    assert mira["shopping"] == [
+        {"shop_building_id": 3, "purchase_count": 12, "total_spent": 340.5, "is_primary": True}
+    ]
+    assert rian["shopping"] == []
+
+
+def test_get_resident_detail_returns_none_for_missing_resident(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    result = get_resident_detail(conn, 999)
+    conn.close()
+
+    assert result is None

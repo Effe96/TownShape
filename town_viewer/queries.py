@@ -63,3 +63,59 @@ def search_residents(
     ).fetchall()
     residents = [{"id": r[0], "first_name": r[1], "last_name": r[2], "occupation": r[3]} for r in rows]
     return {"residents": residents, "total": total, "page": page, "page_size": page_size}
+
+
+def get_resident_detail(conn: sqlite3.Connection, resident_id: int) -> Optional[Dict[str, Any]]:
+    row = conn.execute(
+        "SELECT id, household_id, first_name, last_name, gender, race, birth_date, death_date, "
+        "ses, occupation, home_building_id, workplace_building_id FROM residents WHERE id = ?",
+        (resident_id,),
+    ).fetchone()
+    if row is None:
+        return None
+
+    resident = {
+        "id": row[0], "household_id": row[1], "first_name": row[2], "last_name": row[3],
+        "gender": row[4], "race": row[5], "birth_date": row[6], "death_date": row[7],
+        "ses": row[8], "occupation": row[9], "home_building_id": row[10], "workplace_building_id": row[11],
+    }
+
+    household_row = conn.execute(
+        "SELECT id, family_name, race, wealth FROM households WHERE id = ?", (resident["household_id"],)
+    ).fetchone()
+    resident["household"] = {
+        "id": household_row[0], "family_name": household_row[1],
+        "race": household_row[2], "wealth": household_row[3],
+    }
+
+    relationship_rows = conn.execute(
+        """
+        SELECT resident_b_id, res.first_name, res.last_name, relationship_type, 'a'
+        FROM relationships JOIN residents res ON res.id = relationships.resident_b_id
+        WHERE resident_a_id = ?
+        UNION ALL
+        SELECT resident_a_id, res.first_name, res.last_name, relationship_type, 'b'
+        FROM relationships JOIN residents res ON res.id = relationships.resident_a_id
+        WHERE resident_b_id = ?
+        """,
+        (resident_id, resident_id),
+    ).fetchall()
+    resident["relationships"] = [
+        {"resident_id": r[0], "first_name": r[1], "last_name": r[2], "relationship_type": r[3], "role": r[4]}
+        for r in relationship_rows
+    ]
+
+    shopping_rows = conn.execute(
+        "SELECT shop_building_id, purchase_count, total_spent, is_primary "
+        "FROM shop_relationships WHERE resident_id = ? ORDER BY total_spent DESC",
+        (resident_id,),
+    ).fetchall()
+    resident["shopping"] = [
+        {
+            "shop_building_id": r[0], "purchase_count": r[1],
+            "total_spent": r[2], "is_primary": bool(r[3]),
+        }
+        for r in shopping_rows
+    ]
+
+    return resident
