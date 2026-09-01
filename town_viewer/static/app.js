@@ -101,6 +101,16 @@ function draw() {
     ctx.fillStyle = buildingColor(building.building_type);
     ctx.fillRect(sx, sy, screenSize, screenSize);
   }
+
+  for (const buildingId of highlightedBuildingIds) {
+    const building = mapData.buildings.find((b) => b.id === buildingId);
+    if (!building) continue;
+    const half = buildingHalfSize(building.building_type);
+    const { sx, sy } = worldToScreen(building.x - half, building.y - half);
+    ctx.strokeStyle = "#ff2222";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(sx, sy, half * 2 * view.scale, half * 2 * view.scale);
+  }
 }
 
 function loadMap() {
@@ -239,3 +249,50 @@ document.getElementById("next-page").addEventListener("click", () => {
 });
 
 loadResidents();
+
+function relationshipLabel(rel) {
+  if (rel.relationship_type === "parent") return rel.role === "a" ? "parent of" : "child of";
+  return rel.relationship_type.replace(/_/g, " ");
+}
+
+function renderResidentDetail(resident) {
+  const panel = document.getElementById("detail-panel");
+  const relRows = resident.relationships
+    .map((r) => `<div class="detail-row">${relationshipLabel(r)} <span class="linked-name" data-resident-id="${r.resident_id}">${r.first_name} ${r.last_name}</span></div>`)
+    .join("") || "<p class=\"hint\">No recorded relationships.</p>";
+  const shopRows = resident.shopping
+    .map((s) => `<div class="detail-row"><span class="linked-name" data-building-id="${s.shop_building_id}">Shop #${s.shop_building_id}</span> — ${s.purchase_count} purchases, ${s.total_spent.toFixed(2)} spent${s.is_primary ? " (primary)" : ""}</div>`)
+    .join("") || "<p class=\"hint\">No recorded purchases.</p>";
+
+  panel.innerHTML = `
+    <h3>${resident.first_name} ${resident.last_name}</h3>
+    <div class="detail-row"><span class="label">Household:</span> ${resident.household.family_name} (wealth ${resident.household.wealth})</div>
+    <div class="detail-row"><span class="label">SES:</span> ${resident.ses}</div>
+    <div class="detail-row"><span class="label">Occupation:</span> ${resident.occupation || "none"}</div>
+    <div class="detail-row"><span class="label">Home:</span> ${resident.home_building_id != null ? `<span class="linked-name" data-building-id="${resident.home_building_id}">Building #${resident.home_building_id}</span>` : "none"}</div>
+    <div class="detail-row"><span class="label">Workplace:</span> ${resident.workplace_building_id != null ? `<span class="linked-name" data-building-id="${resident.workplace_building_id}">Building #${resident.workplace_building_id}</span>` : "none"}</div>
+    <h4>Family & relationships</h4>
+    ${relRows}
+    <h4>Shopping</h4>
+    ${shopRows}
+  `;
+  panel.querySelectorAll(".linked-name[data-resident-id]").forEach((el) => {
+    el.addEventListener("click", () => selectResident(parseInt(el.dataset.residentId, 10)));
+  });
+  panel.querySelectorAll(".linked-name[data-building-id]").forEach((el) => {
+    el.addEventListener("click", () => selectBuilding(parseInt(el.dataset.buildingId, 10)));
+  });
+}
+
+function selectResident(residentId) {
+  fetch(`/api/residents/${residentId}`)
+    .then((r) => r.json())
+    .then((resident) => {
+      highlightedBuildingIds = [resident.home_building_id, resident.workplace_building_id]
+        .filter((id) => id != null);
+      renderResidentDetail(resident);
+      const home = mapData.buildings.find((b) => b.id === resident.home_building_id);
+      if (home) { view.offsetX = home.x; view.offsetY = home.y; }
+      draw();
+    });
+}
