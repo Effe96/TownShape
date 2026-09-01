@@ -177,8 +177,18 @@ overflow shared across unrelated families.
 
 ### Gap: no individual wealth/income model — SES has no effect on spending
 
-**Status:** Open
-**Priority:** High
+**Status:** Addressed — T11, `docs/superpowers/plans/2026-08-31-household-wealth-model-implementation.md`
+(spec: `docs/superpowers/specs/2026-08-31-household-wealth-model-design.md`), PR #9. New
+`town_db/economy.py` gives every household a running wealth balance driven by occupation/SES-tiered
+daily income, and `town_db/purchases.py` now reweights purchase frequency/quantity/luxury-good
+selection by each household's current wealth tier. The regression this gap described is fixed and
+covered by a standing test (`test_rich_households_out_spend_poor_households_over_time`,
+`tests/test_db_simulation_integration.py`) that asserts rich households' median spend beats poor
+households' median spend across a 10-seed sweep — passed on the plan's original constants, no
+tuning needed. Two narrower gaps surfaced during T11's implementation are logged separately below
+("income tiering is a no-op for most occupations" and "yearly income-variation multiplier isn't
+actually year-stable").
+**Priority:** High (resolved)
 
 `ses` is currently only a binary poor/rich label with a single economic
 consequence: a flat `property_tax` rate (`PROPERTY_TAX_RATE_BY_SES` in
@@ -255,3 +265,55 @@ A resident's grandparents (if still alive and identifiable via the chain
 of `parent` links) are not surfaced as a relationship at all, even though
 the underlying data (birth records, household history) would support
 deriving one.
+
+## 2026-09-01 — T11 implementation (household wealth & income model), final whole-branch review
+
+Source: the final whole-branch code review for T11 (PR #9), which built the
+model this log's "no individual wealth/income model" gap (above) asked for.
+Both gaps below are real limitations of that new model itself, found while
+verifying it end to end — not correctness bugs (nothing here fails a test
+or produces bad data), but places where the model is narrower or less
+faithful to its own design than a reader would assume.
+
+### Realism gap (not a narrative-mapping gap): occupation-tiered income is a no-op for most jobs
+
+**Status:** Open
+
+`town_db/economy.py`'s `daily_income` is meant to be "occupation/SES-tiered"
+— unemployed < apprentice < primary < noble — but the primary/apprentice
+split is decided by `town_db.succession.primary_occupation_info`, which was
+built by an earlier task purely for shop-succession purposes and only
+recognizes 5 of ~18 building types (`shop`, `tavern`, `market_stall`,
+`arcane_shop`, `blacksmith`). Every other occupation — priest, guard,
+soldier, healer, teacher, farmer, dockworker, warehouse clerk,
+harbormaster, town clerk, and more, including single-capacity "head" roles
+that are obviously senior by construction — always resolves to
+`"apprentice"` tier and can never reach `"primary"`, regardless of
+seniority. The rich-vs-poor spending model still works today because SES
+and employed/unemployed status differentiate independently of this gap,
+but "occupation" doesn't meaningfully drive income for most of the town's
+workforce as currently implemented. Worth a future look at widening
+primary/senior-role classification across all `JOB_VACANCIES_BY_BUILDING_TYPE`
+building types — likely its own small task, since `primary_occupation_info`
+is shared with the `promote_apprentice` succession system it was originally
+built for, and widening it needs care not to disturb that.
+
+### Gap: yearly income-variation multiplier isn't actually year-stable, contradicting its own design spec
+
+**Status:** Open
+
+`docs/superpowers/specs/2026-08-31-household-wealth-model-design.md` states
+a resident's per-resident income-variation multiplier ("their relative
+luck/skill among peers") "stays stable" across every simulated year. In
+practice, `town_db/simulation.py`'s `advance_town` passes a per-year
+`year_seed` into `add_yearly_income` → `daily_income`'s
+`rng_for(seed, "db", "income", resident_id)` call, so the multiplier is
+actually re-rolled every year — the plan's own literal Task 7 code
+specifies passing `year_seed`, so this is a spec-prose/implementation
+mismatch baked into the plan itself, not an implementer deviation. No test
+depends on year-stability (only per-seed determinism, which does hold), and
+year-to-year income drift is arguably more realistic than a frozen
+multiplier — but as written, the code and its own design doc disagree.
+Needs a decision either way: fix the implementation to hold the multiplier
+stable (derive it from the base town seed, not `year_seed`), or fix the
+spec's prose to describe the actual (year-varying) behavior.
