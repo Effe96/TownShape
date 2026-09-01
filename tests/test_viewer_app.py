@@ -1,0 +1,66 @@
+from tests.town_viewer_fixtures import build_full_town
+from town_viewer.app import create_app
+
+
+def _client(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+    app = create_app(db_path)
+    app.testing = True
+    return app.test_client()
+
+
+def test_index_serves_the_frontend_page(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b"Town Viewer" in response.data
+
+
+def test_map_endpoint_returns_districts_and_buildings(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/api/map")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert len(body["districts"]) == 2
+    assert len(body["buildings"]) == 4
+
+
+def test_building_endpoint_returns_detail(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/api/buildings/4")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["building_type"] == "residence"
+    assert len(body["residents"]) == 4
+
+
+def test_building_endpoint_404s_for_missing_building(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/api/buildings/999")
+    assert response.status_code == 404
+
+
+def test_residents_endpoint_searches_and_paginates(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/api/residents?q=stonebrook&page=1")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total"] == 4
+    assert len(body["residents"]) == 4
+
+
+def test_resident_detail_endpoint_returns_full_profile(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/api/residents/1")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["first_name"] == "Mira"
+    assert len(body["relationships"]) == 3
+    assert len(body["shopping"]) == 1
+
+
+def test_resident_detail_endpoint_404s_for_missing_resident(tmp_path):
+    client = _client(tmp_path)
+    response = client.get("/api/residents/999")
+    assert response.status_code == 404
