@@ -148,3 +148,57 @@ canvas.addEventListener("wheel", (e) => {
 window.addEventListener("resize", () => { resizeCanvas(); draw(); });
 
 loadMap();
+
+let highlightedBuildingIds = [];
+
+function findBuildingAt(worldX, worldY) {
+  for (const building of mapData.buildings) {
+    const half = buildingHalfSize(building.building_type);
+    if (
+      worldX >= building.x - half && worldX <= building.x + half &&
+      worldY >= building.y - half && worldY <= building.y + half
+    ) {
+      return building;
+    }
+  }
+  return null;
+}
+
+function renderBuildingDetail(building) {
+  const panel = document.getElementById("detail-panel");
+  const rows = building.residents
+    .map((r) => {
+      const role = r.lives_here && r.works_here ? "lives & works here"
+        : r.lives_here ? "lives here" : "works here";
+      return `<div class="detail-row"><span class="linked-name" data-resident-id="${r.id}">${r.first_name} ${r.last_name}</span> — ${role}</div>`;
+    })
+    .join("");
+  panel.innerHTML = `
+    <h3>${building.building_type} (#${building.id})</h3>
+    <div class="detail-row"><span class="label">Zone:</span> ${building.zone_type}</div>
+    <div class="detail-row"><span class="label">Capacity:</span> ${building.capacity}</div>
+    <h4>Residents (${building.residents.length})</h4>
+    ${rows || "<p class=\"hint\">Nobody lives or works here.</p>"}
+  `;
+  panel.querySelectorAll(".linked-name[data-resident-id]").forEach((el) => {
+    el.addEventListener("click", () => selectResident(parseInt(el.dataset.residentId, 10)));
+  });
+}
+
+function selectBuilding(buildingId) {
+  fetch(`/api/buildings/${buildingId}`)
+    .then((r) => r.json())
+    .then((building) => {
+      highlightedBuildingIds = [buildingId];
+      renderBuildingDetail(building);
+      draw();
+    });
+}
+
+canvas.addEventListener("mouseup", (e) => {
+  if (dragDistance > 3) return; // was a drag, not a click
+  const rect = canvas.getBoundingClientRect();
+  const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+  const building = findBuildingAt(world.x, world.y);
+  if (building) selectBuilding(building.id);
+});
