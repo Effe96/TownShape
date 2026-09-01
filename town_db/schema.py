@@ -20,7 +20,8 @@ CREATE TABLE buildings (
 CREATE TABLE households (
     id INTEGER PRIMARY KEY,
     family_name TEXT NOT NULL,
-    race TEXT NOT NULL
+    race TEXT NOT NULL,
+    wealth REAL NOT NULL DEFAULT 0.0
 );
 
 CREATE TABLE residents (
