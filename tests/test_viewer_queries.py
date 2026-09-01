@@ -59,3 +59,48 @@ def test_get_map_data_handles_a_town_with_no_water(tmp_path):
 
     assert data["buildings"] == []
     assert data["water_features"] == []
+
+
+from tests.town_viewer_fixtures import build_full_town
+from town_viewer.queries import get_building_detail
+
+
+def test_get_building_detail_lists_residents_who_live_and_work_there(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    building = get_building_detail(conn, 4)  # the residence, all 4 residents live here
+    conn.close()
+
+    assert building["id"] == 4
+    assert building["building_type"] == "residence"
+    assert building["capacity"] == 6
+    residents_by_id = {r["id"]: r for r in building["residents"]}
+    assert set(residents_by_id) == {1, 2, 3, 4}
+    assert all(r["lives_here"] for r in residents_by_id.values())
+    assert all(not r["works_here"] for r in residents_by_id.values())
+
+
+def test_get_building_detail_flags_workers_not_residents(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    shop = get_building_detail(conn, 3)  # the shop, only Mira (id 1) works here
+    conn.close()
+
+    assert [r["id"] for r in shop["residents"]] == [1]
+    assert shop["residents"][0]["lives_here"] is False
+    assert shop["residents"][0]["works_here"] is True
+
+
+def test_get_building_detail_returns_none_for_missing_building(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    result = get_building_detail(conn, 999)
+    conn.close()
+
+    assert result is None
