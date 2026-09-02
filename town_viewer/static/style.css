@@ -3,11 +3,14 @@ html, body { margin: 0; height: 100%; font-family: sans-serif; }
 #map { flex: 1; background: #eef2f5; cursor: grab; }
 #map.dragging { cursor: grabbing; }
 #sidebar {
-  width: 340px;
+  width: 480px;
+  min-width: 300px;
+  max-width: 800px;
   display: flex;
   flex-direction: column;
   border-left: 1px solid #ccc;
   overflow: hidden;
+  resize: horizontal;
 }
 #search-panel { flex: 1 1 50%; display: flex; flex-direction: column; padding: 8px; overflow: hidden; }
 #search-input { padding: 6px; margin-bottom: 6px; }

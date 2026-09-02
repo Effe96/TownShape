@@ -115,10 +115,9 @@ before/while planning the MVP:
 Noted 2026-09-02 after running the merged MVP (`town_viewer/`) against a
 real town — deferred, not blocking, to pick up later:
 
-1. **Resident sidebar is too narrow to read.** The `#sidebar` column
-   (`town_viewer/static/style.css`) is squished — needs real width, or a
-   resizable/collapsible layout, before the resident list/detail panel
-   is actually usable day-to-day.
+1. ~~**Resident sidebar is too narrow to read.**~~ **Fixed 2026-09-02:**
+   default width 340px → 480px, plus native CSS `resize: horizontal`
+   (min 300px / max 800px) so it's user-adjustable without JS.
 2. **Buildings should be nameable.** No `name` field exists on
    `buildings` today (`town_db/schema.py`) — just `building_type`. Would
    need a schema change (or a viewer-local naming layer) plus UI to set
