@@ -49,6 +49,7 @@ def test_subdivide_into_blocks_conserves_area_within_street_gaps():
 
     original_area = polygon_area(large_square)
     total_block_area = sum(polygon_area(b) for b in blocks)
+    assert total_block_area <= original_area
     # This is a gross-error guard (catches e.g. an inverted clip direction
     # silently discarding whole blocks), not a precise gap-area budget --
     # the exact fraction street gaps consume depends on how many splits a
@@ -56,7 +57,6 @@ def test_subdivide_into_blocks_conserves_area_within_street_gaps():
     # doesn't hand-compute. If this fails after a correct implementation
     # legitimately consumes more than 40% to street gaps, loosen the
     # tolerance rather than treating it as a bug.
-    assert total_block_area <= original_area * 1.5  # Allow for street gap overlaps in recursive subdivision
     assert total_block_area >= original_area * 0.6
 
 

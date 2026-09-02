@@ -59,13 +59,13 @@ def _split_polygon(polygon: Polygon, rng) -> Tuple[Polygon, Polygon, Tuple[Point
 
     side_a = clip_polygon_by_line(
         polygon,
-        (line_start[0] + offset_a[0], line_start[1] + offset_a[1]),
-        (line_end[0] + offset_a[0], line_end[1] + offset_a[1]),
+        (line_start[0] + offset_b[0], line_start[1] + offset_b[1]),
+        (line_end[0] + offset_b[0], line_end[1] + offset_b[1]),
     )
     side_b = clip_polygon_by_line(
         polygon,
-        (line_end[0] + offset_b[0], line_end[1] + offset_b[1]),
-        (line_start[0] + offset_b[0], line_start[1] + offset_b[1]),
+        (line_end[0] + offset_a[0], line_end[1] + offset_a[1]),
+        (line_start[0] + offset_a[0], line_start[1] + offset_a[1]),
     )
     return side_a, side_b, (line_start, line_end)
 
