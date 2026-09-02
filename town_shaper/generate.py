@@ -9,6 +9,7 @@ from town_shaper.buildings import fill_district_buildings
 from town_shaper.districts import build_districts
 from town_shaper.households import generate_households
 from town_shaper.models import Town
+from town_shaper.roads import generate_road_network
 from town_shaper.water import generate_water_features
 
 AREA_PER_RESIDENT = 150.0  # square map-units of town area assumed per resident
@@ -41,6 +42,7 @@ def generate_town(
 
     anchors = place_anchors(seed, target_population, bounds, water_polygon=water_polygon, has_port=has_port)
     districts = build_districts(anchors, bounds, water_polygon=water_polygon)
+    road_network = generate_road_network(anchors, bounds, water_polygon=water_polygon)
 
     for district in districts:
         next_building_id = district.id * BUILDING_ID_STRIDE
@@ -58,4 +60,5 @@ def generate_town(
     town.districts = districts
     town.residents = residents
     town.water_features = water_features
+    town.road_network = road_network
     return town

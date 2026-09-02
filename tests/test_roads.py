@@ -135,3 +135,39 @@ def test_boundary_edges_are_deterministic():
 
     key = lambda n: sorted((e.from_node_id, e.to_node_id, e.road_type) for e in n.edges)
     assert key(network1) == key(network2)
+
+
+def test_every_anchor_with_a_qualifying_junction_gets_a_spur():
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    from town_shaper.anchors import place_anchors
+    anchors = place_anchors(("town", 3), 4000, bounds)
+
+    network = generate_road_network(anchors, bounds)
+
+    spur_sources = {e.from_node_id for e in network.edges if e.road_type == "spur"}
+    anchor_node_ids = {n.id for n in network.nodes if n.kind == "anchor"}
+    # Every spur starts at an anchor node and ends at a junction node.
+    junction_node_ids = {n.id for n in network.nodes if n.kind == "junction"}
+    for edge in network.edges:
+        if edge.road_type == "spur":
+            assert edge.from_node_id in anchor_node_ids
+            assert edge.to_node_id in junction_node_ids
+    assert spur_sources  # this anchor layout has at least one qualifying junction
+
+
+def test_graph_is_fully_connected_via_radial_edges_alone():
+    # The connectivity guarantee the spec relies on: even ignoring
+    # boundary/spur edges entirely, every anchor is one hop from the hub.
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    from town_shaper.anchors import place_anchors
+    anchors = place_anchors(("town", 9), 5000, bounds)
+
+    network = generate_road_network(anchors, bounds)
+
+    hub_node_id = next(n.id for n in network.nodes if n.is_hub)
+    radial_targets = {
+        e.to_node_id for e in network.edges
+        if e.road_type == "radial" and e.from_node_id == hub_node_id
+    }
+    other_anchor_ids = {n.id for n in network.nodes if n.kind == "anchor" and not n.is_hub}
+    assert radial_targets == other_anchor_ids

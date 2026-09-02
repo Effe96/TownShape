@@ -70,4 +70,27 @@ def generate_road_network(
         ))
         next_edge_id += 1
 
+    qualifying_junction_vertices_by_anchor_id: Dict[int, List[int]] = {a.id: [] for a in anchors}
+    for (p1, p2), (v1, v2) in zip(vor.ridge_points, vor.ridge_vertices):
+        if p1 >= num_real_anchors or p2 >= num_real_anchors:
+            continue
+        if v1 < 0 or v2 < 0:
+            continue
+        qualifying_junction_vertices_by_anchor_id[anchors[p1].id].extend([v1, v2])
+        qualifying_junction_vertices_by_anchor_id[anchors[p2].id].extend([v1, v2])
+
+    for anchor in anchors:
+        candidate_vertices = set(qualifying_junction_vertices_by_anchor_id[anchor.id])
+        if not candidate_vertices:
+            continue
+        nearest_vertex = min(
+            candidate_vertices,
+            key=lambda v: distance((anchor.x, anchor.y), tuple(vor.vertices[v])),
+        )
+        edges.append(RoadEdge(
+            id=next_edge_id, from_node_id=anchor_node_by_id[anchor.id].id,
+            to_node_id=junction_node_by_vertex[nearest_vertex].id, road_type="spur",
+        ))
+        next_edge_id += 1
+
     return RoadNetwork(nodes=nodes, edges=edges)

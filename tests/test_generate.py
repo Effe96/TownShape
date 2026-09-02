@@ -176,3 +176,14 @@ def test_generate_town_with_magic_prevalence_can_produce_arcane_shops():
             found = True
             break
     assert found
+
+
+def test_generate_town_populates_road_network():
+    town = generate_town(("town", 1), target_population=3000)
+
+    assert town.road_network is not None
+    assert len(town.road_network.nodes) > 0
+    assert len(town.road_network.edges) > 0
+    # One anchor node per district -- town_shaper.districts.build_districts
+    # creates exactly one District per Anchor, same id.
+    assert sum(1 for n in town.road_network.nodes if n.kind == "anchor") == len(town.districts)
