@@ -6,7 +6,7 @@ EXPECTED_TABLES = {
     "districts", "buildings", "households", "residents", "goods",
     "purchases", "tax_payments", "disease_events", "illnesses", "births", "deaths",
     "school_enrollments", "military_service", "generation_parameters",
-    "water_features", "skirmish_events", "town_state",
+    "water_features", "skirmish_events", "town_state", "road_nodes", "road_edges",
 }
 
 
@@ -254,3 +254,24 @@ def test_households_wealth_accepts_an_explicit_value(tmp_path):
     conn.commit()
     row = conn.execute("SELECT wealth FROM households WHERE id = 1").fetchone()
     assert row == (250.5,)
+
+
+def test_generate_town_database_persists_road_network(tmp_path):
+    from town_db.generate import generate_town_database
+
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+
+    conn = connect(db_path)
+    node_rows = conn.execute("SELECT id, kind, anchor_id, is_hub, x, y FROM road_nodes").fetchall()
+    edge_rows = conn.execute("SELECT id, from_node_id, to_node_id, road_type FROM road_edges").fetchall()
+    conn.close()
+
+    assert len(node_rows) > 0
+    assert len(edge_rows) > 0
+    assert sum(1 for row in node_rows if row[3] == 1) == 1  # exactly one is_hub row
+    node_ids = {row[0] for row in node_rows}
+    for edge in edge_rows:
+        assert edge[1] in node_ids
+        assert edge[2] in node_ids
+        assert edge[3] in ("radial", "boundary", "spur")

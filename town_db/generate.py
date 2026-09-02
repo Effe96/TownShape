@@ -95,6 +95,17 @@ def generate_town_database(
             )
             zone_type_by_building_id[building.id] = district.zone_type.value
 
+    for node in town.road_network.nodes:
+        conn.execute(
+            "INSERT INTO road_nodes (id, kind, anchor_id, is_hub, x, y) VALUES (?, ?, ?, ?, ?, ?)",
+            (node.id, node.kind, node.anchor_id, int(node.is_hub), node.x, node.y),
+        )
+    for edge in town.road_network.edges:
+        conn.execute(
+            "INSERT INTO road_edges (id, from_node_id, to_node_id, road_type) VALUES (?, ?, ?, ?)",
+            (edge.id, edge.from_node_id, edge.to_node_id, edge.road_type),
+        )
+
     household_rows, resident_rows = build_households_and_residents(
         town, seed, year_start, race_weights, intermarriage_rate, magic_prevalence=magic_prevalence,
     )

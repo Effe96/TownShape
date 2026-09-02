@@ -18,6 +18,22 @@ CREATE TABLE buildings (
     name TEXT
 );
 
+CREATE TABLE road_nodes (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    anchor_id INTEGER REFERENCES districts(id),
+    is_hub INTEGER NOT NULL DEFAULT 0,
+    x REAL NOT NULL,
+    y REAL NOT NULL
+);
+
+CREATE TABLE road_edges (
+    id INTEGER PRIMARY KEY,
+    from_node_id INTEGER NOT NULL REFERENCES road_nodes(id),
+    to_node_id INTEGER NOT NULL REFERENCES road_nodes(id),
+    road_type TEXT NOT NULL
+);
+
 CREATE TABLE households (
     id INTEGER PRIMARY KEY,
     family_name TEXT NOT NULL,
