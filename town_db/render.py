@@ -72,9 +72,13 @@ def render_town(db_path: str, output_path: str) -> None:
 
     node_coords = {node_id: (x, y) for node_id, x, y in road_nodes}
     for from_id, to_id, road_type in road_edges:
+        from_xy = node_coords.get(from_id)
+        to_xy = node_coords.get(to_id)
+        if from_xy is None or to_xy is None:
+            continue
         style = ROAD_STYLE.get(road_type, ROAD_STYLE["spur"])
-        x1, y1 = node_coords[from_id]
-        x2, y2 = node_coords[to_id]
+        x1, y1 = from_xy
+        x2, y2 = to_xy
         ax.plot([x1, x2], [y1, y2], color=style["color"], linewidth=style["width"], zorder=2.5)
 
     generic_x: List[float] = []

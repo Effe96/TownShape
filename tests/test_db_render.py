@@ -88,3 +88,25 @@ def test_render_town_handles_a_town_with_roads(tmp_path):
     with open(output_path, "rb") as f:
         header = f.read(8)
     assert header == b"\x89PNG\r\n\x1a\n"
+
+
+def test_render_town_skips_a_road_edge_with_a_missing_node(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    output_path = str(tmp_path / "town.png")
+    _build_minimal_town(db_path)
+
+    conn = connect(db_path)
+    # Temporarily disable foreign key constraints to insert an orphaned edge.
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("INSERT INTO road_nodes (id, kind, anchor_id, is_hub, x, y) VALUES (1, 'anchor', 1, 1, 5.0, 5.0)")
+    # No node with id 2 -- this edge references a missing endpoint.
+    conn.execute("INSERT INTO road_edges (id, from_node_id, to_node_id, road_type) VALUES (1, 1, 2, 'radial')")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.commit()
+    conn.close()
+
+    render_town(db_path, output_path)  # must not raise
+
+    with open(output_path, "rb") as f:
+        header = f.read(8)
+    assert header == b"\x89PNG\r\n\x1a\n"
