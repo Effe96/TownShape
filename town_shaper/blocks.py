@@ -3,8 +3,12 @@ from typing import Dict, List, Tuple
 
 from shapely.geometry import Polygon as ShapelyPolygon
 
-from town_shaper.geometry import clip_polygon_by_line, distance, polygon_area
-from town_shaper.models import RoadEdge, RoadNode, ZoneType
+from town_shaper.buildings import (
+    BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS, JOB_VACANCIES_BY_BUILDING_TYPE,
+    resolve_building_type_weights,
+)
+from town_shaper.geometry import clip_polygon_by_line, distance, point_in_polygon, polygon_area
+from town_shaper.models import Building, District, JobVacancy, RoadEdge, RoadNode, ZoneType
 
 TARGET_BLOCK_AREA_BY_ZONE: Dict[ZoneType, float] = {
     ZoneType.CIVIC: 2000.0,
@@ -13,6 +17,21 @@ TARGET_BLOCK_AREA_BY_ZONE: Dict[ZoneType, float] = {
     ZoneType.POOR_RESIDENTIAL: 250.0,
     ZoneType.PORT: 600.0,
 }
+LOT_FRONTAGE_BY_ZONE: Dict[ZoneType, float] = {
+    ZoneType.CIVIC: 15.0,
+    ZoneType.MERCHANT: 8.0,
+    ZoneType.RICH_RESIDENTIAL: 12.0,
+    ZoneType.POOR_RESIDENTIAL: 5.0,
+    ZoneType.PORT: 8.0,
+}
+LOT_DEPTH_BY_ZONE: Dict[ZoneType, float] = {
+    ZoneType.CIVIC: 18.0,
+    ZoneType.MERCHANT: 10.0,
+    ZoneType.RICH_RESIDENTIAL: 15.0,
+    ZoneType.POOR_RESIDENTIAL: 6.0,
+    ZoneType.PORT: 10.0,
+}
+FOOTPRINT_FILL_FRACTION = 0.8
 LOCAL_STREET_WIDTH = 4.0
 MAX_SPLIT_DEPTH = 8
 
@@ -114,3 +133,103 @@ def _subdivide(
         [edge] + edges_a + edges_b,
         next_node_id, next_edge_id,
     )
+
+
+def _perpendicular_into_polygon(edge_start: Point, edge_end: Point, polygon: Polygon) -> Point:
+    dx, dy = edge_end[0] - edge_start[0], edge_end[1] - edge_start[1]
+    length = math.hypot(dx, dy)
+    if length == 0:
+        return (0.0, 0.0)
+    direction = (dx / length, dy / length)
+    candidate_a = (-direction[1], direction[0])
+    midpoint = ((edge_start[0] + edge_end[0]) / 2.0, (edge_start[1] + edge_end[1]) / 2.0)
+    probe = (midpoint[0] + candidate_a[0] * 0.1, midpoint[1] + candidate_a[1] * 0.1)
+    return candidate_a if point_in_polygon(probe, polygon) else (-candidate_a[0], -candidate_a[1])
+
+
+def _building_footprint_polygon(building: Building) -> ShapelyPolygon:
+    """Compute the rotated footprint polygon of a building."""
+    hw, hh = building.width / 2.0, building.height / 2.0
+    cos_r, sin_r = math.cos(building.rotation), math.sin(building.rotation)
+    corners = [
+        (building.x + lx * cos_r - ly * sin_r, building.y + lx * sin_r + ly * cos_r)
+        for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+    ]
+    return ShapelyPolygon(corners)
+
+
+def place_buildings_in_block(
+    block_polygon: Polygon, district: District, rng,
+    next_building_id: int, target_population: int, magic_prevalence: float,
+    density_multiplier: float = 1.0,
+) -> List[Building]:
+    zone_type = district.zone_type
+    frontage = LOT_FRONTAGE_BY_ZONE[zone_type] / density_multiplier
+    depth = LOT_DEPTH_BY_ZONE[zone_type] / density_multiplier
+    skip_distance = depth * FOOTPRINT_FILL_FRACTION / 2.0 + 1.0
+
+    buildings: List[Building] = []
+    building_id = next_building_id
+    n = len(block_polygon)
+    for i in range(n):
+        edge_start = block_polygon[i]
+        edge_end = block_polygon[(i + 1) % n]
+        edge_length = distance(edge_start, edge_end)
+        available_length = edge_length - 2.0 * skip_distance
+        if available_length <= 0:
+            continue
+        num_lots = int(available_length // frontage)
+        if num_lots == 0:
+            continue
+        dx = (edge_end[0] - edge_start[0]) / edge_length
+        dy = (edge_end[1] - edge_start[1]) / edge_length
+        inward = _perpendicular_into_polygon(edge_start, edge_end, block_polygon)
+        rotation = math.atan2(dy, dx)
+
+        for lot_index in range(num_lots):
+            along = skip_distance + frontage * (lot_index + 0.5)
+            lot_center_x = edge_start[0] + dx * along + inward[0] * (depth / 2.0)
+            lot_center_y = edge_start[1] + dy * along + inward[1] * (depth / 2.0)
+
+            type_weights = resolve_building_type_weights(zone_type, target_population, magic_prevalence, rng)
+            subtypes = list(type_weights.keys())
+            weights = list(type_weights.values())
+            building_type = rng.choices(subtypes, weights=weights, k=1)[0]
+            capacity = BUILDING_HOME_CAPACITY.get(building_type, 0)
+            vacancies = [
+                JobVacancy(building_id=building_id, occupation=occupation)
+                for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[building_type]
+                for _ in range(count)
+            ]
+            name_pool = BUILDING_NAME_POOLS.get(building_type)
+            name = rng.choice(name_pool) if name_pool else None
+
+            building = Building(
+                id=building_id,
+                district_id=district.id,
+                district_zone_type=zone_type,
+                x=lot_center_x,
+                y=lot_center_y,
+                building_type=building_type,
+                capacity=capacity,
+                vacancies=vacancies,
+                name=name,
+                width=frontage * FOOTPRINT_FILL_FRACTION,
+                height=depth * FOOTPRINT_FILL_FRACTION,
+                rotation=rotation,
+            )
+
+            # Check for overlap with existing buildings
+            new_footprint = _building_footprint_polygon(building)
+            overlaps = False
+            for existing in buildings:
+                existing_footprint = _building_footprint_polygon(existing)
+                if new_footprint.intersection(existing_footprint).area > 1e-6:
+                    overlaps = True
+                    break
+
+            if not overlaps:
+                buildings.append(building)
+                building_id += 1
+
+    return buildings

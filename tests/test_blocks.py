@@ -1,8 +1,10 @@
 import math
 
+from shapely.geometry import Polygon as ShapelyPolygon
+
 from town_shaper.blocks import TARGET_BLOCK_AREA_BY_ZONE, subdivide_into_blocks
 from town_shaper.geometry import polygon_area
-from town_shaper.models import ZoneType
+from town_shaper.models import Anchor, District, ZoneType
 from town_shaper.seeding import rng_for
 
 
@@ -108,3 +110,106 @@ def test_subdivide_into_blocks_is_deterministic():
     assert [sorted(b) for b in blocks1] == [sorted(b) for b in blocks2]
     assert [(n.x, n.y) for n in nodes1] == [(n.x, n.y) for n in nodes2]
     assert [(e.from_node_id, e.to_node_id) for e in edges1] == [(e.from_node_id, e.to_node_id) for e in edges2]
+
+
+def _rectangle(width: float, height: float):
+    return [(0.0, 0.0), (width, 0.0), (width, height), (0.0, height)]
+
+
+def _district(zone_type):
+    anchor = Anchor(id=1, zone_type=zone_type, x=0.0, y=0.0)
+    return District(id=1, zone_type=zone_type, anchor=anchor, polygon_parts=[])
+
+
+def _footprint_shape(building):
+    hw, hh = building.width / 2.0, building.height / 2.0
+    cos_r, sin_r = math.cos(building.rotation), math.sin(building.rotation)
+    corners = [
+        (building.x + lx * cos_r - ly * sin_r, building.y + lx * sin_r + ly * cos_r)
+        for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+    ]
+    return ShapelyPolygon(corners)
+
+
+def test_place_buildings_in_block_footprints_stay_within_the_block():
+    from town_shaper.blocks import place_buildings_in_block
+
+    block = _rectangle(40.0, 20.0)
+    district = _district(ZoneType.MERCHANT)
+    rng = rng_for(("town", 1), "blocks-test", 10)
+
+    buildings = place_buildings_in_block(block, district, rng, 0, target_population=3000, magic_prevalence=0.0)
+
+    assert len(buildings) > 0
+    block_shape = ShapelyPolygon(block).buffer(0.5)  # small tolerance for footprints flush on the boundary
+    for building in buildings:
+        assert block_shape.contains(_footprint_shape(building))
+
+
+def test_place_buildings_in_block_footprints_dont_overlap():
+    from town_shaper.blocks import place_buildings_in_block
+
+    block = _rectangle(40.0, 20.0)
+    district = _district(ZoneType.MERCHANT)
+    rng = rng_for(("town", 1), "blocks-test", 11)
+
+    buildings = place_buildings_in_block(block, district, rng, 0, target_population=3000, magic_prevalence=0.0)
+
+    shapes = [_footprint_shape(b) for b in buildings]
+    for i in range(len(shapes)):
+        for j in range(i + 1, len(shapes)):
+            assert shapes[i].intersection(shapes[j]).area < 1e-6
+
+
+def test_place_buildings_in_block_rotation_matches_frontage_edge():
+    from town_shaper.blocks import place_buildings_in_block
+
+    # A 40x20 rectangle has two horizontal edges (bottom/top) and two
+    # vertical edges (left/right) -- every building's rotation should land
+    # in one of exactly two buckets, and both buckets should be populated
+    # (not just one, which would mean rotation isn't actually tracking the
+    # edge it was placed against).
+    block = _rectangle(40.0, 20.0)
+    district = _district(ZoneType.MERCHANT)
+    rng = rng_for(("town", 1), "blocks-test", 12)
+
+    buildings = place_buildings_in_block(block, district, rng, 0, target_population=3000, magic_prevalence=0.0)
+
+    horizontal = [b for b in buildings if math.isclose(abs(b.rotation) % math.pi, 0.0, abs_tol=1e-6)]
+    vertical = [b for b in buildings if math.isclose(abs(b.rotation) % math.pi, math.pi / 2, abs_tol=1e-6)]
+    assert horizontal
+    assert vertical
+    assert len(horizontal) + len(vertical) == len(buildings)
+
+
+def test_place_buildings_in_block_is_deterministic():
+    from town_shaper.blocks import place_buildings_in_block
+
+    block = _rectangle(40.0, 20.0)
+    district = _district(ZoneType.MERCHANT)
+
+    rng1 = rng_for(("town", 1), "blocks-test", 13)
+    b1 = place_buildings_in_block(block, district, rng1, 0, target_population=3000, magic_prevalence=0.0)
+    rng2 = rng_for(("town", 1), "blocks-test", 13)
+    b2 = place_buildings_in_block(block, district, rng2, 0, target_population=3000, magic_prevalence=0.0)
+
+    key = lambda buildings: [(b.x, b.y, b.width, b.height, b.rotation, b.building_type) for b in buildings]
+    assert key(b1) == key(b2)
+
+
+def test_place_buildings_in_block_density_multiplier_scales_lot_size():
+    from town_shaper.blocks import place_buildings_in_block
+
+    block = _rectangle(40.0, 20.0)
+    district = _district(ZoneType.MERCHANT)
+
+    rng_sparse = rng_for(("town", 1), "blocks-test", 14)
+    sparse = place_buildings_in_block(
+        block, district, rng_sparse, 0, target_population=3000, magic_prevalence=0.0, density_multiplier=0.5,
+    )
+    rng_dense = rng_for(("town", 1), "blocks-test", 14)
+    dense = place_buildings_in_block(
+        block, district, rng_dense, 0, target_population=3000, magic_prevalence=0.0, density_multiplier=2.0,
+    )
+
+    assert len(dense) > len(sparse)

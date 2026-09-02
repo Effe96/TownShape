@@ -89,6 +89,21 @@ FARMLAND_BUILDING_WIDTH = 6.0
 FARMLAND_BUILDING_HEIGHT = 6.0
 
 
+def resolve_building_type_weights(
+    zone_type: ZoneType, target_population: int, magic_prevalence: float, rng,
+) -> Dict[str, float]:
+    type_weights = dict(BUILDING_TYPES_BY_ZONE[zone_type])
+    if zone_type == ZoneType.CIVIC and "university" in type_weights:
+        university_eligible = (
+            target_population >= UNIVERSITY_MIN_POPULATION and rng.random() < UNIVERSITY_CHANCE
+        )
+        if not university_eligible:
+            del type_weights["university"]
+    if zone_type == ZoneType.MERCHANT and magic_prevalence > 0:
+        type_weights["arcane_shop"] = magic_prevalence * ARCANE_SHOP_WEIGHT_SCALE
+    return type_weights
+
+
 def poisson_disc_fill(polygon, target_count, min_spacing, rng, max_attempts_per_point=30):
     min_x = min(p[0] for p in polygon)
     max_x = max(p[0] for p in polygon)
@@ -151,15 +166,7 @@ def fill_district_buildings(
     for part, part_count in zip(parts, part_counts):
         points.extend(poisson_disc_fill(part, part_count, spacing, rng))
 
-    type_weights = dict(BUILDING_TYPES_BY_ZONE[district.zone_type])
-    if district.zone_type == ZoneType.CIVIC and "university" in type_weights:
-        university_eligible = (
-            target_population >= UNIVERSITY_MIN_POPULATION and rng.random() < UNIVERSITY_CHANCE
-        )
-        if not university_eligible:
-            del type_weights["university"]
-    if district.zone_type == ZoneType.MERCHANT and magic_prevalence > 0:
-        type_weights["arcane_shop"] = magic_prevalence * ARCANE_SHOP_WEIGHT_SCALE
+    type_weights = resolve_building_type_weights(district.zone_type, target_population, magic_prevalence, rng)
     subtypes = list(type_weights.keys())
     weights = list(type_weights.values())
 
