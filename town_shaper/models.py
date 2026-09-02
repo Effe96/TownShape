@@ -83,6 +83,30 @@ class WaterFeature:
 
 
 @dataclass
+class RoadNode:
+    id: int
+    kind: str                       # "anchor" | "junction"
+    x: float
+    y: float
+    anchor_id: Optional[int] = None
+    is_hub: bool = False
+
+
+@dataclass
+class RoadEdge:
+    id: int
+    from_node_id: int
+    to_node_id: int
+    road_type: str                  # "radial" | "boundary" | "spur"
+
+
+@dataclass
+class RoadNetwork:
+    nodes: List[RoadNode] = field(default_factory=list)
+    edges: List[RoadEdge] = field(default_factory=list)
+
+
+@dataclass
 class Town:
     seed: tuple
     target_population: int
@@ -90,3 +114,4 @@ class Town:
     districts: List[District] = field(default_factory=list)
     residents: List[ResidentSlot] = field(default_factory=list)
     water_features: List[WaterFeature] = field(default_factory=list)
+    road_network: Optional[RoadNetwork] = None
