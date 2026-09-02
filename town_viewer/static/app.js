@@ -28,6 +28,12 @@ const GENERIC_BUILDING_COLOR = "#555555";
 const LANDMARK_SIZE = 10;
 const GENERIC_SIZE = 5;
 
+const ROAD_STYLE = {
+  radial: { width: 2.5, color: "#3a3a3a" },
+  boundary: { width: 1.4, color: "#5a5a5a" },
+  spur: { width: 0.8, color: "#7a7a7a" },
+};
+
 function buildingHalfSize(buildingType) {
   return (buildingType in LANDMARK_COLORS ? LANDMARK_SIZE : GENERIC_SIZE) / 2;
 }
@@ -36,7 +42,7 @@ function buildingColor(buildingType) {
   return ALL_TYPED_COLORS[buildingType] || GENERIC_BUILDING_COLOR;
 }
 
-let mapData = { districts: [], buildings: [], water_features: [] };
+let mapData = { districts: [], buildings: [], water_features: [], roads: { nodes: [], edges: [] } };
 const view = { scale: 1, offsetX: 0, offsetY: 0 };
 
 const canvas = document.getElementById("map");
@@ -98,6 +104,22 @@ function draw() {
     drawPolygon(district.polygon, color, "black");
   }
   ctx.globalAlpha = 1;
+
+  const roadNodeById = new Map((mapData.roads?.nodes || []).map((n) => [n.id, n]));
+  for (const edge of mapData.roads?.edges || []) {
+    const from = roadNodeById.get(edge.from_node_id);
+    const to = roadNodeById.get(edge.to_node_id);
+    if (!from || !to) continue;
+    const style = ROAD_STYLE[edge.road_type] || ROAD_STYLE.spur;
+    const a = worldToScreen(from.x, from.y);
+    const b = worldToScreen(to.x, to.y);
+    ctx.beginPath();
+    ctx.moveTo(a.sx, a.sy);
+    ctx.lineTo(b.sx, b.sy);
+    ctx.strokeStyle = style.color;
+    ctx.lineWidth = style.width;
+    ctx.stroke();
+  }
 
   for (const building of mapData.buildings) {
     const half = buildingHalfSize(building.building_type);
