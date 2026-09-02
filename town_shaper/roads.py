@@ -16,7 +16,7 @@ def _choose_hub_anchor(anchors: List[Anchor], bounds: Tuple[float, float, float,
 def generate_road_network(
     anchors: List[Anchor], bounds: Tuple[float, float, float, float], water_polygon=None,
 ) -> RoadNetwork:
-    compute_voronoi(anchors, bounds)  # validates >= 4 anchors; result used starting Task 3
+    vor = compute_voronoi(anchors, bounds)
     hub = _choose_hub_anchor(anchors, bounds)
 
     nodes: List[RoadNode] = []
@@ -41,6 +41,32 @@ def generate_road_network(
         edges.append(RoadEdge(
             id=next_edge_id, from_node_id=hub_node.id,
             to_node_id=anchor_node_by_id[anchor.id].id, road_type="radial",
+        ))
+        next_edge_id += 1
+
+    junction_node_by_vertex: Dict[int, RoadNode] = {}
+
+    def _junction_node(vertex_index: int) -> RoadNode:
+        nonlocal next_node_id
+        node = junction_node_by_vertex.get(vertex_index)
+        if node is None:
+            x, y = vor.vertices[vertex_index]
+            node = RoadNode(id=next_node_id, kind="junction", x=float(x), y=float(y))
+            next_node_id += 1
+            nodes.append(node)
+            junction_node_by_vertex[vertex_index] = node
+        return node
+
+    num_real_anchors = len(anchors)
+    for (p1, p2), (v1, v2) in zip(vor.ridge_points, vor.ridge_vertices):
+        if p1 >= num_real_anchors or p2 >= num_real_anchors:
+            continue
+        if v1 < 0 or v2 < 0:
+            continue
+        node1 = _junction_node(v1)
+        node2 = _junction_node(v2)
+        edges.append(RoadEdge(
+            id=next_edge_id, from_node_id=node1.id, to_node_id=node2.id, road_type="boundary",
         ))
         next_edge_id += 1
 
