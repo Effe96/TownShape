@@ -46,6 +46,9 @@ class Building:
     vacancies: List[JobVacancy] = field(default_factory=list)
     resident_ids: List[int] = field(default_factory=list)
     name: Optional[str] = None
+    width: float = 0.0
+    height: float = 0.0
+    rotation: float = 0.0
 
 
 @dataclass

@@ -284,3 +284,13 @@ def test_blacksmith_job_vacancies_match_job_table():
 def test_blacksmith_has_no_home_capacity():
     from town_shaper.buildings import BUILDING_HOME_CAPACITY
     assert "blacksmith" not in BUILDING_HOME_CAPACITY
+
+
+def test_fill_district_buildings_gives_every_building_a_default_footprint():
+    from town_shaper.buildings import FARMLAND_BUILDING_HEIGHT, FARMLAND_BUILDING_WIDTH
+
+    district = _square_district(ZoneType.FARMLAND_EDGE)
+    for building in fill_district_buildings(district, ("town", 1), next_building_id=0):
+        assert building.width == FARMLAND_BUILDING_WIDTH
+        assert building.height == FARMLAND_BUILDING_HEIGHT
+        assert building.rotation == 0.0

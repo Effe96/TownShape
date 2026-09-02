@@ -85,6 +85,9 @@ BUILDING_HOME_CAPACITY: Dict[str, int] = {
     "farmstead": 8,
 }
 
+FARMLAND_BUILDING_WIDTH = 6.0
+FARMLAND_BUILDING_HEIGHT = 6.0
+
 
 def poisson_disc_fill(polygon, target_count, min_spacing, rng, max_attempts_per_point=30):
     min_x = min(p[0] for p in polygon)
@@ -182,6 +185,9 @@ def fill_district_buildings(
             capacity=capacity,
             vacancies=vacancies,
             name=name,
+            width=FARMLAND_BUILDING_WIDTH,
+            height=FARMLAND_BUILDING_HEIGHT,
+            rotation=0.0,
         ))
         building_id += 1
 
