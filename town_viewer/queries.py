@@ -21,7 +21,18 @@ def get_map_data(conn: sqlite3.Connection) -> Dict[str, Any]:
         {"id": row[0], "kind": row[1], "polygon": json.loads(row[2])}
         for row in conn.execute("SELECT id, kind, polygon FROM water_features")
     ]
-    return {"districts": districts, "buildings": buildings, "water_features": water_features}
+    road_nodes = [
+        {"id": row[0], "x": row[1], "y": row[2]}
+        for row in conn.execute("SELECT id, x, y FROM road_nodes")
+    ]
+    road_edges = [
+        {"from_node_id": row[0], "to_node_id": row[1], "road_type": row[2]}
+        for row in conn.execute("SELECT from_node_id, to_node_id, road_type FROM road_edges")
+    ]
+    return {
+        "districts": districts, "buildings": buildings, "water_features": water_features,
+        "roads": {"nodes": road_nodes, "edges": road_edges},
+    }
 
 
 def get_building_detail(conn: sqlite3.Connection, building_id: int) -> Optional[Dict[str, Any]]:

@@ -64,6 +64,30 @@ def test_get_map_data_handles_a_town_with_no_water(tmp_path):
     assert data["water_features"] == []
 
 
+def test_get_map_data_returns_roads(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    _build_minimal_map(db_path)
+
+    conn = connect(db_path)
+    conn.execute("INSERT INTO road_nodes (id, kind, anchor_id, is_hub, x, y) VALUES (1, 'anchor', 1, 1, 10.0, 10.0)")
+    conn.execute("INSERT INTO road_nodes (id, kind, anchor_id, is_hub, x, y) VALUES (2, 'junction', NULL, 0, 12.0, 8.0)")
+    conn.execute("INSERT INTO road_edges (id, from_node_id, to_node_id, road_type) VALUES (1, 1, 2, 'spur')")
+    conn.commit()
+
+    data = get_map_data(conn)
+    conn.close()
+
+    assert data["roads"] == {
+        "nodes": [
+            {"id": 1, "x": 10.0, "y": 10.0},
+            {"id": 2, "x": 12.0, "y": 8.0},
+        ],
+        "edges": [
+            {"from_node_id": 1, "to_node_id": 2, "road_type": "spur"},
+        ],
+    }
+
+
 from tests.town_viewer_fixtures import build_full_town
 from town_viewer.queries import get_building_detail
 
