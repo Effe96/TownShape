@@ -52,28 +52,36 @@ def _line_intersection(p1: Point, p2: Point, edge_start: Point, edge_end: Point)
     return (x1 + t * (x2 - x1), y1 + t * (y2 - y1))
 
 
+def clip_polygon_by_line(polygon: Polygon, edge_start: Point, edge_end: Point) -> Polygon:
+    """Sutherland-Hodgman single-edge clip: keep only the part of `polygon`
+    on the inside (left) of the directed line edge_start -> edge_end."""
+    output: Polygon = []
+    if not polygon:
+        return output
+    s = polygon[-1]
+    for e in polygon:
+        e_inside = _is_inside_edge(e, edge_start, edge_end)
+        s_inside = _is_inside_edge(s, edge_start, edge_end)
+        if e_inside:
+            if not s_inside:
+                output.append(_line_intersection(s, e, edge_start, edge_end))
+            output.append(e)
+        elif s_inside:
+            output.append(_line_intersection(s, e, edge_start, edge_end))
+        s = e
+    return output
+
+
 def clip_polygon_to_bounds(polygon: Polygon, bounds: Tuple[float, float, float, float]) -> Polygon:
     """Sutherland-Hodgman clip of `polygon` against the rectangle `bounds`."""
     min_x, min_y, max_x, max_y = bounds
-    clip_polygon = [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
+    clip_edges = [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
 
     output = list(polygon)
-    for i in range(len(clip_polygon)):
+    for i in range(len(clip_edges)):
         if not output:
             break
-        edge_start = clip_polygon[i]
-        edge_end = clip_polygon[(i + 1) % len(clip_polygon)]
-        input_list = output
-        output = []
-        s = input_list[-1]
-        for e in input_list:
-            e_inside = _is_inside_edge(e, edge_start, edge_end)
-            s_inside = _is_inside_edge(s, edge_start, edge_end)
-            if e_inside:
-                if not s_inside:
-                    output.append(_line_intersection(s, e, edge_start, edge_end))
-                output.append(e)
-            elif s_inside:
-                output.append(_line_intersection(s, e, edge_start, edge_end))
-            s = e
+        edge_start = clip_edges[i]
+        edge_end = clip_edges[(i + 1) % len(clip_edges)]
+        output = clip_polygon_by_line(output, edge_start, edge_end)
     return output

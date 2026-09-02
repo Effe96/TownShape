@@ -1,6 +1,6 @@
 import math
 
-from town_shaper.geometry import clip_polygon_to_bounds, distance, point_in_polygon, polygon_area
+from town_shaper.geometry import clip_polygon_by_line, clip_polygon_to_bounds, distance, point_in_polygon, polygon_area
 
 
 def test_polygon_area_of_unit_square():
@@ -29,3 +29,25 @@ def test_clip_polygon_fully_outside_bounds_returns_empty():
 
 def test_distance_of_3_4_5_triangle():
     assert distance((0.0, 0.0), (3.0, 4.0)) == 5.0
+
+
+def test_clip_polygon_by_line_keeps_the_left_half_of_a_square():
+    square = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]
+    # Directed line straight up through x=2 -- "left" of (2,0)->(2,4) is x<2.
+    left_half = clip_polygon_by_line(square, (2.0, 0.0), (2.0, 4.0))
+    assert math.isclose(polygon_area(left_half), 8.0, rel_tol=1e-9)
+    for x, _y in left_half:
+        assert x <= 2.0 + 1e-9
+
+
+def test_clip_polygon_by_line_fully_outside_returns_empty():
+    triangle = [(10.0, 10.0), (12.0, 10.0), (11.0, 12.0)]
+    # Directed line far to the left of the triangle -- nothing is on its left side.
+    assert clip_polygon_by_line(triangle, (0.0, -1.0), (0.0, 1.0)) == []
+
+
+def test_clip_polygon_by_line_two_opposite_halves_sum_to_original_area():
+    square = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]
+    left_half = clip_polygon_by_line(square, (2.0, 0.0), (2.0, 4.0))
+    right_half = clip_polygon_by_line(square, (2.0, 4.0), (2.0, 0.0))
+    assert math.isclose(polygon_area(left_half) + polygon_area(right_half), 16.0, rel_tol=1e-9)
