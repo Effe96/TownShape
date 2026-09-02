@@ -57,6 +57,24 @@ JOB_VACANCIES_BY_BUILDING_TYPE: Dict[str, List[Tuple[str, int]]] = {
     "arcane_shop": [("mage", 1), ("apprentice", 2)],
 }
 
+BUILDING_NAME_POOLS: Dict[str, List[str]] = {
+    "temple": ["Shrine of the Dawn", "Temple of Light", "Sanctum of Silver Stars", "House of the Faithful"],
+    "town_hall": ["Town Hall", "Hall of Records", "Council House"],
+    "school": ["Old Schoolhouse", "Hall of Letters", "Learning House"],
+    "guard_post": ["Watch Post", "Guardhouse", "Sentry Post"],
+    "garrison": ["The Garrison", "Barracks of the Watch", "Iron Company Hall"],
+    "healer": ["Healer's House", "House of Mending", "Herbalist's Rest"],
+    "university": ["University", "College of Scholars", "Hall of Higher Learning"],
+    "shop": ["General Goods", "The Trading Post", "Corner Market", "Old Wares Shop"],
+    "tavern": ["The Rusty Anvil", "The Prancing Pony", "The Gilded Mug", "The Weary Traveler"],
+    "blacksmith": ["The Iron Forge", "Anvil & Ember", "Hammer & Steel"],
+    "market_stall": ["Market Stall", "Trader's Cart", "Wayside Stall"],
+    "arcane_shop": ["The Curious Cauldron", "Arcane Emporium", "Sorcerer's Nook"],
+    "dock": ["Dockside", "Harbor Pier", "Old Wharf"],
+    "warehouse": ["Storehouse", "Old Warehouse", "Freight Hall"],
+    "harbormaster_office": ["Harbormaster's Office", "Port Authority House"],
+}
+
 UNIVERSITY_MIN_POPULATION = 8000
 UNIVERSITY_CHANCE = 0.15
 ARCANE_SHOP_WEIGHT_SCALE = 0.5
@@ -152,6 +170,8 @@ def fill_district_buildings(
             for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[building_type]
             for _ in range(count)
         ]
+        name_pool = BUILDING_NAME_POOLS.get(building_type)
+        name = rng.choice(name_pool) if name_pool else None
         buildings.append(Building(
             id=building_id,
             district_id=district.id,
@@ -161,6 +181,7 @@ def fill_district_buildings(
             building_type=building_type,
             capacity=capacity,
             vacancies=vacancies,
+            name=name,
         ))
         building_id += 1
 

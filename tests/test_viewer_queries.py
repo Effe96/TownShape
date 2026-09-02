@@ -35,7 +35,10 @@ def test_get_map_data_returns_districts_buildings_and_water(tmp_path):
         {"id": 1, "zone_type": "civic", "polygon": [[[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]]}
     ]
     assert data["buildings"] == [
-        {"id": 1, "district_id": 1, "zone_type": "civic", "building_type": "temple", "x": 10.0, "y": 10.0}
+        {
+            "id": 1, "district_id": 1, "zone_type": "civic", "building_type": "temple",
+            "x": 10.0, "y": 10.0, "name": None,
+        }
     ]
     assert data["water_features"] == [
         {"id": 1, "kind": "river", "polygon": [[[8.0, -2.0], [12.0, -2.0], [12.0, 22.0], [8.0, 22.0]]]}

@@ -118,10 +118,18 @@ real town — deferred, not blocking, to pick up later:
 1. ~~**Resident sidebar is too narrow to read.**~~ **Fixed 2026-09-02:**
    default width 340px → 480px, plus native CSS `resize: horizontal`
    (min 300px / max 800px) so it's user-adjustable without JS.
-2. **Buildings should be nameable.** No `name` field exists on
-   `buildings` today (`town_db/schema.py`) — just `building_type`. Would
-   need a schema change (or a viewer-local naming layer) plus UI to set
-   and display it.
+2. ~~**Buildings should be nameable.**~~ **Partially fixed 2026-09-02:**
+   added a nullable `buildings.name` column, populated at generation
+   time from a per-`building_type` flavor-name pool
+   (`town_shaper/buildings.py`'s `BUILDING_NAME_POOLS`) — e.g. taverns
+   get "The Rusty Anvil"-style names, civic/commercial buildings get
+   fitting names. Deliberately scoped to the ~15 landmark/commercial
+   types; `manor`/`residence`/`farmstead` are left unnamed since no
+   household is assigned to a building until a later generation step,
+   so a real "Stonebrook Manor"-style name isn't available yet.
+   Read-only for now, per the user's call — **user-editable naming via
+   the viewer UI is planned as a future iteration**, once the v1
+   read-only scope is revisited.
 3. **Map should read as an actual city, not scattered squares.** Real
    building footprints (even simple rects/squares, but sized/rotated to
    *touch* each other) and roads/streets running between them, instead

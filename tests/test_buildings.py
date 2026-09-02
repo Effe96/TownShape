@@ -57,6 +57,19 @@ def test_fill_district_buildings_creates_vacancies_matching_building_type():
             assert vacancy.filled_by is None
 
 
+def test_fill_district_buildings_names_flavor_types_but_not_homes():
+    from town_shaper.buildings import BUILDING_NAME_POOLS
+
+    merchant_district = _square_district(ZoneType.MERCHANT)
+    for building in fill_district_buildings(merchant_district, ("town", 1), next_building_id=0):
+        assert building.name in BUILDING_NAME_POOLS[building.building_type]
+
+    residential_district = _square_district(ZoneType.POOR_RESIDENTIAL, district_id=2)
+    for building in fill_district_buildings(residential_district, ("town", 1), next_building_id=0):
+        assert building.building_type == "residence"
+        assert building.name is None
+
+
 def test_fill_district_buildings_is_deterministic():
     district = _square_district(ZoneType.RICH_RESIDENTIAL)
     first = fill_district_buildings(district, ("town", 1), next_building_id=0)

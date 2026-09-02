@@ -14,7 +14,8 @@ CREATE TABLE buildings (
     building_type TEXT NOT NULL,
     x REAL NOT NULL,
     y REAL NOT NULL,
-    capacity INTEGER NOT NULL
+    capacity INTEGER NOT NULL,
+    name TEXT
 );
 
 CREATE TABLE households (

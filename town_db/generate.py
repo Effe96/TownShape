@@ -88,10 +88,10 @@ def generate_town_database(
         )
         for building in district.buildings:
             conn.execute(
-                "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (building.id, district.id, district.zone_type.value, building.building_type,
-                 building.x, building.y, building.capacity),
+                 building.x, building.y, building.capacity, building.name),
             )
             zone_type_by_building_id[building.id] = district.zone_type.value
 

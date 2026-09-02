@@ -190,7 +190,8 @@ function renderBuildingDetail(building) {
     })
     .join("");
   panel.innerHTML = `
-    <h3>${building.building_type} (#${building.id})</h3>
+    <h3>${building.name || building.building_type} (#${building.id})</h3>
+    <div class="detail-row"><span class="label">Type:</span> ${building.building_type}</div>
     <div class="detail-row"><span class="label">Zone:</span> ${building.zone_type}</div>
     <div class="detail-row"><span class="label">Capacity:</span> ${building.capacity}</div>
     <h4>Residents (${building.residents.length})</h4>

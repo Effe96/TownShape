@@ -45,6 +45,7 @@ class Building:
     capacity: int
     vacancies: List[JobVacancy] = field(default_factory=list)
     resident_ids: List[int] = field(default_factory=list)
+    name: Optional[str] = None
 
 
 @dataclass
