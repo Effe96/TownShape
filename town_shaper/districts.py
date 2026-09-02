@@ -29,15 +29,19 @@ def _polygon_to_parts(shapely_geom) -> List[List[Tuple[float, float]]]:
     return []  # a degenerate difference (e.g. a LineString sliver) contributes no land
 
 
-def build_districts(
-    anchors: List[Anchor], bounds: Tuple[float, float, float, float], water_polygon=None
-) -> List[District]:
+def compute_voronoi(anchors: List[Anchor], bounds: Tuple[float, float, float, float]) -> Voronoi:
     if len(anchors) < 4:
         raise ValueError("At least 4 anchors are required to compute a stable Voronoi diagram")
 
     anchor_points = np.array([(a.x, a.y) for a in anchors])
     all_points = _mirrored_points(anchor_points, bounds)
-    vor = Voronoi(all_points)
+    return Voronoi(all_points)
+
+
+def build_districts(
+    anchors: List[Anchor], bounds: Tuple[float, float, float, float], water_polygon=None
+) -> List[District]:
+    vor = compute_voronoi(anchors, bounds)
 
     districts: List[District] = []
     for i, anchor in enumerate(anchors):

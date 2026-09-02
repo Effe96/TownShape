@@ -3,9 +3,25 @@ import math
 import pytest
 
 from town_shaper.anchors import place_anchors
-from town_shaper.districts import build_districts
+from town_shaper.districts import build_districts, compute_voronoi
 from town_shaper.geometry import point_in_polygon, polygon_area
 from town_shaper.models import Anchor, ZoneType
+
+
+def test_compute_voronoi_requires_at_least_four_anchors():
+    anchors = [Anchor(id=i, zone_type=ZoneType.CIVIC, x=float(i), y=0.0) for i in range(3)]
+    with pytest.raises(ValueError):
+        compute_voronoi(anchors, bounds=(-10.0, -10.0, 10.0, 10.0))
+
+
+def test_compute_voronoi_real_anchors_occupy_the_first_indices():
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    anchors = place_anchors(("town", 1), 3000, bounds)
+    vor = compute_voronoi(anchors, bounds)
+
+    for i, anchor in enumerate(anchors):
+        assert vor.points[i][0] == pytest.approx(anchor.x)
+        assert vor.points[i][1] == pytest.approx(anchor.y)
 
 
 def test_build_districts_requires_at_least_four_anchors():
