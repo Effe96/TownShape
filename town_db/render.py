@@ -19,6 +19,12 @@ DEFAULT_ZONE_COLOR = "#dddddd"
 
 WATER_COLOR = "#4a90d9"
 
+ROAD_STYLE = {
+    "radial": {"width": 2.5, "color": "#3a3a3a"},
+    "boundary": {"width": 1.4, "color": "#5a5a5a"},
+    "spur": {"width": 0.8, "color": "#7a7a7a"},
+}
+
 # building_type -> (marker, color, marker_size). Everything else renders as a
 # generic dot. Shop/tavern get a smaller size since there are usually many of
 # them; the rarer civic landmarks stay large and easy to spot.
@@ -42,6 +48,8 @@ def render_town(db_path: str, output_path: str) -> None:
     districts = conn.execute("SELECT zone_type, polygon FROM districts").fetchall()
     buildings = conn.execute("SELECT x, y, building_type FROM buildings").fetchall()
     water_features = conn.execute("SELECT kind, polygon FROM water_features").fetchall()
+    road_nodes = conn.execute("SELECT id, x, y FROM road_nodes").fetchall()
+    road_edges = conn.execute("SELECT from_node_id, to_node_id, road_type FROM road_edges").fetchall()
     conn.close()
 
     fig, ax = plt.subplots(figsize=(12, 12))
@@ -61,6 +69,13 @@ def render_town(db_path: str, output_path: str) -> None:
             ))
         if zone_type not in seen_zone_types:
             seen_zone_types.append(zone_type)
+
+    node_coords = {node_id: (x, y) for node_id, x, y in road_nodes}
+    for from_id, to_id, road_type in road_edges:
+        style = ROAD_STYLE.get(road_type, ROAD_STYLE["spur"])
+        x1, y1 = node_coords[from_id]
+        x2, y2 = node_coords[to_id]
+        ax.plot([x1, x2], [y1, y2], color=style["color"], linewidth=style["width"], zorder=2.5)
 
     generic_x: List[float] = []
     generic_y: List[float] = []
