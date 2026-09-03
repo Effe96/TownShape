@@ -24,6 +24,7 @@ ROAD_STYLE = {
     "radial": {"width": 2.5, "color": "#3a3a3a"},
     "boundary": {"width": 1.4, "color": "#5a5a5a"},
     "spur": {"width": 0.8, "color": "#7a7a7a"},
+    "local": {"width": 0.5, "color": "#9a9a9a"},
 }
 
 # building_type -> (marker, color, marker_size). Everything else renders as a

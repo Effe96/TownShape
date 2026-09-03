@@ -112,6 +112,30 @@ def test_subdivide_into_blocks_is_deterministic():
     assert [(e.from_node_id, e.to_node_id) for e in edges1] == [(e.from_node_id, e.to_node_id) for e in edges2]
 
 
+def test_subdivide_into_blocks_local_street_endpoints_stay_near_the_polygon():
+    # Regression guard for a real bug found via visual inspection of a
+    # rendered town: the old span-based endpoint approximation placed local
+    # street nodes far outside the polygon they were cut from (sometimes
+    # 100+ units away for a 100-unit-wide square). Junction nodes should sit
+    # on or very near the original polygon's own extent.
+    large_square = _square(100.0)
+    rng = rng_for(("town", 1), "blocks-test", 7)
+
+    _blocks, nodes, _edges, _n, _e = subdivide_into_blocks(
+        large_square, ZoneType.MERCHANT, rng, next_node_id=0, next_edge_id=0,
+    )
+
+    tolerance = 1.0
+    min_x = min(p[0] for p in large_square) - tolerance
+    max_x = max(p[0] for p in large_square) + tolerance
+    min_y = min(p[1] for p in large_square) - tolerance
+    max_y = max(p[1] for p in large_square) + tolerance
+    assert nodes  # this square is well above MERCHANT's target area, so splits happen
+    for node in nodes:
+        assert min_x <= node.x <= max_x
+        assert min_y <= node.y <= max_y
+
+
 def _rectangle(width: float, height: float):
     return [(0.0, 0.0), (width, 0.0), (width, height), (0.0, height)]
 

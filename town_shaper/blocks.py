@@ -90,6 +90,35 @@ def _split_polygon(polygon: Polygon, rng) -> Tuple[Polygon, Polygon, Tuple[Point
     return side_a, side_b, (line_start, line_end)
 
 
+def _distance_to_line(point: Point, line_start: Point, line_end: Point) -> float:
+    x0, y0 = point
+    x1, y1 = line_start
+    x2, y2 = line_end
+    numerator = abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1)
+    denominator = math.hypot(y2 - y1, x2 - x1)
+    return numerator / denominator if denominator else 0.0
+
+
+def _local_street_endpoints(polygon: Polygon, line_start: Point, line_end: Point) -> Tuple[Point, Point]:
+    """Where the infinite line through line_start/line_end actually crosses
+    `polygon`'s boundary -- used for the recorded local-street segment
+    instead of the far-flung span-based endpoints, so streets don't
+    visually extend beyond the district they were cut from.
+
+    clip_polygon_by_line inserts an exact intersection point at every
+    transition between "inside" and "outside" the clip line (Sutherland-
+    Hodgman), so clipping `polygon` by the unoffset cut line and finding
+    which of the resulting vertices lie on that line recovers the true
+    boundary crossings, reusing machinery already in this module rather
+    than writing a separate line-polygon intersection routine.
+    """
+    clipped = clip_polygon_by_line(polygon, line_start, line_end)
+    on_line = [p for p in clipped if _distance_to_line(p, line_start, line_end) < 1e-6]
+    if len(on_line) >= 2:
+        return on_line[0], on_line[-1]
+    return line_start, line_end  # fallback -- shouldn't happen for a real split
+
+
 def subdivide_into_blocks(
     polygon_part: Polygon, zone_type: ZoneType, rng, next_node_id: int, next_edge_id: int,
 ) -> Tuple[List[Polygon], List[RoadNode], List[RoadEdge], int, int]:
@@ -116,8 +145,9 @@ def _subdivide(
         # Degenerate split (e.g. a sliver too thin for the street gap) -- stop here.
         return [polygon_part], [], [], next_node_id, next_edge_id
 
-    node_a = RoadNode(id=next_node_id, kind="junction", x=line_start[0], y=line_start[1])
-    node_b = RoadNode(id=next_node_id + 1, kind="junction", x=line_end[0], y=line_end[1])
+    street_start, street_end = _local_street_endpoints(polygon_part, line_start, line_end)
+    node_a = RoadNode(id=next_node_id, kind="junction", x=street_start[0], y=street_start[1])
+    node_b = RoadNode(id=next_node_id + 1, kind="junction", x=street_end[0], y=street_end[1])
     edge = RoadEdge(id=next_edge_id, from_node_id=node_a.id, to_node_id=node_b.id, road_type="local")
     next_node_id += 2
     next_edge_id += 1
