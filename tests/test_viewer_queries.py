@@ -38,6 +38,7 @@ def test_get_map_data_returns_districts_buildings_and_water(tmp_path):
         {
             "id": 1, "district_id": 1, "zone_type": "civic", "building_type": "temple",
             "x": 10.0, "y": 10.0, "name": None,
+            "width": 0.0, "height": 0.0, "rotation": 0.0,
         }
     ]
     assert data["water_features"] == [
@@ -259,3 +260,41 @@ def test_get_resident_detail_returns_none_for_missing_resident(tmp_path):
     conn.close()
 
     assert result is None
+
+
+def test_get_map_data_includes_building_footprints(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO districts (id, zone_type, polygon) VALUES (1, 'civic', ?)",
+        (json.dumps([[[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]]),),
+    )
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, width, height, rotation) "
+        "VALUES (1, 1, 'civic', 'temple', 10.0, 10.0, 0, 12.0, 14.4, 0.0)"
+    )
+    conn.commit()
+
+    data = get_map_data(conn)
+    conn.close()
+
+    building = data["buildings"][0]
+    assert building["width"] == 12.0
+    assert building["height"] == 14.4
+    assert building["rotation"] == 0.0
+
+
+def test_get_building_detail_includes_footprint(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    conn.execute("UPDATE buildings SET width = 5.0, height = 6.0, rotation = 1.5 WHERE id = 4")
+    conn.commit()
+    building = get_building_detail(conn, 4)
+    conn.close()
+
+    assert building["width"] == 5.0
+    assert building["height"] == 6.0
+    assert building["rotation"] == 1.5
