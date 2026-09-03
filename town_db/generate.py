@@ -70,42 +70,45 @@ def generate_town_database(
     conn = connect(db_path)
     create_schema(conn)
 
-    for feature in town.water_features:
+    def _water_feature_rings(feature):
         polygon = feature.polygon
-        rings = [list(polygon.exterior.coords)[:-1]] + [
+        return [list(polygon.exterior.coords)[:-1]] + [
             list(interior.coords)[:-1] for interior in polygon.interiors
         ]
-        conn.execute(
-            "INSERT INTO water_features (id, kind, polygon) VALUES (?, ?, ?)",
-            (feature.id, feature.kind, json.dumps(rings)),
-        )
 
-    zone_type_by_building_id: Dict[int, str] = {}
-    for district in town.districts:
-        conn.execute(
-            "INSERT INTO districts (id, zone_type, polygon) VALUES (?, ?, ?)",
-            (district.id, district.zone_type.value, json.dumps(district.polygon_parts)),
-        )
-        for building in district.buildings:
-            conn.execute(
-                "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, "
-                "width, height, rotation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (building.id, district.id, district.zone_type.value, building.building_type,
-                 building.x, building.y, building.capacity, building.name,
-                 building.width, building.height, building.rotation),
-            )
-            zone_type_by_building_id[building.id] = district.zone_type.value
+    conn.executemany(
+        "INSERT INTO water_features (id, kind, polygon) VALUES (?, ?, ?)",
+        [(feature.id, feature.kind, json.dumps(_water_feature_rings(feature)))
+         for feature in town.water_features],
+    )
 
-    for node in town.road_network.nodes:
-        conn.execute(
-            "INSERT INTO road_nodes (id, kind, anchor_id, is_hub, x, y) VALUES (?, ?, ?, ?, ?, ?)",
-            (node.id, node.kind, node.anchor_id, int(node.is_hub), node.x, node.y),
-        )
-    for edge in town.road_network.edges:
-        conn.execute(
-            "INSERT INTO road_edges (id, from_node_id, to_node_id, road_type) VALUES (?, ?, ?, ?)",
-            (edge.id, edge.from_node_id, edge.to_node_id, edge.road_type),
-        )
+    zone_type_by_building_id: Dict[int, str] = {
+        building.id: district.zone_type.value
+        for district in town.districts for building in district.buildings
+    }
+    conn.executemany(
+        "INSERT INTO districts (id, zone_type, polygon) VALUES (?, ?, ?)",
+        [(district.id, district.zone_type.value, json.dumps(district.polygon_parts))
+         for district in town.districts],
+    )
+    conn.executemany(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, "
+        "width, height, rotation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [(building.id, district.id, district.zone_type.value, building.building_type,
+          building.x, building.y, building.capacity, building.name,
+          building.width, building.height, building.rotation)
+         for district in town.districts for building in district.buildings],
+    )
+
+    conn.executemany(
+        "INSERT INTO road_nodes (id, kind, anchor_id, is_hub, x, y) VALUES (?, ?, ?, ?, ?, ?)",
+        [(node.id, node.kind, node.anchor_id, int(node.is_hub), node.x, node.y)
+         for node in town.road_network.nodes],
+    )
+    conn.executemany(
+        "INSERT INTO road_edges (id, from_node_id, to_node_id, road_type) VALUES (?, ?, ?, ?)",
+        [(edge.id, edge.from_node_id, edge.to_node_id, edge.road_type) for edge in town.road_network.edges],
+    )
 
     household_rows, resident_rows = build_households_and_residents(
         town, seed, year_start, race_weights, intermarriage_rate, magic_prevalence=magic_prevalence,
@@ -115,11 +118,10 @@ def generate_town_database(
 
     seed_starting_wealth(household_rows, resident_rows)
 
-    for household in household_rows:
-        conn.execute(
-            "INSERT INTO households (id, family_name, race, wealth) VALUES (?, ?, ?, ?)",
-            (household["id"], household["family_name"], household["race"], household["wealth"]),
-        )
+    conn.executemany(
+        "INSERT INTO households (id, family_name, race, wealth) VALUES (?, ?, ?, ?)",
+        [(h["id"], h["family_name"], h["race"], h["wealth"]) for h in household_rows],
+    )
 
     insert_residents(conn, resident_rows)
 

@@ -63,41 +63,41 @@ def insert_deaths(conn: sqlite3.Connection, deaths: List[Dict[str, Any]]) -> Non
 
 
 def insert_purchases(conn: sqlite3.Connection, purchases: List[Dict[str, Any]]) -> None:
-    for p in purchases:
-        conn.execute(
-            "INSERT INTO purchases (resident_id, shop_building_id, good_id, quantity, unit_price, total_price, "
-            "purchase_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (p["resident_db_id"], p["shop_building_id"], p["good_id"], p["quantity"],
-             p["unit_price"], p["total_price"], p["purchase_date"]),
-        )
+    conn.executemany(
+        "INSERT INTO purchases (resident_id, shop_building_id, good_id, quantity, unit_price, total_price, "
+        "purchase_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [(p["resident_db_id"], p["shop_building_id"], p["good_id"], p["quantity"],
+          p["unit_price"], p["total_price"], p["purchase_date"]) for p in purchases],
+    )
 
 
 def insert_tax_payments(conn: sqlite3.Connection, tax_payments: List[Dict[str, Any]]) -> None:
-    for t in tax_payments:
-        conn.execute(
-            "INSERT INTO tax_payments (resident_id, tax_type, amount, period, payment_date) VALUES (?, ?, ?, ?, ?)",
-            (t["resident_db_id"], t["tax_type"], t["amount"], t["period"], t["payment_date"]),
-        )
+    conn.executemany(
+        "INSERT INTO tax_payments (resident_id, tax_type, amount, period, payment_date) VALUES (?, ?, ?, ?, ?)",
+        [(t["resident_db_id"], t["tax_type"], t["amount"], t["period"], t["payment_date"]) for t in tax_payments],
+    )
 
 
 def insert_school_enrollments(conn: sqlite3.Connection, enrollments: List[Dict[str, Any]]) -> None:
-    for e in enrollments:
-        conn.execute(
-            "INSERT INTO school_enrollments (resident_id, school_building_id, enrollment_type, start_date, "
-            "end_date) VALUES (?, ?, ?, ?, ?)",
-            (e["resident_db_id"], e["school_building_id"], e["enrollment_type"], e["start_date"], e["end_date"]),
-        )
+    conn.executemany(
+        "INSERT INTO school_enrollments (resident_id, school_building_id, enrollment_type, start_date, "
+        "end_date) VALUES (?, ?, ?, ?, ?)",
+        [(e["resident_db_id"], e["school_building_id"], e["enrollment_type"], e["start_date"], e["end_date"])
+         for e in enrollments],
+    )
 
 
 def insert_military_service(conn: sqlite3.Connection, records: List[Dict[str, Any]]) -> None:
-    for m in records:
-        conn.execute(
-            "INSERT INTO military_service (resident_id, garrison_building_id, rank, start_date, end_date) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (m["resident_db_id"], m["garrison_building_id"], m["rank"], m["start_date"], m["end_date"]),
-        )
+    conn.executemany(
+        "INSERT INTO military_service (resident_id, garrison_building_id, rank, start_date, end_date) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [(m["resident_db_id"], m["garrison_building_id"], m["rank"], m["start_date"], m["end_date"])
+         for m in records],
+    )
 
 
 def update_household_wealth(conn: sqlite3.Connection, household_rows: List[Dict[str, Any]]) -> None:
-    for row in household_rows:
-        conn.execute("UPDATE households SET wealth = ? WHERE id = ?", (row["wealth"], row["id"]))
+    conn.executemany(
+        "UPDATE households SET wealth = ? WHERE id = ?",
+        [(row["wealth"], row["id"]) for row in household_rows],
+    )
