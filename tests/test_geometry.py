@@ -1,6 +1,6 @@
 import math
 
-from town_shaper.geometry import clip_polygon_by_line, clip_polygon_to_bounds, distance, point_in_polygon, polygon_area
+from town_shaper.geometry import clip_polygon_by_line, clip_polygon_to_bounds, distance, inset_polygon, point_in_polygon, polygon_area
 
 
 def test_polygon_area_of_unit_square():
@@ -51,3 +51,23 @@ def test_clip_polygon_by_line_two_opposite_halves_sum_to_original_area():
     left_half = clip_polygon_by_line(square, (2.0, 0.0), (2.0, 4.0))
     right_half = clip_polygon_by_line(square, (2.0, 4.0), (2.0, 0.0))
     assert math.isclose(polygon_area(left_half) + polygon_area(right_half), 16.0, rel_tol=1e-9)
+
+
+def test_inset_polygon_shrinks_a_square_by_twice_the_distance_per_side():
+    square = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    result = inset_polygon(square, 2.0)
+    assert math.isclose(polygon_area(result), 6.0 * 6.0, rel_tol=1e-9)
+    for x, y in result:
+        assert 2.0 - 1e-9 <= x <= 8.0 + 1e-9
+        assert 2.0 - 1e-9 <= y <= 8.0 + 1e-9
+
+
+def test_inset_polygon_returns_empty_when_distance_exceeds_the_polygon():
+    small_square = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]
+    assert inset_polygon(small_square, 10.0) == []
+
+
+def test_inset_polygon_zero_distance_returns_the_same_shape():
+    triangle = [(0.0, 0.0), (10.0, 0.0), (5.0, 8.0)]
+    result = inset_polygon(triangle, 0.0)
+    assert math.isclose(polygon_area(result), polygon_area(triangle), rel_tol=1e-9)

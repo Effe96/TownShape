@@ -85,3 +85,31 @@ def clip_polygon_to_bounds(polygon: Polygon, bounds: Tuple[float, float, float, 
         edge_end = clip_edges[(i + 1) % len(clip_edges)]
         output = clip_polygon_by_line(output, edge_start, edge_end)
     return output
+
+
+def inset_polygon(polygon: Polygon, distance: float) -> Polygon:
+    """Insets every edge of `polygon` inward by `distance` -- same
+    Sutherland-Hodgman pattern clip_polygon_to_bounds uses against a
+    rectangle's 4 edges, generalized to polygon's own N edges. Each edge's
+    line is shifted along its own inward (left-of-the-directed-edge, per
+    _is_inside_edge's convention) normal, then the polygon is clipped
+    against that shifted line in turn."""
+    n = len(polygon)
+    offset_edges: List[Tuple[Point, Point]] = []
+    for i in range(n):
+        v0 = polygon[i]
+        v1 = polygon[(i + 1) % n]
+        dx, dy = v1[0] - v0[0], v1[1] - v0[1]
+        length = math.hypot(dx, dy)
+        if length == 0:
+            offset_edges.append((v0, v1))
+            continue
+        nx, ny = (-dy / length) * distance, (dx / length) * distance
+        offset_edges.append(((v0[0] + nx, v0[1] + ny), (v1[0] + nx, v1[1] + ny)))
+
+    output = list(polygon)
+    for edge_start, edge_end in offset_edges:
+        if not output:
+            break
+        output = clip_polygon_by_line(output, edge_start, edge_end)
+    return output
