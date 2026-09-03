@@ -275,3 +275,17 @@ def test_generate_town_database_persists_road_network(tmp_path):
         assert edge[1] in node_ids
         assert edge[2] in node_ids
         assert edge[3] in ("radial", "boundary", "spur", "local")
+
+
+def test_generate_town_database_persists_building_footprints(tmp_path):
+    from town_db.generate import generate_town_database
+
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+
+    conn = connect(db_path)
+    rows = conn.execute("SELECT width, height, rotation FROM buildings").fetchall()
+    conn.close()
+
+    assert len(rows) > 0
+    assert all(row[0] > 0 and row[1] > 0 for row in rows)
