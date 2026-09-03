@@ -4,7 +4,7 @@ import pytest
 
 from town_shaper.buildings import fill_district_buildings
 from town_shaper.generate import BUILDING_ID_STRIDE, compute_town_bounds, generate_town
-from town_shaper.models import Town
+from town_shaper.models import Town, ZoneType
 
 
 def test_compute_town_bounds_grows_with_population():
@@ -37,12 +37,20 @@ def test_generate_town_is_fully_deterministic():
 
 
 def test_generate_town_single_district_matches_full_pipeline():
+    from town_shaper.blocks import generate_blocks_and_buildings
+
     seed = ("town", 1)
     town = generate_town(seed, target_population=3000)
 
     target_district = town.districts[min(2, len(town.districts) - 1)]
     next_id = target_district.id * BUILDING_ID_STRIDE
-    recomputed = fill_district_buildings(target_district, seed, next_building_id=next_id)
+
+    if target_district.zone_type == ZoneType.FARMLAND_EDGE:
+        recomputed = fill_district_buildings(target_district, seed, next_building_id=next_id)
+    else:
+        recomputed, _, _, _, _ = generate_blocks_and_buildings(
+            target_district, seed, next_id, 0, 0, target_population=3000
+        )
 
     original_ids = [b.id for b in target_district.buildings]
     recomputed_ids = [b.id for b in recomputed]
@@ -96,6 +104,35 @@ def test_generate_town_defaults_match_previous_hardcoded_behavior():
     buildings_default = [building_key(b) for d in town_default.districts for b in d.buildings]
     buildings_explicit = [building_key(b) for d in town_explicit.districts for b in d.buildings]
     assert buildings_default == buildings_explicit
+
+
+def test_generate_town_places_footprint_buildings_in_urban_zones():
+    town = generate_town(("town", 1), target_population=3000)
+
+    urban_buildings = [
+        b for d in town.districts for b in d.buildings
+        if d.zone_type != ZoneType.FARMLAND_EDGE
+    ]
+    assert urban_buildings
+    for building in urban_buildings:
+        assert building.width > 0
+        assert building.height > 0
+
+    farmland_buildings = [
+        b for d in town.districts for b in d.buildings
+        if d.zone_type == ZoneType.FARMLAND_EDGE
+    ]
+    from town_shaper.buildings import FARMLAND_BUILDING_HEIGHT, FARMLAND_BUILDING_WIDTH
+    for building in farmland_buildings:
+        assert building.width == FARMLAND_BUILDING_WIDTH
+        assert building.height == FARMLAND_BUILDING_HEIGHT
+
+
+def test_generate_town_road_network_includes_local_streets():
+    town = generate_town(("town", 1), target_population=5000)  # larger town, more urban blocks to split
+
+    local_edges = [e for e in town.road_network.edges if e.road_type == "local"]
+    assert local_edges  # at least one urban district was large enough to subdivide
 
 
 def test_generate_town_area_multiplier_grows_bounds_independent_of_district_count():

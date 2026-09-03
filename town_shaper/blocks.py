@@ -9,6 +9,7 @@ from town_shaper.buildings import (
 )
 from town_shaper.geometry import clip_polygon_by_line, distance, point_in_polygon, polygon_area
 from town_shaper.models import Building, District, JobVacancy, RoadEdge, RoadNode, ZoneType
+from town_shaper.seeding import rng_for
 
 TARGET_BLOCK_AREA_BY_ZONE: Dict[ZoneType, float] = {
     ZoneType.CIVIC: 2000.0,
@@ -228,8 +229,35 @@ def place_buildings_in_block(
                     overlaps = True
                     break
 
-            if not overlaps:
+            fits_in_block = ShapelyPolygon(block_polygon).buffer(0.5).contains(new_footprint)
+            if not overlaps and fits_in_block:
                 buildings.append(building)
                 building_id += 1
 
     return buildings
+
+
+def generate_blocks_and_buildings(
+    district: District, town_seed, next_building_id: int, next_node_id: int, next_edge_id: int,
+    target_population: int = 0, density_multiplier: float = 1.0, magic_prevalence: float = 0.0,
+) -> Tuple[List[Building], List[RoadNode], List[RoadEdge], int, int]:
+    rng = rng_for(town_seed, "blocks", district.id)
+    buildings: List[Building] = []
+    local_nodes: List[RoadNode] = []
+    local_edges: List[RoadEdge] = []
+    building_id = next_building_id
+
+    for part in district.polygon_parts:
+        blocks, part_nodes, part_edges, next_node_id, next_edge_id = subdivide_into_blocks(
+            part, district.zone_type, rng, next_node_id, next_edge_id,
+        )
+        local_nodes.extend(part_nodes)
+        local_edges.extend(part_edges)
+        for block in blocks:
+            block_buildings = place_buildings_in_block(
+                block, district, rng, building_id, target_population, magic_prevalence, density_multiplier,
+            )
+            buildings.extend(block_buildings)
+            building_id += len(block_buildings)
+
+    return buildings, local_nodes, local_edges, next_node_id, next_edge_id

@@ -213,3 +213,54 @@ def test_place_buildings_in_block_density_multiplier_scales_lot_size():
     )
 
     assert len(dense) > len(sparse)
+
+
+def test_place_buildings_in_block_skips_footprints_that_would_exit_a_narrow_block():
+    from town_shaper.blocks import place_buildings_in_block
+
+    # 80 long x 20 deep: long enough for a lot to clear the corner
+    # skip_distance margin on the long edges (skip_distance=15.4, frontage=30
+    # at density_multiplier=0.5, so 80 - 2*15.4 = 49.2 >= 30 -- one lot per
+    # long edge), but the block's cross-dimension (20) is far shorter than
+    # the inflated lot depth's inward reach at this density_multiplier
+    # (depth/2 + footprint_half_height = 18 + 14.4 = 32.4), so a naive
+    # lot-center placement pushes the footprint's far edge outside the
+    # opposite long edge entirely.
+    narrow_block = _rectangle(80.0, 20.0)
+    district = _district(ZoneType.CIVIC)
+    rng = rng_for(("town", 1), "blocks-test", 20)
+
+    buildings = place_buildings_in_block(
+        narrow_block, district, rng, 0, target_population=3000, magic_prevalence=0.0, density_multiplier=0.5,
+    )
+
+    block_shape = ShapelyPolygon(narrow_block).buffer(0.5)
+    for building in buildings:
+        assert block_shape.contains(_footprint_shape(building))
+
+
+def _multi_part_district(zone_type, polygon_parts):
+    anchor = Anchor(id=1, zone_type=zone_type, x=0.0, y=0.0)
+    return District(id=1, zone_type=zone_type, anchor=anchor, polygon_parts=polygon_parts)
+
+
+def test_generate_blocks_and_buildings_covers_every_polygon_part():
+    from town_shaper.blocks import generate_blocks_and_buildings
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(40.0, 20.0), _rectangle(30.0, 15.0)])
+
+    buildings, nodes, edges, next_node_id, next_edge_id = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, next_node_id=0, next_edge_id=0,
+        target_population=3000, magic_prevalence=0.0,
+    )
+
+    assert len(buildings) > 0
+    building_ids = [b.id for b in buildings]
+    assert building_ids == sorted(building_ids)
+    assert building_ids == list(range(len(buildings)))  # sequential, starting at next_building_id
+    assert next_node_id >= 0
+    assert next_edge_id >= 0
+    # nodes/edges may be empty if both parts are already under target area,
+    # but the counters must never regress.
+    assert next_node_id >= len(nodes)
+    assert next_edge_id >= len(edges)

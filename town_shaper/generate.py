@@ -5,10 +5,11 @@ from shapely.ops import unary_union
 
 from town_shaper.anchors import place_anchors
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION, assign_residents
+from town_shaper.blocks import generate_blocks_and_buildings
 from town_shaper.buildings import fill_district_buildings
 from town_shaper.districts import build_districts
 from town_shaper.households import generate_households
-from town_shaper.models import Town
+from town_shaper.models import Town, ZoneType
 from town_shaper.roads import generate_road_network
 from town_shaper.water import generate_water_features
 
@@ -44,13 +45,27 @@ def generate_town(
     districts = build_districts(anchors, bounds, water_polygon=water_polygon)
     road_network = generate_road_network(anchors, bounds, water_polygon=water_polygon)
 
+    next_local_node_id = max((n.id for n in road_network.nodes), default=-1) + 1
+    next_local_edge_id = max((e.id for e in road_network.edges), default=-1) + 1
+
     for district in districts:
         next_building_id = district.id * BUILDING_ID_STRIDE
-        buildings = fill_district_buildings(
-            district, seed, next_building_id,
-            target_population=target_population, density_multiplier=density_multiplier,
-            magic_prevalence=magic_prevalence,
-        )
+        if district.zone_type == ZoneType.FARMLAND_EDGE:
+            buildings = fill_district_buildings(
+                district, seed, next_building_id,
+                target_population=target_population, density_multiplier=density_multiplier,
+                magic_prevalence=magic_prevalence,
+            )
+        else:
+            buildings, district_nodes, district_edges, next_local_node_id, next_local_edge_id = (
+                generate_blocks_and_buildings(
+                    district, seed, next_building_id, next_local_node_id, next_local_edge_id,
+                    target_population=target_population, density_multiplier=density_multiplier,
+                    magic_prevalence=magic_prevalence,
+                )
+            )
+            road_network.nodes.extend(district_nodes)
+            road_network.edges.extend(district_edges)
         district.buildings = buildings
 
     households = generate_households(seed, target_population)
