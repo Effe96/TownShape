@@ -1,4 +1,5 @@
 import json
+import math
 import sqlite3
 from typing import Dict, List, Tuple
 
@@ -43,10 +44,21 @@ LANDMARK_BUILDING_TYPES: Dict[str, Tuple[str, str, int]] = {
 GENERIC_BUILDING_COLOR = "#555555"
 
 
+def _rotated_rect_corners(cx: float, cy: float, width: float, height: float, rotation: float):
+    hw, hh = width / 2.0, height / 2.0
+    cos_r, sin_r = math.cos(rotation), math.sin(rotation)
+    return [
+        (cx + lx * cos_r - ly * sin_r, cy + lx * sin_r + ly * cos_r)
+        for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+    ]
+
+
 def render_town(db_path: str, output_path: str) -> None:
     conn = sqlite3.connect(db_path)
     districts = conn.execute("SELECT zone_type, polygon FROM districts").fetchall()
-    buildings = conn.execute("SELECT x, y, building_type FROM buildings").fetchall()
+    buildings = conn.execute(
+        "SELECT x, y, building_type, width, height, rotation FROM buildings"
+    ).fetchall()
     water_features = conn.execute("SELECT kind, polygon FROM water_features").fetchall()
     road_nodes = conn.execute("SELECT id, x, y FROM road_nodes").fetchall()
     road_edges = conn.execute("SELECT from_node_id, to_node_id, road_type FROM road_edges").fetchall()
@@ -81,18 +93,15 @@ def render_town(db_path: str, output_path: str) -> None:
         x2, y2 = to_xy
         ax.plot([x1, x2], [y1, y2], color=style["color"], linewidth=style["width"], zorder=2.5)
 
-    generic_x: List[float] = []
-    generic_y: List[float] = []
     landmark_points: Dict[str, List[Tuple[float, float]]] = {}
-    for x, y, building_type in buildings:
+    for x, y, building_type, width, height, rotation in buildings:
         if building_type in LANDMARK_BUILDING_TYPES:
             landmark_points.setdefault(building_type, []).append((x, y))
         else:
-            generic_x.append(x)
-            generic_y.append(y)
-
-    if generic_x:
-        ax.scatter(generic_x, generic_y, s=4, c=GENERIC_BUILDING_COLOR, zorder=3)
+            corners = _rotated_rect_corners(x, y, width, height, rotation)
+            ax.add_patch(MplPolygon(
+                corners, closed=True, facecolor=GENERIC_BUILDING_COLOR, edgecolor="none", zorder=3,
+            ))
 
     for building_type, points in landmark_points.items():
         marker, color, size = LANDMARK_BUILDING_TYPES[building_type]

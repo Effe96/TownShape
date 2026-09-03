@@ -110,3 +110,27 @@ def test_render_town_skips_a_road_edge_with_a_missing_node(tmp_path):
     with open(output_path, "rb") as f:
         header = f.read(8)
     assert header == b"\x89PNG\r\n\x1a\n"
+
+
+def test_render_town_draws_rotated_building_footprints(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    output_path = str(tmp_path / "town.png")
+
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO districts (id, zone_type, polygon) VALUES (1, 'poor_residential', ?)",
+        (json.dumps([[[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]]]),),
+    )
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, width, height, rotation) "
+        "VALUES (1, 1, 'poor_residential', 'residence', 20.0, 20.0, 6, 5.0, 6.0, 0.7853981633974483)"
+    )
+    conn.commit()
+    conn.close()
+
+    render_town(db_path, output_path)  # must not raise
+
+    with open(output_path, "rb") as f:
+        header = f.read(8)
+    assert header == b"\x89PNG\r\n\x1a\n"
