@@ -25,8 +25,6 @@ const COMMON_BUILDING_COLORS = {
 };
 const ALL_TYPED_COLORS = { ...LANDMARK_COLORS, ...COMMON_BUILDING_COLORS };
 const GENERIC_BUILDING_COLOR = "#555555";
-const LANDMARK_SIZE = 10;
-const GENERIC_SIZE = 5;
 
 const ROAD_STYLE = {
   radial: { width: 2.5, color: "#3a3a3a" },
@@ -34,10 +32,6 @@ const ROAD_STYLE = {
   spur: { width: 0.8, color: "#7a7a7a" },
   local: { width: 0.5, color: "#9a9a9a" },
 };
-
-function buildingHalfSize(buildingType) {
-  return (buildingType in LANDMARK_COLORS ? LANDMARK_SIZE : GENERIC_SIZE) / 2;
-}
 
 function buildingColor(buildingType) {
   return ALL_TYPED_COLORS[buildingType] || GENERIC_BUILDING_COLOR;
@@ -123,21 +117,30 @@ function draw() {
   }
 
   for (const building of mapData.buildings) {
-    const half = buildingHalfSize(building.building_type);
-    const { sx, sy } = worldToScreen(building.x - half, building.y - half);
-    const screenSize = half * 2 * view.scale;
+    const { sx, sy } = worldToScreen(building.x, building.y);
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(building.rotation);
+    const screenWidth = building.width * view.scale;
+    const screenHeight = building.height * view.scale;
     ctx.fillStyle = buildingColor(building.building_type);
-    ctx.fillRect(sx, sy, screenSize, screenSize);
+    ctx.fillRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
+    ctx.restore();
   }
 
   for (const buildingId of highlightedBuildingIds) {
     const building = mapData.buildings.find((b) => b.id === buildingId);
     if (!building) continue;
-    const half = buildingHalfSize(building.building_type);
-    const { sx, sy } = worldToScreen(building.x - half, building.y - half);
+    const { sx, sy } = worldToScreen(building.x, building.y);
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(building.rotation);
+    const screenWidth = building.width * view.scale;
+    const screenHeight = building.height * view.scale;
     ctx.strokeStyle = "#ff2222";
     ctx.lineWidth = 3;
-    ctx.strokeRect(sx, sy, half * 2 * view.scale, half * 2 * view.scale);
+    ctx.strokeRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
+    ctx.restore();
   }
 }
 
@@ -192,11 +195,13 @@ let highlightedBuildingIds = [];
 
 function findBuildingAt(worldX, worldY) {
   for (const building of mapData.buildings) {
-    const half = buildingHalfSize(building.building_type);
-    if (
-      worldX >= building.x - half && worldX <= building.x + half &&
-      worldY >= building.y - half && worldY <= building.y + half
-    ) {
+    const dx = worldX - building.x;
+    const dy = worldY - building.y;
+    const cosR = Math.cos(-building.rotation);
+    const sinR = Math.sin(-building.rotation);
+    const localX = dx * cosR - dy * sinR;
+    const localY = dx * sinR + dy * cosR;
+    if (Math.abs(localX) <= building.width / 2 && Math.abs(localY) <= building.height / 2) {
       return building;
     }
   }
