@@ -111,12 +111,28 @@ def _local_street_endpoints(polygon: Polygon, line_start: Point, line_end: Point
     which of the resulting vertices lie on that line recovers the true
     boundary crossings, reusing machinery already in this module rather
     than writing a separate line-polygon intersection routine.
+
+    For a non-convex `polygon` (e.g. a water-clipped district fragment),
+    the line can cross the boundary more than twice. Crossings always
+    alternate entry/exit as you move along the line, so sorting the
+    on-line points by their position along the line and taking the first
+    adjacent pair always yields a genuine entry->exit segment that lies
+    entirely inside the polygon -- unlike picking the two most extreme
+    points, which can span across a notch that isn't part of the polygon
+    at all.
     """
     clipped = clip_polygon_by_line(polygon, line_start, line_end)
     on_line = [p for p in clipped if _distance_to_line(p, line_start, line_end) < 1e-6]
-    if len(on_line) >= 2:
-        return on_line[0], on_line[-1]
-    return line_start, line_end  # fallback -- shouldn't happen for a real split
+    if len(on_line) < 2:
+        return line_start, line_end  # fallback -- shouldn't happen for a real split
+
+    dx, dy = line_end[0] - line_start[0], line_end[1] - line_start[1]
+
+    def _position_along_line(point: Point) -> float:
+        return (point[0] - line_start[0]) * dx + (point[1] - line_start[1]) * dy
+
+    on_line.sort(key=_position_along_line)
+    return on_line[0], on_line[1]
 
 
 def subdivide_into_blocks(

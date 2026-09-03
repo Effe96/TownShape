@@ -136,6 +136,28 @@ def test_subdivide_into_blocks_local_street_endpoints_stay_near_the_polygon():
         assert min_y <= node.y <= max_y
 
 
+def test_local_street_endpoints_handles_non_convex_polygons():
+    from town_shaper.blocks import _local_street_endpoints
+
+    # A "U" shape: a notch removes the middle strip (x in [30,70]) for
+    # y >= 30, splitting the polygon into two separate x-ranges at y=50 --
+    # a cut line here crosses the boundary 4 times, not 2.
+    u_shape = [
+        (0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (70.0, 100.0),
+        (70.0, 30.0), (30.0, 30.0), (30.0, 100.0), (0.0, 100.0),
+    ]
+    line_start = (-10.0, 50.0)
+    line_end = (110.0, 50.0)
+
+    street_start, street_end = _local_street_endpoints(u_shape, line_start, line_end)
+
+    # The recorded segment must stay within ONE of the two valid inside
+    # ranges (x in [0,30] or x in [70,100]), never spanning across the
+    # notch void (x in (30,70)) at this height.
+    xs = sorted([street_start[0], street_end[0]])
+    assert (xs[0] >= -1e-6 and xs[1] <= 30.0 + 1e-6) or (xs[0] >= 70.0 - 1e-6 and xs[1] <= 100.0 + 1e-6)
+
+
 def _rectangle(width: float, height: float):
     return [(0.0, 0.0), (width, 0.0), (width, height), (0.0, height)]
 
