@@ -139,23 +139,31 @@ def test_subdivide_into_blocks_local_street_endpoints_stay_near_the_polygon():
 def test_local_street_endpoints_handles_non_convex_polygons():
     from town_shaper.blocks import _local_street_endpoints
 
-    # A "U" shape: a notch removes the middle strip (x in [30,70]) for
-    # y >= 30, splitting the polygon into two separate x-ranges at y=50 --
-    # a cut line here crosses the boundary 4 times, not 2.
-    u_shape = [
-        (0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (70.0, 100.0),
-        (70.0, 30.0), (30.0, 30.0), (30.0, 100.0), (0.0, 100.0),
+    # A "comb" with two notches: valid inside-strips at x in [0,15],
+    # [35,55], [75,100] (notches remove x in (15,35) and (55,75)) -- a
+    # horizontal cut line here crosses the boundary 6 times, not 2 or 4,
+    # a harsher case than a single-notch "U" shape. The vertex list is
+    # deliberately started at (100, 0) rather than (0, 0): starting at
+    # (0, 0) makes clip_polygon_by_line's traversal order coincidentally
+    # emit (0,50) first and (15,50) last -- a valid pair even under the
+    # old buggy on_line[0]/on_line[-1] logic, so it wouldn't actually
+    # catch the bug. Starting here makes the buggy logic emit (100,50)
+    # and (0,50), spanning across every notch.
+    comb = [
+        (100.0, 0.0), (100.0, 100.0), (75.0, 100.0), (75.0, 30.0),
+        (55.0, 30.0), (55.0, 100.0), (35.0, 100.0), (35.0, 30.0),
+        (15.0, 30.0), (15.0, 100.0), (0.0, 100.0), (0.0, 0.0),
     ]
     line_start = (-10.0, 50.0)
     line_end = (110.0, 50.0)
 
-    street_start, street_end = _local_street_endpoints(u_shape, line_start, line_end)
+    street_start, street_end = _local_street_endpoints(comb, line_start, line_end)
 
-    # The recorded segment must stay within ONE of the two valid inside
-    # ranges (x in [0,30] or x in [70,100]), never spanning across the
-    # notch void (x in (30,70)) at this height.
+    # Must land entirely within ONE of the three valid strips, never
+    # spanning across either notch void.
     xs = sorted([street_start[0], street_end[0]])
-    assert (xs[0] >= -1e-6 and xs[1] <= 30.0 + 1e-6) or (xs[0] >= 70.0 - 1e-6 and xs[1] <= 100.0 + 1e-6)
+    valid_strips = [(0.0, 15.0), (35.0, 55.0), (75.0, 100.0)]
+    assert any(lo - 1e-6 <= xs[0] and xs[1] <= hi + 1e-6 for lo, hi in valid_strips)
 
 
 def _rectangle(width: float, height: float):
