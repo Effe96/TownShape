@@ -100,7 +100,7 @@ class RoadEdge:
     id: int
     from_node_id: int
     to_node_id: int
-    road_type: str                  # "radial" | "boundary" | "spur"
+    road_type: str                  # "artery" | "boundary" | "spur"
 
 
 @dataclass
