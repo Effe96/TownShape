@@ -58,9 +58,8 @@ def _polygon_centroid(polygon: Polygon) -> Point:
     return (sum(p[0] for p in polygon) / len(polygon), sum(p[1] for p in polygon) / len(polygon))
 
 
-def _split_polygon(polygon: Polygon, rng) -> Tuple[Polygon, Polygon, Tuple[Point, Point]]:
-    """Split `polygon` into two halves along its longer OBB axis, offset by
-    LOCAL_STREET_WIDTH, plus the unoffset cut line's two endpoints."""
+def _split_polygon(polygon: Polygon, rng, gap: float) -> Tuple[Polygon, Polygon]:
+    """Split `polygon` into two halves along its longer OBB axis, offset by `gap`."""
     axis_dir = _longer_axis_direction(polygon)
     split_dir = (-axis_dir[1], axis_dir[0])  # perpendicular to the longer axis
     cx, cy = _polygon_centroid(polygon)
@@ -73,8 +72,8 @@ def _split_polygon(polygon: Polygon, rng) -> Tuple[Polygon, Polygon, Tuple[Point
     line_start = (center[0] - split_dir[0] * span, center[1] - split_dir[1] * span)
     line_end = (center[0] + split_dir[0] * span, center[1] + split_dir[1] * span)
 
-    half_width = LOCAL_STREET_WIDTH / 2.0
-    offset_a = (axis_dir[0] * half_width, axis_dir[1] * half_width)
+    half_gap = gap / 2.0
+    offset_a = (axis_dir[0] * half_gap, axis_dir[1] * half_gap)
     offset_b = (-offset_a[0], -offset_a[1])
 
     side_a = clip_polygon_by_line(
@@ -87,99 +86,26 @@ def _split_polygon(polygon: Polygon, rng) -> Tuple[Polygon, Polygon, Tuple[Point
         (line_end[0] + offset_a[0], line_end[1] + offset_a[1]),
         (line_start[0] + offset_a[0], line_start[1] + offset_a[1]),
     )
-    return side_a, side_b, (line_start, line_end)
+    return side_a, side_b
 
 
-def _distance_to_line(point: Point, line_start: Point, line_end: Point) -> float:
-    x0, y0 = point
-    x1, y1 = line_start
-    x2, y2 = line_end
-    numerator = abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1)
-    denominator = math.hypot(y2 - y1, x2 - x1)
-    return numerator / denominator if denominator else 0.0
+def subdivide_into_blocks(polygon_part: Polygon, zone_type: ZoneType, rng) -> List[Polygon]:
+    """Recursively split `polygon_part` into blocks for `zone_type`. Each
+    split leaves a real LOCAL_STREET_WIDTH gap between the two halves
+    (via _split_polygon's offset cut) -- that gap is the street; no
+    RoadNode/RoadEdge rows are produced for it."""
+    return _subdivide(polygon_part, TARGET_BLOCK_AREA_BY_ZONE[zone_type], rng, depth=0)
 
 
-def _local_street_endpoints(polygon: Polygon, line_start: Point, line_end: Point) -> Tuple[Point, Point]:
-    """Where the infinite line through line_start/line_end actually crosses
-    `polygon`'s boundary -- used for the recorded local-street segment
-    instead of the far-flung span-based endpoints, so streets don't
-    visually extend beyond the district they were cut from.
-
-    clip_polygon_by_line inserts an exact intersection point at every
-    transition between "inside" and "outside" the clip line (Sutherland-
-    Hodgman), so clipping `polygon` by the unoffset cut line and finding
-    which of the resulting vertices lie on that line recovers the true
-    boundary crossings, reusing machinery already in this module rather
-    than writing a separate line-polygon intersection routine.
-
-    For a non-convex `polygon` (e.g. a water-clipped district fragment),
-    the line can cross the boundary more than twice. Crossings always
-    alternate entry/exit as you move along the line, so sorting the
-    on-line points by their position along the line and taking the first
-    adjacent pair always yields a genuine entry->exit segment that lies
-    entirely inside the polygon -- unlike picking the two most extreme
-    points, which can span across a notch that isn't part of the polygon
-    at all.
-    """
-    clipped = clip_polygon_by_line(polygon, line_start, line_end)
-    on_line = [p for p in clipped if _distance_to_line(p, line_start, line_end) < 1e-6]
-    if len(on_line) < 2:
-        return line_start, line_end  # fallback -- shouldn't happen for a real split
-
-    dx, dy = line_end[0] - line_start[0], line_end[1] - line_start[1]
-
-    def _position_along_line(point: Point) -> float:
-        return (point[0] - line_start[0]) * dx + (point[1] - line_start[1]) * dy
-
-    on_line.sort(key=_position_along_line)
-    return on_line[0], on_line[1]
-
-
-def subdivide_into_blocks(
-    polygon_part: Polygon, zone_type: ZoneType, rng, next_node_id: int, next_edge_id: int,
-) -> Tuple[List[Polygon], List[RoadNode], List[RoadEdge], int, int]:
-    """Recursively split `polygon_part` into blocks for `zone_type`.
-
-    Returns (blocks, local_road_nodes, local_road_edges, next_node_id,
-    next_edge_id) -- the last two are the counters incremented past whatever
-    this call consumed, threaded the same way generate.py already threads
-    next_building_id across districts.
-    """
-    return _subdivide(
-        polygon_part, TARGET_BLOCK_AREA_BY_ZONE[zone_type], rng, next_node_id, next_edge_id, depth=0,
-    )
-
-
-def _subdivide(
-    polygon_part: Polygon, target_area: float, rng, next_node_id: int, next_edge_id: int, depth: int,
-) -> Tuple[List[Polygon], List[RoadNode], List[RoadEdge], int, int]:
+def _subdivide(polygon_part: Polygon, target_area: float, rng, depth: int) -> List[Polygon]:
     if len(polygon_part) < 3 or polygon_area(polygon_part) <= target_area or depth >= MAX_SPLIT_DEPTH:
-        return [polygon_part], [], [], next_node_id, next_edge_id
+        return [polygon_part]
 
-    side_a, side_b, (line_start, line_end) = _split_polygon(polygon_part, rng)
+    side_a, side_b = _split_polygon(polygon_part, rng, LOCAL_STREET_WIDTH)
     if len(side_a) < 3 or len(side_b) < 3:
-        # Degenerate split (e.g. a sliver too thin for the street gap) -- stop here.
-        return [polygon_part], [], [], next_node_id, next_edge_id
+        return [polygon_part]
 
-    street_start, street_end = _local_street_endpoints(polygon_part, line_start, line_end)
-    node_a = RoadNode(id=next_node_id, kind="junction", x=street_start[0], y=street_start[1])
-    node_b = RoadNode(id=next_node_id + 1, kind="junction", x=street_end[0], y=street_end[1])
-    edge = RoadEdge(id=next_edge_id, from_node_id=node_a.id, to_node_id=node_b.id, road_type="local")
-    next_node_id += 2
-    next_edge_id += 1
-
-    blocks_a, nodes_a, edges_a, next_node_id, next_edge_id = _subdivide(
-        side_a, target_area, rng, next_node_id, next_edge_id, depth + 1,
-    )
-    blocks_b, nodes_b, edges_b, next_node_id, next_edge_id = _subdivide(
-        side_b, target_area, rng, next_node_id, next_edge_id, depth + 1,
-    )
-    return (
-        blocks_a + blocks_b,
-        [node_a, node_b] + nodes_a + nodes_b,
-        [edge] + edges_a + edges_b,
-        next_node_id, next_edge_id,
-    )
+    return _subdivide(side_a, target_area, rng, depth + 1) + _subdivide(side_b, target_area, rng, depth + 1)
 
 
 def _perpendicular_into_polygon(edge_start: Point, edge_end: Point, polygon: Polygon) -> Point:
@@ -294,11 +220,7 @@ def generate_blocks_and_buildings(
     building_id = next_building_id
 
     for part in district.polygon_parts:
-        blocks, part_nodes, part_edges, next_node_id, next_edge_id = subdivide_into_blocks(
-            part, district.zone_type, rng, next_node_id, next_edge_id,
-        )
-        local_nodes.extend(part_nodes)
-        local_edges.extend(part_edges)
+        blocks = subdivide_into_blocks(part, district.zone_type, rng)
         for block in blocks:
             block_buildings = place_buildings_in_block(
                 block, district, rng, building_id, target_population, magic_prevalence, density_multiplier,
