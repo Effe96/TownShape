@@ -95,3 +95,24 @@ def test_inset_polygon_handles_clockwise_winding():
     for x, y in ccw_result + cw_result:
         assert 2.0 - 1e-9 <= x <= 8.0 + 1e-9
         assert 2.0 - 1e-9 <= y <= 8.0 + 1e-9
+
+
+def test_inset_polygon_handles_near_duplicate_consecutive_vertices():
+    # Real-world case from seed ("town", 7): merchant district polygon with
+    # floating-point artifact from Sutherland-Hodgman clip producing a
+    # near-duplicate vertex (differs by ~3e-15 in x-coordinate).
+    # The polygon has area ~9862.7 before inset.
+    polygon_with_near_dup = [
+        (-10.360584331871463, -26.92005270413165),
+        (-66.38493019065697, -8.431743654278169),
+        (-113.70976820275692, -150.0),
+        (-24.993942322453464, -150.0),
+        (-24.993942322453467, -150.0),  # Near-duplicate of previous point
+    ]
+
+    result = inset_polygon(polygon_with_near_dup, 2.0)
+
+    # Should return a non-empty result, not collapse due to huge offset vectors
+    assert result != []
+    # After dedup, the polygon becomes 4 vertices with area ~9037
+    assert polygon_area(result) > 8000

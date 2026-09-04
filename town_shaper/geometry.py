@@ -109,6 +109,37 @@ def inset_polygon(polygon: Polygon, distance: float) -> Polygon:
     if signed_area < 0:
         polygon = list(reversed(polygon))
 
+    # Remove near-duplicate consecutive vertices (within epsilon distance).
+    # This prevents huge offset vectors from near-zero edge lengths in
+    # Sutherland-Hodgman clipping.
+    EPSILON = 1e-6
+    deduped: Polygon = []
+    n = len(polygon)
+    for i in range(n):
+        v0 = polygon[i]
+        if not deduped:
+            deduped.append(v0)
+        else:
+            prev = deduped[-1]
+            dx, dy = v0[0] - prev[0], v0[1] - prev[1]
+            if math.hypot(dx, dy) > EPSILON:
+                deduped.append(v0)
+
+    # Check wraparound: remove first point if it's a near-duplicate of the last
+    if len(deduped) > 1:
+        first = deduped[0]
+        last = deduped[-1]
+        dx, dy = first[0] - last[0], first[1] - last[1]
+        if math.hypot(dx, dy) <= EPSILON:
+            deduped.pop(0)
+
+    # Degenerate polygon after dedup
+    if len(deduped) < 3:
+        return []
+
+    polygon = deduped
+    n = len(polygon)
+
     offset_edges: List[Tuple[Point, Point]] = []
     for i in range(n):
         v0 = polygon[i]
