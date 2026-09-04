@@ -294,3 +294,70 @@ def test_fill_district_buildings_gives_every_building_a_default_footprint():
         assert building.width == FARMLAND_BUILDING_WIDTH
         assert building.height == FARMLAND_BUILDING_HEIGHT
         assert building.rotation == 0.0
+
+
+def test_notable_building_cap_uses_flat_cap_when_one_is_set():
+    from town_shaper.buildings import notable_building_cap
+    assert notable_building_cap("shop", target_population=50000) == 100
+    assert notable_building_cap("town_hall", target_population=50000) == 1
+
+
+def test_notable_building_cap_scales_tavern_with_population():
+    from town_shaper.buildings import notable_building_cap
+    assert notable_building_cap("tavern", target_population=5000) == 5
+    assert notable_building_cap("tavern", target_population=500) == 1  # max(1, round(0.5))
+
+
+def test_notable_building_cap_defaults_unlisted_named_types_to_population_over_2000():
+    from town_shaper.buildings import notable_building_cap
+    assert notable_building_cap("temple", target_population=6000) == 3
+
+
+def test_pick_building_type_with_cap_excludes_a_type_once_its_cap_is_reached():
+    from town_shaper.buildings import notable_building_cap, pick_building_type_with_cap
+
+    rng = rng_for(("town", 1), "buildings-test", 1)
+    target_population = 5000
+    cap = notable_building_cap("tavern", target_population)
+    notable_building_counts = {"tavern": cap}
+
+    for _ in range(50):
+        building_type = pick_building_type_with_cap(
+            ZoneType.MERCHANT, target_population, magic_prevalence=0.0, rng=rng,
+            notable_building_counts=notable_building_counts,
+        )
+        assert building_type != "tavern"
+
+
+def test_pick_building_type_with_cap_falls_back_to_infill_once_every_named_type_is_capped():
+    from town_shaper.buildings import (
+        BUILDING_TYPES_BY_ZONE, INFILL_BUILDING_TYPE_BY_ZONE, notable_building_cap, pick_building_type_with_cap,
+    )
+
+    rng = rng_for(("town", 1), "buildings-test", 2)
+    target_population = 5000
+    notable_building_counts = {
+        bt: notable_building_cap(bt, target_population) for bt in BUILDING_TYPES_BY_ZONE[ZoneType.MERCHANT]
+    }
+
+    building_type = pick_building_type_with_cap(
+        ZoneType.MERCHANT, target_population, magic_prevalence=0.0, rng=rng,
+        notable_building_counts=notable_building_counts,
+    )
+
+    assert building_type == INFILL_BUILDING_TYPE_BY_ZONE[ZoneType.MERCHANT]
+
+
+def test_pick_building_type_with_cap_increments_the_running_count():
+    from town_shaper.buildings import pick_building_type_with_cap
+
+    rng = rng_for(("town", 1), "buildings-test", 3)
+    notable_building_counts = {}
+
+    building_type = pick_building_type_with_cap(
+        ZoneType.RICH_RESIDENTIAL, target_population=3000, magic_prevalence=0.0, rng=rng,
+        notable_building_counts=notable_building_counts,
+    )
+
+    assert building_type == "manor"  # only weighted type for this zone
+    assert notable_building_counts == {}  # "manor" has no BUILDING_NAME_POOLS entry -- never counted

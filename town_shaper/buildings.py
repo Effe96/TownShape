@@ -55,6 +55,7 @@ JOB_VACANCIES_BY_BUILDING_TYPE: Dict[str, List[Tuple[str, int]]] = {
     "warehouse": [("warehouse_clerk", 1), ("laborer", 2)],
     "harbormaster_office": [("harbormaster", 1), ("customs_clerk", 2)],
     "arcane_shop": [("mage", 1), ("apprentice", 2)],
+    "workshop": [],
 }
 
 BUILDING_NAME_POOLS: Dict[str, List[str]] = {
@@ -85,6 +86,21 @@ BUILDING_HOME_CAPACITY: Dict[str, int] = {
     "farmstead": 8,
 }
 
+NOTABLE_BUILDING_CAP_RATIO: Dict[str, float] = {
+    "tavern": 1 / 1000,
+}
+DEFAULT_NOTABLE_BUILDING_CAP_RATIO = 1 / 2000
+NOTABLE_BUILDING_FLAT_CAP: Dict[str, int] = {
+    "shop": 100,
+    "town_hall": 1,
+    "harbormaster_office": 1,
+}
+INFILL_BUILDING_TYPE_BY_ZONE: Dict[ZoneType, str] = {
+    ZoneType.CIVIC: "workshop",
+    ZoneType.MERCHANT: "workshop",
+    ZoneType.PORT: "workshop",
+}
+
 FARMLAND_BUILDING_WIDTH = 6.0
 FARMLAND_BUILDING_HEIGHT = 6.0
 
@@ -102,6 +118,40 @@ def resolve_building_type_weights(
     if zone_type == ZoneType.MERCHANT and magic_prevalence > 0:
         type_weights["arcane_shop"] = magic_prevalence * ARCANE_SHOP_WEIGHT_SCALE
     return type_weights
+
+
+def notable_building_cap(building_type: str, target_population: int) -> int:
+    if building_type in NOTABLE_BUILDING_FLAT_CAP:
+        return NOTABLE_BUILDING_FLAT_CAP[building_type]
+    ratio = NOTABLE_BUILDING_CAP_RATIO.get(building_type, DEFAULT_NOTABLE_BUILDING_CAP_RATIO)
+    return max(1, round(target_population * ratio))
+
+
+def pick_building_type_with_cap(
+    zone_type: ZoneType, target_population: int, magic_prevalence: float, rng,
+    notable_building_counts: Dict[str, int],
+) -> str:
+    """Like resolve_building_type_weights + a weighted draw, but any type
+    with a BUILDING_NAME_POOLS entry ("notable") that has already reached
+    its notable_building_cap is excluded from this tile's draw -- not
+    re-rolled into a different type, so capping one type doesn't shift
+    density onto the zone's other types. Once every weighted type for
+    this zone is capped, falls back to the zone's plain infill type."""
+    type_weights = resolve_building_type_weights(zone_type, target_population, magic_prevalence, rng)
+    available = {
+        building_type: weight for building_type, weight in type_weights.items()
+        if building_type not in BUILDING_NAME_POOLS
+        or notable_building_counts.get(building_type, 0) < notable_building_cap(building_type, target_population)
+    }
+    if not available:
+        return INFILL_BUILDING_TYPE_BY_ZONE[zone_type]
+
+    subtypes = list(available.keys())
+    weights = list(available.values())
+    building_type = rng.choices(subtypes, weights=weights, k=1)[0]
+    if building_type in BUILDING_NAME_POOLS:
+        notable_building_counts[building_type] = notable_building_counts.get(building_type, 0) + 1
+    return building_type
 
 
 def poisson_disc_fill(polygon, target_count, min_spacing, rng, max_attempts_per_point=30):
