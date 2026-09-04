@@ -49,7 +49,7 @@ def generate_town(
 
     for district in districts:
         next_building_id = district.id * BUILDING_ID_STRIDE
-        if district.zone_type in (ZoneType.FARMLAND_EDGE, ZoneType.PORT):
+        if district.zone_type == ZoneType.FARMLAND_EDGE:
             buildings = fill_district_buildings(
                 district, seed, next_building_id,
                 target_population=target_population, density_multiplier=density_multiplier,
