@@ -94,7 +94,21 @@ def inset_polygon(polygon: Polygon, distance: float) -> Polygon:
     line is shifted along its own inward (left-of-the-directed-edge, per
     _is_inside_edge's convention) normal, then the polygon is clipped
     against that shifted line in turn."""
+    # Normalize to counter-clockwise winding (required by clip_polygon_by_line's
+    # "left of directed edge" convention). Compute signed area (no abs()) to detect
+    # clockwise input and reverse it if needed.
+    signed_area = 0.0
     n = len(polygon)
+    for i in range(n):
+        x1, y1 = polygon[i]
+        x2, y2 = polygon[(i + 1) % n]
+        signed_area += x1 * y2 - x2 * y1
+    signed_area /= 2.0
+
+    # If clockwise (negative signed area), reverse to CCW
+    if signed_area < 0:
+        polygon = list(reversed(polygon))
+
     offset_edges: List[Tuple[Point, Point]] = []
     for i in range(n):
         v0 = polygon[i]

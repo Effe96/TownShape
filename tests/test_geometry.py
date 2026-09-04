@@ -71,3 +71,27 @@ def test_inset_polygon_zero_distance_returns_the_same_shape():
     triangle = [(0.0, 0.0), (10.0, 0.0), (5.0, 8.0)]
     result = inset_polygon(triangle, 0.0)
     assert math.isclose(polygon_area(result), polygon_area(triangle), rel_tol=1e-9)
+
+
+def test_inset_polygon_handles_clockwise_winding():
+    # CCW-wound square (standard)
+    ccw_square = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    # CW-wound square (same vertices, opposite direction)
+    cw_square = [(0.0, 0.0), (0.0, 10.0), (10.0, 10.0), (10.0, 0.0)]
+
+    distance = 2.0
+    ccw_result = inset_polygon(ccw_square, distance)
+    cw_result = inset_polygon(cw_square, distance)
+
+    # Both should produce non-empty results
+    assert ccw_result != []
+    assert cw_result != []
+
+    # Both should produce the same area (6x6 square, area 36)
+    assert math.isclose(polygon_area(ccw_result), 6.0 * 6.0, rel_tol=1e-9)
+    assert math.isclose(polygon_area(cw_result), 6.0 * 6.0, rel_tol=1e-9)
+
+    # Both results should have all vertices in the same inset bounds
+    for x, y in ccw_result + cw_result:
+        assert 2.0 - 1e-9 <= x <= 8.0 + 1e-9
+        assert 2.0 - 1e-9 <= y <= 8.0 + 1e-9
