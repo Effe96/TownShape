@@ -222,18 +222,47 @@ def test_generate_blocks_and_buildings_covers_every_polygon_part():
 
     district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(40.0, 20.0), _rectangle(30.0, 15.0)])
 
-    buildings, nodes, edges, next_node_id, next_edge_id = generate_blocks_and_buildings(
-        district, ("town", 1), next_building_id=0, next_node_id=0, next_edge_id=0,
-        target_population=3000, magic_prevalence=0.0,
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=3000, magic_prevalence=0.0,
     )
 
     assert len(buildings) > 0
     building_ids = [b.id for b in buildings]
     assert building_ids == sorted(building_ids)
-    assert building_ids == list(range(len(buildings)))  # sequential, starting at next_building_id
-    assert next_node_id >= 0
-    assert next_edge_id >= 0
-    # nodes/edges may be empty if both parts are already under target area,
-    # but the counters must never regress.
-    assert next_node_id >= len(nodes)
-    assert next_edge_id >= len(edges)
+    assert building_ids == list(range(len(buildings)))
+
+
+def test_generate_blocks_and_buildings_insets_away_from_the_district_boundary():
+    from shapely.geometry import Point, Polygon as ShapelyPolygon
+
+    from town_shaper.blocks import DISTRICT_INSET_DISTANCE, generate_blocks_and_buildings
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0)])
+
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=3000, magic_prevalence=0.0,
+    )
+
+    assert buildings
+    original_boundary = ShapelyPolygon(_rectangle(60.0, 60.0)).boundary
+    for building in buildings:
+        assert Point(building.x, building.y).distance(original_boundary) >= DISTRICT_INSET_DISTANCE - 0.5
+
+
+def test_generate_blocks_and_buildings_shares_notable_building_counts_across_parts():
+    from town_shaper.blocks import generate_blocks_and_buildings
+    from town_shaper.buildings import notable_building_cap
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0), _rectangle(60.0, 60.0)])
+    target_population = 3000
+    notable_building_counts = {}
+
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=target_population,
+        magic_prevalence=0.0, notable_building_counts=notable_building_counts,
+    )
+
+    assert buildings
+    tavern_count = sum(1 for b in buildings if b.building_type == "tavern")
+    assert tavern_count <= notable_building_cap("tavern", target_population)
+    assert notable_building_counts.get("tavern", 0) == tavern_count

@@ -6,8 +6,8 @@ from shapely.geometry import Polygon as ShapelyPolygon
 from town_shaper.buildings import (
     BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS, JOB_VACANCIES_BY_BUILDING_TYPE, pick_building_type_with_cap,
 )
-from town_shaper.geometry import clip_polygon_by_line, distance, polygon_area
-from town_shaper.models import Building, District, JobVacancy, RoadEdge, RoadNode, ZoneType
+from town_shaper.geometry import clip_polygon_by_line, distance, inset_polygon, polygon_area
+from town_shaper.models import Building, District, JobVacancy, ZoneType
 from town_shaper.seeding import rng_for
 
 TARGET_BLOCK_AREA_BY_ZONE: Dict[ZoneType, float] = {
@@ -33,6 +33,7 @@ LOT_DEPTH_BY_ZONE: Dict[ZoneType, float] = {
 }
 FOOTPRINT_FILL_FRACTION = 0.8
 LOCAL_STREET_WIDTH = 4.0
+DISTRICT_INSET_DISTANCE = 2.0
 BUILDING_GAP = 0.4
 MAX_SPLIT_DEPTH = 8
 
@@ -196,23 +197,28 @@ def place_buildings_in_block(
 
 
 def generate_blocks_and_buildings(
-    district: District, town_seed, next_building_id: int, next_node_id: int, next_edge_id: int,
+    district: District, town_seed, next_building_id: int,
     target_population: int = 0, density_multiplier: float = 1.0, magic_prevalence: float = 0.0,
-) -> Tuple[List[Building], List[RoadNode], List[RoadEdge], int, int]:
+    notable_building_counts: Optional[Dict[str, int]] = None,
+) -> List[Building]:
     rng = rng_for(town_seed, "blocks", district.id)
+    if notable_building_counts is None:
+        notable_building_counts = {}
+
     buildings: List[Building] = []
-    local_nodes: List[RoadNode] = []
-    local_edges: List[RoadEdge] = []
     building_id = next_building_id
 
     for part in district.polygon_parts:
-        blocks = subdivide_into_blocks(part, district.zone_type, rng)
+        inset_part = inset_polygon(part, DISTRICT_INSET_DISTANCE)
+        if len(inset_part) < 3:
+            continue
+        blocks = subdivide_into_blocks(inset_part, district.zone_type, rng)
         for block in blocks:
             block_buildings = place_buildings_in_block(
                 block, district, rng, building_id, target_population, magic_prevalence,
-                density_multiplier=density_multiplier,
+                notable_building_counts, density_multiplier,
             )
             buildings.extend(block_buildings)
             building_id += len(block_buildings)
 
-    return buildings, local_nodes, local_edges, next_node_id, next_edge_id
+    return buildings
