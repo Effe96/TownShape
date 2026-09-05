@@ -70,17 +70,18 @@ Lives in `town_shaper/`:
 - **Water features** — optional rivers and coastline, carving real
   unbuildable space out of the town when requested.
 - **Road network** — a real, persisted graph of nodes/edges laid over
-  the district geometry: hub selection, radial arterial roads, boundary
-  roads from Voronoi ridges, spur edges. Urban zones additionally get
-  **block/lot subdivision**: each urban district is recursively split
-  into blocks by local streets (a new `road_type="local"` edge), then
-  each block's frontage is carved into fixed-size lots, one building per
-  lot.
-- **Buildings** — every building (urban or farmland) now has a real
-  rectangular footprint (width/height/rotation), not just a point.
-  Urban zones place buildings on street-fronting lots (see above);
-  `farmland_edge` keeps the older Poisson-disc point placement with a
-  fixed default footprint.
+  the district geometry: boundary roads from Voronoi ridges, spur edges,
+  and arterial roads that follow that district-boundary graph (smoothed,
+  and drawn only along the stretch that actually reaches a
+  `farmland_edge` district) rather than as straight radial lines. Urban
+  streets aren't edges at all: each district and each block is inset, so
+  the gap left between neighbouring inset polygons *is* the street.
+- **Buildings** — every building (urban or farmland) has a real
+  rectangular footprint (width/height/rotation), not just a point. Each
+  block is fully tiled by recursively subdividing it down to lot-sized
+  leaves, one building per leaf, with a population-scaled cap on how many
+  named/business building types get generated. `farmland_edge` keeps the
+  older Poisson-disc point placement with a fixed default footprint.
 - **Determinism** — all randomness flows through a single
   `rng_for(seed, *path_parts)` helper; no global `random` state anywhere
   in the pipeline.
