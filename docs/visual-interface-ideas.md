@@ -130,14 +130,12 @@ real town — deferred, not blocking, to pick up later:
    Read-only for now, per the user's call — **user-editable naming via
    the viewer UI is planned as a future iteration**, once the v1
    read-only scope is revisited.
-3. **Map should read as an actual city, not scattered squares.** Real
-   building footprints (even simple rects/squares, but sized/rotated to
-   *touch* each other) and roads/streets running between them, instead
-   of uniform placeholder rectangles floating in empty space. This is
-   the big one — ties directly into the "Buildings are points, not
-   footprints" design gap above; probably needs real footprint/road
-   geometry from the generator side (`town_shaper/`), not just a viewer
-   change.
+3. ~~**Map should read as an actual city, not scattered squares.**~~ **Fixed 2026-09-04:**
+   real footprints now tile every block via recursive subdivision, streets
+   are the implicit gap between inset district/block polygons, and
+   arterial roads follow the real district-boundary graph instead of
+   straight lines from a hub. See
+   `docs/superpowers/specs/2026-09-04-organic-town-rendering-design.md`.
 4. **Building-type icons.** Color-coding alone (current `LANDMARK_COLORS`
    scheme in `town_viewer/static/app.js`) isn't legible enough at a
    glance — want actual icons/pins per building type (temple, shop,
