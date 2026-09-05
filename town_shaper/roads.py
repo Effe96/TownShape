@@ -1,4 +1,3 @@
-import math
 from collections import deque
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
@@ -164,10 +163,15 @@ def generate_road_network(
         if path is None or len(path) < 2:
             continue
 
+        # Maximal TRAILING run of farmland-touching hops, scanned backward from
+        # the target end. Taking the suffix from the FIRST farmland touch instead
+        # would draw every later hop too, including ones that dip back through
+        # pure urban territory -- exactly the artifact arteries exist to avoid.
         tail_start_index = None
-        for i in range(len(path) - 1):
+        for i in range(len(path) - 2, -1, -1):
             if hop_touches_farmland.get(frozenset((path[i], path[i + 1]))):
                 tail_start_index = i
+            else:
                 break
         if tail_start_index is None:
             continue

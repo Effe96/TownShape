@@ -116,3 +116,14 @@ def test_inset_polygon_handles_near_duplicate_consecutive_vertices():
     assert result != []
     # After dedup, the polygon becomes 4 vertices with area ~9037
     assert polygon_area(result) > 8000
+
+
+def test_inset_polygon_handles_non_convex_l_shape():
+    # The old half-plane-intersection implementation was mathematically
+    # convex-only, so a non-convex district (routine once water clipping is
+    # involved) silently collapsed far inside its true inset: this L has area
+    # 1200, its correct 2.0 inset has area 896 (a 36x36 square minus the 20x20
+    # notch), and the old code returned 256 -- measured, not estimated.
+    l_shape = [(0.0, 0.0), (40.0, 0.0), (40.0, 20.0), (20.0, 20.0), (20.0, 40.0), (0.0, 40.0)]
+    result = inset_polygon(l_shape, 2.0)
+    assert math.isclose(polygon_area(result), 896.0, rel_tol=1e-9)

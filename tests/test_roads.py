@@ -180,26 +180,37 @@ def test_artery_edges_reach_a_farmland_anchor():
     assert farmland_node_id in visited
 
 
-def test_no_artery_edge_runs_between_two_urban_anchors():
-    # An artery edge should only ever appear on the tail of a path that
-    # touches farmland -- never as a redundant line drawn between two
-    # already block-inset urban districts (that gap is already a street).
-    bounds = (-100.0, -100.0, 100.0, 100.0)
-    anchors = [
-        _anchor(0, ZoneType.CIVIC, x=0.0, y=0.0),
-        _anchor(1, ZoneType.MERCHANT, x=40.0, y=0.0),
-        _anchor(2, ZoneType.MERCHANT, x=-40.0, y=0.0),
-        _anchor(3, ZoneType.FARMLAND_EDGE, x=0.0, y=40.0),
-    ]
-    network = generate_road_network(anchors, bounds)
+def test_arteries_only_cover_the_farmland_adjacent_tail_of_a_path():
+    # An artery is drawn only for the maximal TRAILING run of farmland-touching
+    # hops. Taking the suffix from the FIRST farmland touch instead (the earlier
+    # bug) drew the whole rest of the path, so a path that merely grazed a
+    # farmland boundary early on got an artery run all the way to a purely
+    # URBAN target anchor -- 134 units deep into a residential district on this
+    # very seed. Since the hub is civic, its own spur hop never touches
+    # farmland, so a correct tail can never start at the hub either: the only
+    # anchor node any artery edge may touch is a farmland_edge target.
+    from town_shaper.anchors import place_anchors
 
-    urban_anchor_node_ids = {
-        n.id for n in network.nodes
-        if n.kind == "anchor" and n.anchor_id in (0, 1, 2)
-    }
-    for edge in network.edges:
-        if edge.road_type == "artery":
-            assert not (edge.from_node_id in urban_anchor_node_ids and edge.to_node_id in urban_anchor_node_ids)
+    bounds = (-150.0, -150.0, 150.0, 150.0)
+    anchors = place_anchors(("town", 1), 3000, bounds)
+    zone_by_anchor_id = {a.id: a.zone_type for a in anchors}
+
+    network = generate_road_network(anchors, bounds)
+    node_by_id = {n.id: n for n in network.nodes}
+
+    artery_edges = [e for e in network.edges if e.road_type == "artery"]
+    assert artery_edges  # this seed has farmland anchors, so arteries do exist
+
+    for edge in artery_edges:
+        for node_id in (edge.from_node_id, edge.to_node_id):
+            node = node_by_id[node_id]
+            if node.kind != "anchor":
+                continue
+            assert zone_by_anchor_id[node.anchor_id] == ZoneType.FARMLAND_EDGE, (
+                f"artery edge {edge.id} touches anchor {node.anchor_id}, a "
+                f"{zone_by_anchor_id[node.anchor_id].value} district -- arteries "
+                f"must stop before re-entering purely urban territory"
+            )
 
 
 def test_artery_routing_is_deterministic():
