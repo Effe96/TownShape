@@ -109,6 +109,54 @@ def test_place_buildings_in_block_footprints_dont_overlap():
             assert shapes[i].intersection(shapes[j]).area < 1e-6
 
 
+def test_leaf_footprint_never_over_covers_a_non_rectangular_leaf():
+    # The footprint comes from the leaf's minimum rotated rectangle, which for
+    # any non-rectangular leaf strictly over-covers it -- a triangle's OBB is
+    # exactly twice its area. The reported footprint must match the leaf's real
+    # area instead, or neighbouring buildings overlap and spill out of the block.
+    from town_shaper.blocks import _leaf_footprint
+
+    triangle = [(0.0, 0.0), (20.0, 0.0), (0.0, 10.0)]  # area 100, OBB area 200
+    _cx, _cy, width, height, _rotation = _leaf_footprint(triangle)
+
+    assert math.isclose(width * height, 100.0, rel_tol=1e-9)
+
+
+def test_place_buildings_in_non_rectangular_block_fit_and_dont_overlap():
+    # A non-rectangular block subdivides into non-rectangular leaves (triangles,
+    # trapezoids), whose OBB over-covers them. Post-scaling the footprints no
+    # longer over-cover, so none of them overlap and their total stays under the
+    # block's own area.
+    #
+    # Known ceiling: the footprint is still centred on the leaf's OBB centre,
+    # which for a concave leaf can sit in the leaf's own notch, so an individual
+    # footprint may still sit partly outside the block -- hence the generous
+    # buffer below rather than an exact containment assertion. Tightening that
+    # means abandoning the OBB centre entirely, which moves every building in
+    # every town; not worth it for the residual.
+    from town_shaper.blocks import place_buildings_in_block
+
+    l_shape = [(0.0, 0.0), (40.0, 0.0), (40.0, 20.0), (20.0, 20.0), (20.0, 40.0), (0.0, 40.0)]
+    district = _district(ZoneType.MERCHANT)
+    rng = rng_for(("town", 1), "blocks-test", 12)
+
+    buildings = place_buildings_in_block(
+        l_shape, district, rng, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
+    )
+
+    assert len(buildings) > 1
+    block = ShapelyPolygon(l_shape)
+    shapes = [_footprint_shape(b) for b in buildings]
+
+    assert sum(s.area for s in shapes) <= block.area
+    roomy_block = block.buffer(5.0)
+    for shape in shapes:
+        assert roomy_block.contains(shape)
+    for i in range(len(shapes)):
+        for j in range(i + 1, len(shapes)):
+            assert shapes[i].intersection(shapes[j]).area < 1e-6
+
+
 def test_place_buildings_in_block_footprints_stay_axis_aligned_for_a_rectangular_block():
     # A recursive axis-perpendicular bisection of a rectangle should keep
     # every resulting leaf's rotation at 0 or 90 degrees relative to the

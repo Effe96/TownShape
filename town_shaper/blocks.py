@@ -31,7 +31,6 @@ LOT_DEPTH_BY_ZONE: Dict[ZoneType, float] = {
     ZoneType.POOR_RESIDENTIAL: 6.0,
     ZoneType.PORT: 10.0,
 }
-FOOTPRINT_FILL_FRACTION = 0.8
 LOCAL_STREET_WIDTH = 4.0
 DISTRICT_INSET_DISTANCE = 2.0
 BUILDING_GAP = 0.4
@@ -137,6 +136,16 @@ def _leaf_footprint(leaf: Polygon) -> Tuple[float, float, float, float, float]:
     width, height = (edge_a, edge_b) if edge_a >= edge_b else (edge_b, edge_a)
     p1, p2 = (corners[0], corners[1]) if edge_a >= edge_b else (corners[1], corners[2])
     rotation = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
+    # The OBB over-covers any non-rectangular leaf (triangles, trapezoids from
+    # clipping), which shows up as overlapping footprints and buildings poking
+    # outside their district. Shrink both sides so the reported footprint's area
+    # matches the leaf's true area, never exceeding it.
+    obb_area = obb.area
+    leaf_area = shapely_leaf.area
+    if obb_area > 0 and leaf_area < obb_area:
+        scale = math.sqrt(leaf_area / obb_area)
+        width *= scale
+        height *= scale
     center = obb.centroid
     return (center.x, center.y, width, height, rotation)
 
@@ -216,7 +225,7 @@ def generate_blocks_and_buildings(
         for block in blocks:
             block_buildings = place_buildings_in_block(
                 block, district, rng, building_id, target_population, magic_prevalence,
-                notable_building_counts, density_multiplier,
+                notable_building_counts=notable_building_counts, density_multiplier=density_multiplier,
             )
             buildings.extend(block_buildings)
             building_id += len(block_buildings)
