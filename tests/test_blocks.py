@@ -16,15 +16,9 @@ def test_subdivide_into_blocks_returns_original_when_already_small():
     small_square = _square(5.0)  # area 25, well under any zone's target
     rng = rng_for(("town", 1), "blocks-test", 1)
 
-    blocks, nodes, edges, next_node_id, next_edge_id = subdivide_into_blocks(
-        small_square, ZoneType.MERCHANT, rng, next_node_id=0, next_edge_id=0,
-    )
+    blocks = subdivide_into_blocks(small_square, ZoneType.MERCHANT, rng)
 
     assert blocks == [small_square]
-    assert nodes == []
-    assert edges == []
-    assert next_node_id == 0
-    assert next_edge_id == 0
 
 
 def test_subdivide_into_blocks_respects_target_area():
@@ -32,9 +26,7 @@ def test_subdivide_into_blocks_respects_target_area():
     target_area = TARGET_BLOCK_AREA_BY_ZONE[ZoneType.MERCHANT]
     rng = rng_for(("town", 1), "blocks-test", 2)
 
-    blocks, nodes, edges, _next_node_id, _next_edge_id = subdivide_into_blocks(
-        large_square, ZoneType.MERCHANT, rng, next_node_id=0, next_edge_id=0,
-    )
+    blocks = subdivide_into_blocks(large_square, ZoneType.MERCHANT, rng)
 
     assert len(blocks) > 1
     for block in blocks:
@@ -45,125 +37,23 @@ def test_subdivide_into_blocks_conserves_area_within_street_gaps():
     large_square = _square(100.0)
     rng = rng_for(("town", 1), "blocks-test", 3)
 
-    blocks, _nodes, _edges, _next_node_id, _next_edge_id = subdivide_into_blocks(
-        large_square, ZoneType.MERCHANT, rng, next_node_id=0, next_edge_id=0,
-    )
+    blocks = subdivide_into_blocks(large_square, ZoneType.MERCHANT, rng)
 
     original_area = polygon_area(large_square)
     total_block_area = sum(polygon_area(b) for b in blocks)
     assert total_block_area <= original_area
-    # This is a gross-error guard (catches e.g. an inverted clip direction
-    # silently discarding whole blocks), not a precise gap-area budget --
-    # the exact fraction street gaps consume depends on how many splits a
-    # 10000-area square takes to reach a 600-area target, which this test
-    # doesn't hand-compute. If this fails after a correct implementation
-    # legitimately consumes more than 40% to street gaps, loosen the
-    # tolerance rather than treating it as a bug.
     assert total_block_area >= original_area * 0.6
-
-
-def test_subdivide_into_blocks_produces_one_local_edge_per_split():
-    large_square = _square(100.0)
-    rng = rng_for(("town", 1), "blocks-test", 4)
-
-    blocks, nodes, edges, _next_node_id, _next_edge_id = subdivide_into_blocks(
-        large_square, ZoneType.MERCHANT, rng, next_node_id=0, next_edge_id=0,
-    )
-
-    num_splits = len(blocks) - 1  # each split adds exactly one more block
-    assert len(edges) == num_splits
-    assert len(nodes) == num_splits * 2
-    for edge in edges:
-        assert edge.road_type == "local"
-    node_ids = {n.id for n in nodes}
-    for edge in edges:
-        assert edge.from_node_id in node_ids
-        assert edge.to_node_id in node_ids
-
-
-def test_subdivide_into_blocks_ids_are_threaded_without_collision():
-    large_square = _square(100.0)
-    rng = rng_for(("town", 1), "blocks-test", 5)
-
-    _blocks, nodes, edges, next_node_id, next_edge_id = subdivide_into_blocks(
-        large_square, ZoneType.MERCHANT, rng, next_node_id=100, next_edge_id=200,
-    )
-
-    assert all(n.id >= 100 for n in nodes)
-    assert all(e.id >= 200 for e in edges)
-    assert next_node_id == 100 + len(nodes)
-    assert next_edge_id == 200 + len(edges)
 
 
 def test_subdivide_into_blocks_is_deterministic():
     large_square = _square(100.0)
 
     rng1 = rng_for(("town", 1), "blocks-test", 6)
-    blocks1, nodes1, edges1, _n1, _e1 = subdivide_into_blocks(
-        large_square, ZoneType.MERCHANT, rng1, next_node_id=0, next_edge_id=0,
-    )
+    blocks1 = subdivide_into_blocks(large_square, ZoneType.MERCHANT, rng1)
     rng2 = rng_for(("town", 1), "blocks-test", 6)
-    blocks2, nodes2, edges2, _n2, _e2 = subdivide_into_blocks(
-        large_square, ZoneType.MERCHANT, rng2, next_node_id=0, next_edge_id=0,
-    )
+    blocks2 = subdivide_into_blocks(large_square, ZoneType.MERCHANT, rng2)
 
     assert [sorted(b) for b in blocks1] == [sorted(b) for b in blocks2]
-    assert [(n.x, n.y) for n in nodes1] == [(n.x, n.y) for n in nodes2]
-    assert [(e.from_node_id, e.to_node_id) for e in edges1] == [(e.from_node_id, e.to_node_id) for e in edges2]
-
-
-def test_subdivide_into_blocks_local_street_endpoints_stay_near_the_polygon():
-    # Regression guard for a real bug found via visual inspection of a
-    # rendered town: the old span-based endpoint approximation placed local
-    # street nodes far outside the polygon they were cut from (sometimes
-    # 100+ units away for a 100-unit-wide square). Junction nodes should sit
-    # on or very near the original polygon's own extent.
-    large_square = _square(100.0)
-    rng = rng_for(("town", 1), "blocks-test", 7)
-
-    _blocks, nodes, _edges, _n, _e = subdivide_into_blocks(
-        large_square, ZoneType.MERCHANT, rng, next_node_id=0, next_edge_id=0,
-    )
-
-    tolerance = 1.0
-    min_x = min(p[0] for p in large_square) - tolerance
-    max_x = max(p[0] for p in large_square) + tolerance
-    min_y = min(p[1] for p in large_square) - tolerance
-    max_y = max(p[1] for p in large_square) + tolerance
-    assert nodes  # this square is well above MERCHANT's target area, so splits happen
-    for node in nodes:
-        assert min_x <= node.x <= max_x
-        assert min_y <= node.y <= max_y
-
-
-def test_local_street_endpoints_handles_non_convex_polygons():
-    from town_shaper.blocks import _local_street_endpoints
-
-    # A "comb" with two notches: valid inside-strips at x in [0,15],
-    # [35,55], [75,100] (notches remove x in (15,35) and (55,75)) -- a
-    # horizontal cut line here crosses the boundary 6 times, not 2 or 4,
-    # a harsher case than a single-notch "U" shape. The vertex list is
-    # deliberately started at (100, 0) rather than (0, 0): starting at
-    # (0, 0) makes clip_polygon_by_line's traversal order coincidentally
-    # emit (0,50) first and (15,50) last -- a valid pair even under the
-    # old buggy on_line[0]/on_line[-1] logic, so it wouldn't actually
-    # catch the bug. Starting here makes the buggy logic emit (100,50)
-    # and (0,50), spanning across every notch.
-    comb = [
-        (100.0, 0.0), (100.0, 100.0), (75.0, 100.0), (75.0, 30.0),
-        (55.0, 30.0), (55.0, 100.0), (35.0, 100.0), (35.0, 30.0),
-        (15.0, 30.0), (15.0, 100.0), (0.0, 100.0), (0.0, 0.0),
-    ]
-    line_start = (-10.0, 50.0)
-    line_end = (110.0, 50.0)
-
-    street_start, street_end = _local_street_endpoints(comb, line_start, line_end)
-
-    # Must land entirely within ONE of the three valid strips, never
-    # spanning across either notch void.
-    xs = sorted([street_start[0], street_end[0]])
-    valid_strips = [(0.0, 15.0), (35.0, 55.0), (75.0, 100.0)]
-    assert any(lo - 1e-6 <= xs[0] and xs[1] <= hi + 1e-6 for lo, hi in valid_strips)
 
 
 def _rectangle(width: float, height: float):
@@ -192,10 +82,12 @@ def test_place_buildings_in_block_footprints_stay_within_the_block():
     district = _district(ZoneType.MERCHANT)
     rng = rng_for(("town", 1), "blocks-test", 10)
 
-    buildings = place_buildings_in_block(block, district, rng, 0, target_population=3000, magic_prevalence=0.0)
+    buildings = place_buildings_in_block(
+        block, district, rng, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
+    )
 
     assert len(buildings) > 0
-    block_shape = ShapelyPolygon(block).buffer(0.5)  # small tolerance for footprints flush on the boundary
+    block_shape = ShapelyPolygon(block).buffer(0.5)
     for building in buildings:
         assert block_shape.contains(_footprint_shape(building))
 
@@ -207,7 +99,9 @@ def test_place_buildings_in_block_footprints_dont_overlap():
     district = _district(ZoneType.MERCHANT)
     rng = rng_for(("town", 1), "blocks-test", 11)
 
-    buildings = place_buildings_in_block(block, district, rng, 0, target_population=3000, magic_prevalence=0.0)
+    buildings = place_buildings_in_block(
+        block, district, rng, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
+    )
 
     shapes = [_footprint_shape(b) for b in buildings]
     for i in range(len(shapes)):
@@ -215,25 +109,72 @@ def test_place_buildings_in_block_footprints_dont_overlap():
             assert shapes[i].intersection(shapes[j]).area < 1e-6
 
 
-def test_place_buildings_in_block_rotation_matches_frontage_edge():
+def test_leaf_footprint_never_over_covers_a_non_rectangular_leaf():
+    # The footprint comes from the leaf's minimum rotated rectangle, which for
+    # any non-rectangular leaf strictly over-covers it -- a triangle's OBB is
+    # exactly twice its area. The reported footprint must match the leaf's real
+    # area instead, or neighbouring buildings overlap and spill out of the block.
+    from town_shaper.blocks import _leaf_footprint
+
+    triangle = [(0.0, 0.0), (20.0, 0.0), (0.0, 10.0)]  # area 100, OBB area 200
+    _cx, _cy, width, height, _rotation = _leaf_footprint(triangle)
+
+    assert math.isclose(width * height, 100.0, rel_tol=1e-9)
+
+
+def test_place_buildings_in_non_rectangular_block_fit_and_dont_overlap():
+    # A non-rectangular block subdivides into non-rectangular leaves (triangles,
+    # trapezoids), whose OBB over-covers them. Post-scaling the footprints no
+    # longer over-cover, so none of them overlap and their total stays under the
+    # block's own area.
+    #
+    # Known ceiling: the footprint is still centred on the leaf's OBB centre,
+    # which for a concave leaf can sit in the leaf's own notch, so an individual
+    # footprint may still sit partly outside the block -- hence the generous
+    # buffer below rather than an exact containment assertion. Tightening that
+    # means abandoning the OBB centre entirely, which moves every building in
+    # every town; not worth it for the residual.
     from town_shaper.blocks import place_buildings_in_block
 
-    # A 40x20 rectangle has two horizontal edges (bottom/top) and two
-    # vertical edges (left/right) -- every building's rotation should land
-    # in one of exactly two buckets, and both buckets should be populated
-    # (not just one, which would mean rotation isn't actually tracking the
-    # edge it was placed against).
+    l_shape = [(0.0, 0.0), (40.0, 0.0), (40.0, 20.0), (20.0, 20.0), (20.0, 40.0), (0.0, 40.0)]
+    district = _district(ZoneType.MERCHANT)
+    rng = rng_for(("town", 1), "blocks-test", 12)
+
+    buildings = place_buildings_in_block(
+        l_shape, district, rng, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
+    )
+
+    assert len(buildings) > 1
+    block = ShapelyPolygon(l_shape)
+    shapes = [_footprint_shape(b) for b in buildings]
+
+    assert sum(s.area for s in shapes) <= block.area
+    roomy_block = block.buffer(5.0)
+    for shape in shapes:
+        assert roomy_block.contains(shape)
+    for i in range(len(shapes)):
+        for j in range(i + 1, len(shapes)):
+            assert shapes[i].intersection(shapes[j]).area < 1e-6
+
+
+def test_place_buildings_in_block_footprints_stay_axis_aligned_for_a_rectangular_block():
+    # A recursive axis-perpendicular bisection of a rectangle should keep
+    # every resulting leaf's rotation at 0 or 90 degrees relative to the
+    # original block, regardless of how many times it's been split.
+    from town_shaper.blocks import place_buildings_in_block
+
     block = _rectangle(40.0, 20.0)
     district = _district(ZoneType.MERCHANT)
     rng = rng_for(("town", 1), "blocks-test", 12)
 
-    buildings = place_buildings_in_block(block, district, rng, 0, target_population=3000, magic_prevalence=0.0)
+    buildings = place_buildings_in_block(
+        block, district, rng, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
+    )
 
-    horizontal = [b for b in buildings if math.isclose(abs(b.rotation) % math.pi, 0.0, abs_tol=1e-6)]
-    vertical = [b for b in buildings if math.isclose(abs(b.rotation) % math.pi, math.pi / 2, abs_tol=1e-6)]
-    assert horizontal
-    assert vertical
-    assert len(horizontal) + len(vertical) == len(buildings)
+    assert buildings
+    for b in buildings:
+        remainder = abs(b.rotation) % (math.pi / 2)
+        assert remainder < 1e-6 or (math.pi / 2 - remainder) < 1e-6
 
 
 def test_place_buildings_in_block_is_deterministic():
@@ -243,15 +184,19 @@ def test_place_buildings_in_block_is_deterministic():
     district = _district(ZoneType.MERCHANT)
 
     rng1 = rng_for(("town", 1), "blocks-test", 13)
-    b1 = place_buildings_in_block(block, district, rng1, 0, target_population=3000, magic_prevalence=0.0)
+    b1 = place_buildings_in_block(
+        block, district, rng1, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
+    )
     rng2 = rng_for(("town", 1), "blocks-test", 13)
-    b2 = place_buildings_in_block(block, district, rng2, 0, target_population=3000, magic_prevalence=0.0)
+    b2 = place_buildings_in_block(
+        block, district, rng2, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
+    )
 
     key = lambda buildings: [(b.x, b.y, b.width, b.height, b.rotation, b.building_type) for b in buildings]
     assert key(b1) == key(b2)
 
 
-def test_place_buildings_in_block_density_multiplier_scales_lot_size():
+def test_place_buildings_in_block_density_multiplier_scales_building_count():
     from town_shaper.blocks import place_buildings_in_block
 
     block = _rectangle(40.0, 20.0)
@@ -259,38 +204,60 @@ def test_place_buildings_in_block_density_multiplier_scales_lot_size():
 
     rng_sparse = rng_for(("town", 1), "blocks-test", 14)
     sparse = place_buildings_in_block(
-        block, district, rng_sparse, 0, target_population=3000, magic_prevalence=0.0, density_multiplier=0.5,
+        block, district, rng_sparse, 0, target_population=3000, magic_prevalence=0.0,
+        notable_building_counts={}, density_multiplier=0.5,
     )
     rng_dense = rng_for(("town", 1), "blocks-test", 14)
     dense = place_buildings_in_block(
-        block, district, rng_dense, 0, target_population=3000, magic_prevalence=0.0, density_multiplier=2.0,
+        block, district, rng_dense, 0, target_population=3000, magic_prevalence=0.0,
+        notable_building_counts={}, density_multiplier=2.0,
     )
 
     assert len(dense) > len(sparse)
 
 
-def test_place_buildings_in_block_skips_footprints_that_would_exit_a_narrow_block():
+def test_place_buildings_in_block_respects_notable_building_cap():
     from town_shaper.blocks import place_buildings_in_block
+    from town_shaper.buildings import notable_building_cap
 
-    # 80 long x 20 deep: long enough for a lot to clear the corner
-    # skip_distance margin on the long edges (skip_distance=15.4, frontage=30
-    # at density_multiplier=0.5, so 80 - 2*15.4 = 49.2 >= 30 -- one lot per
-    # long edge), but the block's cross-dimension (20) is far shorter than
-    # the inflated lot depth's inward reach at this density_multiplier
-    # (depth/2 + footprint_half_height = 18 + 14.4 = 32.4), so a naive
-    # lot-center placement pushes the footprint's far edge outside the
-    # opposite long edge entirely.
-    narrow_block = _rectangle(80.0, 20.0)
-    district = _district(ZoneType.CIVIC)
-    rng = rng_for(("town", 1), "blocks-test", 20)
+    block = _rectangle(60.0, 60.0)
+    district = _district(ZoneType.MERCHANT)
+    rng = rng_for(("town", 1), "blocks-test", 21)
+    target_population = 3000
+    cap = notable_building_cap("tavern", target_population)
+    notable_building_counts = {"tavern": cap}
 
     buildings = place_buildings_in_block(
-        narrow_block, district, rng, 0, target_population=3000, magic_prevalence=0.0, density_multiplier=0.5,
+        block, district, rng, 0, target_population=target_population, magic_prevalence=0.0,
+        notable_building_counts=notable_building_counts,
     )
 
-    block_shape = ShapelyPolygon(narrow_block).buffer(0.5)
-    for building in buildings:
-        assert block_shape.contains(_footprint_shape(building))
+    assert all(b.building_type != "tavern" for b in buildings)
+    assert notable_building_counts["tavern"] == cap
+
+
+def test_place_buildings_in_block_uses_infill_type_once_all_named_types_are_capped():
+    from town_shaper.blocks import place_buildings_in_block
+    from town_shaper.buildings import BUILDING_TYPES_BY_ZONE, INFILL_BUILDING_TYPE_BY_ZONE, notable_building_cap
+
+    block = _rectangle(60.0, 60.0)
+    district = _district(ZoneType.MERCHANT)
+    rng = rng_for(("town", 1), "blocks-test", 22)
+    target_population = 3000
+    notable_building_counts = {
+        bt: notable_building_cap(bt, target_population) for bt in BUILDING_TYPES_BY_ZONE[ZoneType.MERCHANT]
+    }
+
+    buildings = place_buildings_in_block(
+        block, district, rng, 0, target_population=target_population, magic_prevalence=0.0,
+        notable_building_counts=notable_building_counts,
+    )
+
+    assert buildings
+    infill_type = INFILL_BUILDING_TYPE_BY_ZONE[ZoneType.MERCHANT]
+    assert all(b.building_type == infill_type for b in buildings)
+    assert all(b.name is None for b in buildings)
+    assert all(b.capacity == 0 for b in buildings)
 
 
 def _multi_part_district(zone_type, polygon_parts):
@@ -303,18 +270,47 @@ def test_generate_blocks_and_buildings_covers_every_polygon_part():
 
     district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(40.0, 20.0), _rectangle(30.0, 15.0)])
 
-    buildings, nodes, edges, next_node_id, next_edge_id = generate_blocks_and_buildings(
-        district, ("town", 1), next_building_id=0, next_node_id=0, next_edge_id=0,
-        target_population=3000, magic_prevalence=0.0,
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=3000, magic_prevalence=0.0,
     )
 
     assert len(buildings) > 0
     building_ids = [b.id for b in buildings]
     assert building_ids == sorted(building_ids)
-    assert building_ids == list(range(len(buildings)))  # sequential, starting at next_building_id
-    assert next_node_id >= 0
-    assert next_edge_id >= 0
-    # nodes/edges may be empty if both parts are already under target area,
-    # but the counters must never regress.
-    assert next_node_id >= len(nodes)
-    assert next_edge_id >= len(edges)
+    assert building_ids == list(range(len(buildings)))
+
+
+def test_generate_blocks_and_buildings_insets_away_from_the_district_boundary():
+    from shapely.geometry import Point, Polygon as ShapelyPolygon
+
+    from town_shaper.blocks import DISTRICT_INSET_DISTANCE, generate_blocks_and_buildings
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0)])
+
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=3000, magic_prevalence=0.0,
+    )
+
+    assert buildings
+    original_boundary = ShapelyPolygon(_rectangle(60.0, 60.0)).boundary
+    for building in buildings:
+        assert Point(building.x, building.y).distance(original_boundary) >= DISTRICT_INSET_DISTANCE - 0.5
+
+
+def test_generate_blocks_and_buildings_shares_notable_building_counts_across_parts():
+    from town_shaper.blocks import generate_blocks_and_buildings
+    from town_shaper.buildings import notable_building_cap
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0), _rectangle(60.0, 60.0)])
+    target_population = 3000
+    notable_building_counts = {}
+
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=target_population,
+        magic_prevalence=0.0, notable_building_counts=notable_building_counts,
+    )
+
+    assert buildings
+    tavern_count = sum(1 for b in buildings if b.building_type == "tavern")
+    assert tavern_count <= notable_building_cap("tavern", target_population)
+    assert notable_building_counts.get("tavern", 0) == tavern_count

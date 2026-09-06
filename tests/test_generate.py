@@ -36,31 +36,6 @@ def test_generate_town_is_fully_deterministic():
     assert buildings1 == buildings2
 
 
-def test_generate_town_single_district_matches_full_pipeline():
-    from town_shaper.blocks import generate_blocks_and_buildings
-
-    seed = ("town", 1)
-    town = generate_town(seed, target_population=3000)
-
-    target_district = town.districts[min(2, len(town.districts) - 1)]
-    next_id = target_district.id * BUILDING_ID_STRIDE
-
-    if target_district.zone_type == ZoneType.FARMLAND_EDGE:
-        recomputed = fill_district_buildings(target_district, seed, next_building_id=next_id)
-    else:
-        recomputed, _, _, _, _ = generate_blocks_and_buildings(
-            target_district, seed, next_id, 0, 0, target_population=3000
-        )
-
-    original_ids = [b.id for b in target_district.buildings]
-    recomputed_ids = [b.id for b in recomputed]
-    assert original_ids == recomputed_ids
-
-    original_types = [b.building_type for b in target_district.buildings]
-    recomputed_types = [b.building_type for b in recomputed]
-    assert original_types == recomputed_types
-
-
 def test_generate_town_completes_within_time_budget_at_low_thousands_scale():
     start = time.monotonic()
     generate_town(("town", 1), target_population=3000)
@@ -128,11 +103,9 @@ def test_generate_town_places_footprint_buildings_in_urban_zones():
         assert building.height == FARMLAND_BUILDING_HEIGHT
 
 
-def test_generate_town_road_network_includes_local_streets():
-    town = generate_town(("town", 1), target_population=5000)  # larger town, more urban blocks to split
-
-    local_edges = [e for e in town.road_network.edges if e.road_type == "local"]
-    assert local_edges  # at least one urban district was large enough to subdivide
+def test_generate_town_has_no_local_road_edges():
+    town = generate_town(("town", 1), target_population=3000)
+    assert all(e.road_type != "local" for e in town.road_network.edges)
 
 
 def test_generate_town_area_multiplier_grows_bounds_independent_of_district_count():

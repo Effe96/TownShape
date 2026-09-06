@@ -36,27 +36,6 @@ def test_hub_falls_back_to_nearest_any_zone_when_no_civic_anchors():
     assert hub_nodes[0].anchor_id == 2
 
 
-def test_every_anchor_has_a_radial_edge_to_the_hub():
-    bounds = (-100.0, -100.0, 100.0, 100.0)
-    anchors = [
-        _anchor(0, ZoneType.CIVIC, x=0.0, y=0.0),
-        _anchor(1, ZoneType.MERCHANT, x=40.0, y=0.0),
-        _anchor(2, ZoneType.POOR_RESIDENTIAL, x=-40.0, y=0.0),
-        _anchor(3, ZoneType.RICH_RESIDENTIAL, x=0.0, y=40.0),
-    ]
-    network = generate_road_network(anchors, bounds)
-
-    hub_node_id = next(n.id for n in network.nodes if n.is_hub)
-    radial_targets = {
-        e.to_node_id for e in network.edges
-        if e.road_type == "radial" and e.from_node_id == hub_node_id
-    }
-    anchor_node_ids_excluding_hub = {
-        n.id for n in network.nodes if n.kind == "anchor" and not n.is_hub
-    }
-    assert radial_targets == anchor_node_ids_excluding_hub
-
-
 def test_boundary_edges_only_connect_junction_nodes():
     bounds = (-100.0, -100.0, 100.0, 100.0)
     anchors = [
@@ -155,19 +134,93 @@ def test_every_anchor_with_a_qualifying_junction_gets_a_spur():
     assert spur_sources  # this anchor layout has at least one qualifying junction
 
 
-def test_graph_is_fully_connected_via_radial_edges_alone():
-    # The connectivity guarantee the spec relies on: even ignoring
-    # boundary/spur edges entirely, every anchor is one hop from the hub.
+def test_no_artery_edges_when_all_anchors_are_urban():
     bounds = (-100.0, -100.0, 100.0, 100.0)
-    from town_shaper.anchors import place_anchors
-    anchors = place_anchors(("town", 9), 5000, bounds)
-
+    anchors = [
+        _anchor(0, ZoneType.CIVIC, x=0.0, y=0.0),
+        _anchor(1, ZoneType.MERCHANT, x=40.0, y=0.0),
+        _anchor(2, ZoneType.POOR_RESIDENTIAL, x=-40.0, y=0.0),
+        _anchor(3, ZoneType.RICH_RESIDENTIAL, x=0.0, y=40.0),
+    ]
     network = generate_road_network(anchors, bounds)
 
+    artery_edges = [e for e in network.edges if e.road_type == "artery"]
+    assert artery_edges == []
+
+
+def test_artery_edges_reach_a_farmland_anchor():
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    anchors = [
+        _anchor(0, ZoneType.CIVIC, x=0.0, y=0.0),
+        _anchor(1, ZoneType.MERCHANT, x=40.0, y=0.0),
+        _anchor(2, ZoneType.POOR_RESIDENTIAL, x=-40.0, y=0.0),
+        _anchor(3, ZoneType.FARMLAND_EDGE, x=0.0, y=40.0),
+    ]
+    network = generate_road_network(anchors, bounds)
+
+    artery_edges = [e for e in network.edges if e.road_type == "artery"]
+    assert artery_edges
+
     hub_node_id = next(n.id for n in network.nodes if n.is_hub)
-    radial_targets = {
-        e.to_node_id for e in network.edges
-        if e.road_type == "radial" and e.from_node_id == hub_node_id
-    }
-    other_anchor_ids = {n.id for n in network.nodes if n.kind == "anchor" and not n.is_hub}
-    assert radial_targets == other_anchor_ids
+    farmland_node_id = next(n.id for n in network.nodes if n.kind == "anchor" and n.anchor_id == 3)
+
+    adjacency = {}
+    for e in network.edges:
+        if e.road_type in ("artery", "boundary", "spur"):
+            adjacency.setdefault(e.from_node_id, []).append(e.to_node_id)
+            adjacency.setdefault(e.to_node_id, []).append(e.from_node_id)
+    visited = {hub_node_id}
+    frontier = [hub_node_id]
+    while frontier:
+        current = frontier.pop()
+        for neighbor in adjacency.get(current, []):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                frontier.append(neighbor)
+    assert farmland_node_id in visited
+
+
+def test_arteries_only_cover_the_farmland_adjacent_tail_of_a_path():
+    # An artery is drawn only for the maximal TRAILING run of farmland-touching
+    # hops. Taking the suffix from the FIRST farmland touch instead (the earlier
+    # bug) drew the whole rest of the path, so a path that merely grazed a
+    # farmland boundary early on got an artery run all the way to a purely
+    # URBAN target anchor -- 134 units deep into a residential district on this
+    # very seed. Since the hub is civic, its own spur hop never touches
+    # farmland, so a correct tail can never start at the hub either: the only
+    # anchor node any artery edge may touch is a farmland_edge target.
+    from town_shaper.anchors import place_anchors
+
+    bounds = (-150.0, -150.0, 150.0, 150.0)
+    anchors = place_anchors(("town", 1), 3000, bounds)
+    zone_by_anchor_id = {a.id: a.zone_type for a in anchors}
+
+    network = generate_road_network(anchors, bounds)
+    node_by_id = {n.id: n for n in network.nodes}
+
+    artery_edges = [e for e in network.edges if e.road_type == "artery"]
+    assert artery_edges  # this seed has farmland anchors, so arteries do exist
+
+    for edge in artery_edges:
+        for node_id in (edge.from_node_id, edge.to_node_id):
+            node = node_by_id[node_id]
+            if node.kind != "anchor":
+                continue
+            assert zone_by_anchor_id[node.anchor_id] == ZoneType.FARMLAND_EDGE, (
+                f"artery edge {edge.id} touches anchor {node.anchor_id}, a "
+                f"{zone_by_anchor_id[node.anchor_id].value} district -- arteries "
+                f"must stop before re-entering purely urban territory"
+            )
+
+
+def test_artery_routing_is_deterministic():
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    from town_shaper.anchors import place_anchors
+    anchors = place_anchors(("town", 4), 4000, bounds)
+
+    network1 = generate_road_network(anchors, bounds)
+    network2 = generate_road_network(anchors, bounds)
+
+    key = lambda n: sorted((e.from_node_id, e.to_node_id, e.road_type) for e in n.edges)
+    assert key(network1) == key(network2)
+

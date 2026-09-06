@@ -27,10 +27,9 @@ const ALL_TYPED_COLORS = { ...LANDMARK_COLORS, ...COMMON_BUILDING_COLORS };
 const GENERIC_BUILDING_COLOR = "#555555";
 
 const ROAD_STYLE = {
-  radial: { width: 2.5, color: "#3a3a3a" },
+  artery: { width: 1.2, color: "#6b5d4f" },
   boundary: { width: 1.4, color: "#5a5a5a" },
   spur: { width: 0.8, color: "#7a7a7a" },
-  local: { width: 0.5, color: "#9a9a9a" },
 };
 
 function buildingColor(buildingType) {

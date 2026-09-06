@@ -1,5 +1,5 @@
 import math
-from typing import Tuple
+from typing import Dict, Tuple
 
 from shapely.ops import unary_union
 
@@ -45,8 +45,7 @@ def generate_town(
     districts = build_districts(anchors, bounds, water_polygon=water_polygon)
     road_network = generate_road_network(anchors, bounds, water_polygon=water_polygon)
 
-    next_local_node_id = max((n.id for n in road_network.nodes), default=-1) + 1
-    next_local_edge_id = max((e.id for e in road_network.edges), default=-1) + 1
+    notable_building_counts: Dict[str, int] = {}
 
     for district in districts:
         next_building_id = district.id * BUILDING_ID_STRIDE
@@ -57,15 +56,11 @@ def generate_town(
                 magic_prevalence=magic_prevalence,
             )
         else:
-            buildings, district_nodes, district_edges, next_local_node_id, next_local_edge_id = (
-                generate_blocks_and_buildings(
-                    district, seed, next_building_id, next_local_node_id, next_local_edge_id,
-                    target_population=target_population, density_multiplier=density_multiplier,
-                    magic_prevalence=magic_prevalence,
-                )
+            buildings = generate_blocks_and_buildings(
+                district, seed, next_building_id,
+                target_population=target_population, density_multiplier=density_multiplier,
+                magic_prevalence=magic_prevalence, notable_building_counts=notable_building_counts,
             )
-            road_network.nodes.extend(district_nodes)
-            road_network.edges.extend(district_edges)
         district.buildings = buildings
 
     households = generate_households(seed, target_population)

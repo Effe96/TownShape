@@ -1,14 +1,13 @@
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from town_shaper.buildings import (
-    BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS, JOB_VACANCIES_BY_BUILDING_TYPE,
-    resolve_building_type_weights,
+    BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS, JOB_VACANCIES_BY_BUILDING_TYPE, pick_building_type_with_cap,
 )
-from town_shaper.geometry import clip_polygon_by_line, distance, point_in_polygon, polygon_area
-from town_shaper.models import Building, District, JobVacancy, RoadEdge, RoadNode, ZoneType
+from town_shaper.geometry import clip_polygon_by_line, distance, inset_polygon, polygon_area
+from town_shaper.models import Building, District, JobVacancy, ZoneType
 from town_shaper.seeding import rng_for
 
 TARGET_BLOCK_AREA_BY_ZONE: Dict[ZoneType, float] = {
@@ -32,8 +31,9 @@ LOT_DEPTH_BY_ZONE: Dict[ZoneType, float] = {
     ZoneType.POOR_RESIDENTIAL: 6.0,
     ZoneType.PORT: 10.0,
 }
-FOOTPRINT_FILL_FRACTION = 0.8
 LOCAL_STREET_WIDTH = 4.0
+DISTRICT_INSET_DISTANCE = 2.0
+BUILDING_GAP = 0.4
 MAX_SPLIT_DEPTH = 8
 
 Point = Tuple[float, float]
@@ -58,9 +58,8 @@ def _polygon_centroid(polygon: Polygon) -> Point:
     return (sum(p[0] for p in polygon) / len(polygon), sum(p[1] for p in polygon) / len(polygon))
 
 
-def _split_polygon(polygon: Polygon, rng) -> Tuple[Polygon, Polygon, Tuple[Point, Point]]:
-    """Split `polygon` into two halves along its longer OBB axis, offset by
-    LOCAL_STREET_WIDTH, plus the unoffset cut line's two endpoints."""
+def _split_polygon(polygon: Polygon, rng, gap: float) -> Tuple[Polygon, Polygon]:
+    """Split `polygon` into two halves along its longer OBB axis, offset by `gap`."""
     axis_dir = _longer_axis_direction(polygon)
     split_dir = (-axis_dir[1], axis_dir[0])  # perpendicular to the longer axis
     cx, cy = _polygon_centroid(polygon)
@@ -73,8 +72,8 @@ def _split_polygon(polygon: Polygon, rng) -> Tuple[Polygon, Polygon, Tuple[Point
     line_start = (center[0] - split_dir[0] * span, center[1] - split_dir[1] * span)
     line_end = (center[0] + split_dir[0] * span, center[1] + split_dir[1] * span)
 
-    half_width = LOCAL_STREET_WIDTH / 2.0
-    offset_a = (axis_dir[0] * half_width, axis_dir[1] * half_width)
+    half_gap = gap / 2.0
+    offset_a = (axis_dir[0] * half_gap, axis_dir[1] * half_gap)
     offset_b = (-offset_a[0], -offset_a[1])
 
     side_a = clip_polygon_by_line(
@@ -87,223 +86,148 @@ def _split_polygon(polygon: Polygon, rng) -> Tuple[Polygon, Polygon, Tuple[Point
         (line_end[0] + offset_a[0], line_end[1] + offset_a[1]),
         (line_start[0] + offset_a[0], line_start[1] + offset_a[1]),
     )
-    return side_a, side_b, (line_start, line_end)
+    return side_a, side_b
 
 
-def _distance_to_line(point: Point, line_start: Point, line_end: Point) -> float:
-    x0, y0 = point
-    x1, y1 = line_start
-    x2, y2 = line_end
-    numerator = abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1)
-    denominator = math.hypot(y2 - y1, x2 - x1)
-    return numerator / denominator if denominator else 0.0
+def subdivide_into_blocks(polygon_part: Polygon, zone_type: ZoneType, rng) -> List[Polygon]:
+    """Recursively split `polygon_part` into blocks for `zone_type`. Each
+    split leaves a real LOCAL_STREET_WIDTH gap between the two halves
+    (via _split_polygon's offset cut) -- that gap is the street; no
+    RoadNode/RoadEdge rows are produced for it."""
+    return _subdivide(polygon_part, TARGET_BLOCK_AREA_BY_ZONE[zone_type], rng, depth=0)
 
 
-def _local_street_endpoints(polygon: Polygon, line_start: Point, line_end: Point) -> Tuple[Point, Point]:
-    """Where the infinite line through line_start/line_end actually crosses
-    `polygon`'s boundary -- used for the recorded local-street segment
-    instead of the far-flung span-based endpoints, so streets don't
-    visually extend beyond the district they were cut from.
-
-    clip_polygon_by_line inserts an exact intersection point at every
-    transition between "inside" and "outside" the clip line (Sutherland-
-    Hodgman), so clipping `polygon` by the unoffset cut line and finding
-    which of the resulting vertices lie on that line recovers the true
-    boundary crossings, reusing machinery already in this module rather
-    than writing a separate line-polygon intersection routine.
-
-    For a non-convex `polygon` (e.g. a water-clipped district fragment),
-    the line can cross the boundary more than twice. Crossings always
-    alternate entry/exit as you move along the line, so sorting the
-    on-line points by their position along the line and taking the first
-    adjacent pair always yields a genuine entry->exit segment that lies
-    entirely inside the polygon -- unlike picking the two most extreme
-    points, which can span across a notch that isn't part of the polygon
-    at all.
-    """
-    clipped = clip_polygon_by_line(polygon, line_start, line_end)
-    on_line = [p for p in clipped if _distance_to_line(p, line_start, line_end) < 1e-6]
-    if len(on_line) < 2:
-        return line_start, line_end  # fallback -- shouldn't happen for a real split
-
-    dx, dy = line_end[0] - line_start[0], line_end[1] - line_start[1]
-
-    def _position_along_line(point: Point) -> float:
-        return (point[0] - line_start[0]) * dx + (point[1] - line_start[1]) * dy
-
-    on_line.sort(key=_position_along_line)
-    return on_line[0], on_line[1]
-
-
-def subdivide_into_blocks(
-    polygon_part: Polygon, zone_type: ZoneType, rng, next_node_id: int, next_edge_id: int,
-) -> Tuple[List[Polygon], List[RoadNode], List[RoadEdge], int, int]:
-    """Recursively split `polygon_part` into blocks for `zone_type`.
-
-    Returns (blocks, local_road_nodes, local_road_edges, next_node_id,
-    next_edge_id) -- the last two are the counters incremented past whatever
-    this call consumed, threaded the same way generate.py already threads
-    next_building_id across districts.
-    """
-    return _subdivide(
-        polygon_part, TARGET_BLOCK_AREA_BY_ZONE[zone_type], rng, next_node_id, next_edge_id, depth=0,
-    )
-
-
-def _subdivide(
-    polygon_part: Polygon, target_area: float, rng, next_node_id: int, next_edge_id: int, depth: int,
-) -> Tuple[List[Polygon], List[RoadNode], List[RoadEdge], int, int]:
+def _subdivide(polygon_part: Polygon, target_area: float, rng, depth: int) -> List[Polygon]:
     if len(polygon_part) < 3 or polygon_area(polygon_part) <= target_area or depth >= MAX_SPLIT_DEPTH:
-        return [polygon_part], [], [], next_node_id, next_edge_id
+        return [polygon_part]
 
-    side_a, side_b, (line_start, line_end) = _split_polygon(polygon_part, rng)
+    side_a, side_b = _split_polygon(polygon_part, rng, LOCAL_STREET_WIDTH)
     if len(side_a) < 3 or len(side_b) < 3:
-        # Degenerate split (e.g. a sliver too thin for the street gap) -- stop here.
-        return [polygon_part], [], [], next_node_id, next_edge_id
+        return [polygon_part]
 
-    street_start, street_end = _local_street_endpoints(polygon_part, line_start, line_end)
-    node_a = RoadNode(id=next_node_id, kind="junction", x=street_start[0], y=street_start[1])
-    node_b = RoadNode(id=next_node_id + 1, kind="junction", x=street_end[0], y=street_end[1])
-    edge = RoadEdge(id=next_edge_id, from_node_id=node_a.id, to_node_id=node_b.id, road_type="local")
-    next_node_id += 2
-    next_edge_id += 1
+    return _subdivide(side_a, target_area, rng, depth + 1) + _subdivide(side_b, target_area, rng, depth + 1)
 
-    blocks_a, nodes_a, edges_a, next_node_id, next_edge_id = _subdivide(
-        side_a, target_area, rng, next_node_id, next_edge_id, depth + 1,
-    )
-    blocks_b, nodes_b, edges_b, next_node_id, next_edge_id = _subdivide(
-        side_b, target_area, rng, next_node_id, next_edge_id, depth + 1,
-    )
+
+def _subdivide_into_buildings(block_polygon: Polygon, target_area: float, rng, depth: int = 0) -> List[Polygon]:
+    if len(block_polygon) < 3 or depth >= MAX_SPLIT_DEPTH or polygon_area(block_polygon) <= target_area:
+        return [block_polygon]
+
+    side_a, side_b = _split_polygon(block_polygon, rng, BUILDING_GAP)
+    if len(side_a) < 3 or len(side_b) < 3:
+        return [block_polygon]
+
     return (
-        blocks_a + blocks_b,
-        [node_a, node_b] + nodes_a + nodes_b,
-        [edge] + edges_a + edges_b,
-        next_node_id, next_edge_id,
+        _subdivide_into_buildings(side_a, target_area, rng, depth + 1)
+        + _subdivide_into_buildings(side_b, target_area, rng, depth + 1)
     )
 
 
-def _perpendicular_into_polygon(edge_start: Point, edge_end: Point, polygon: Polygon) -> Point:
-    dx, dy = edge_end[0] - edge_start[0], edge_end[1] - edge_start[1]
-    length = math.hypot(dx, dy)
-    if length == 0:
-        return (0.0, 0.0)
-    direction = (dx / length, dy / length)
-    candidate_a = (-direction[1], direction[0])
-    midpoint = ((edge_start[0] + edge_end[0]) / 2.0, (edge_start[1] + edge_end[1]) / 2.0)
-    probe = (midpoint[0] + candidate_a[0] * 0.1, midpoint[1] + candidate_a[1] * 0.1)
-    return candidate_a if point_in_polygon(probe, polygon) else (-candidate_a[0], -candidate_a[1])
-
-
-def _building_footprint_polygon(building: Building) -> ShapelyPolygon:
-    """Compute the rotated footprint polygon of a building."""
-    hw, hh = building.width / 2.0, building.height / 2.0
-    cos_r, sin_r = math.cos(building.rotation), math.sin(building.rotation)
-    corners = [
-        (building.x + lx * cos_r - ly * sin_r, building.y + lx * sin_r + ly * cos_r)
-        for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
-    ]
-    return ShapelyPolygon(corners)
+def _leaf_footprint(leaf: Polygon) -> Tuple[float, float, float, float, float]:
+    """Center (x, y), width, height, and rotation of `leaf`'s minimum
+    rotated rectangle -- same OBB approach _longer_axis_direction uses."""
+    shapely_leaf = ShapelyPolygon(leaf)
+    obb = shapely_leaf.minimum_rotated_rectangle
+    corners = list(obb.exterior.coords)[:-1]
+    if len(corners) < 4:
+        cx, cy = _polygon_centroid(leaf)
+        return (cx, cy, 1.0, 1.0, 0.0)
+    edge_a = distance(corners[0], corners[1])
+    edge_b = distance(corners[1], corners[2])
+    width, height = (edge_a, edge_b) if edge_a >= edge_b else (edge_b, edge_a)
+    p1, p2 = (corners[0], corners[1]) if edge_a >= edge_b else (corners[1], corners[2])
+    rotation = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
+    # The OBB over-covers any non-rectangular leaf (triangles, trapezoids from
+    # clipping), which shows up as overlapping footprints and buildings poking
+    # outside their district. Shrink both sides so the reported footprint's area
+    # matches the leaf's true area, never exceeding it.
+    obb_area = obb.area
+    leaf_area = shapely_leaf.area
+    if obb_area > 0 and leaf_area < obb_area:
+        scale = math.sqrt(leaf_area / obb_area)
+        width *= scale
+        height *= scale
+    center = obb.centroid
+    return (center.x, center.y, width, height, rotation)
 
 
 def place_buildings_in_block(
     block_polygon: Polygon, district: District, rng,
     next_building_id: int, target_population: int, magic_prevalence: float,
+    notable_building_counts: Optional[Dict[str, int]] = None,
     density_multiplier: float = 1.0,
 ) -> List[Building]:
+    if notable_building_counts is None:
+        notable_building_counts = {}
+
     zone_type = district.zone_type
-    frontage = LOT_FRONTAGE_BY_ZONE[zone_type] / density_multiplier
-    depth = LOT_DEPTH_BY_ZONE[zone_type] / density_multiplier
-    skip_distance = depth * FOOTPRINT_FILL_FRACTION / 2.0 + 1.0
+    target_area = (
+        (LOT_FRONTAGE_BY_ZONE[zone_type] / density_multiplier)
+        * (LOT_DEPTH_BY_ZONE[zone_type] / density_multiplier)
+    )
+
+    leaves = _subdivide_into_buildings(block_polygon, target_area, rng)
 
     buildings: List[Building] = []
     building_id = next_building_id
-    n = len(block_polygon)
-    for i in range(n):
-        edge_start = block_polygon[i]
-        edge_end = block_polygon[(i + 1) % n]
-        edge_length = distance(edge_start, edge_end)
-        available_length = edge_length - 2.0 * skip_distance
-        if available_length <= 0:
-            continue
-        num_lots = int(available_length // frontage)
-        if num_lots == 0:
-            continue
-        dx = (edge_end[0] - edge_start[0]) / edge_length
-        dy = (edge_end[1] - edge_start[1]) / edge_length
-        inward = _perpendicular_into_polygon(edge_start, edge_end, block_polygon)
-        rotation = math.atan2(dy, dx)
+    for leaf in leaves:
+        if polygon_area(leaf) < 1.0:
+            continue  # sliver left over from a degenerate cut, not worth a building
 
-        for lot_index in range(num_lots):
-            along = skip_distance + frontage * (lot_index + 0.5)
-            lot_center_x = edge_start[0] + dx * along + inward[0] * (depth / 2.0)
-            lot_center_y = edge_start[1] + dy * along + inward[1] * (depth / 2.0)
+        cx, cy, width, height, rotation = _leaf_footprint(leaf)
+        building_type = pick_building_type_with_cap(
+            zone_type, target_population, magic_prevalence, rng, notable_building_counts,
+        )
+        capacity = BUILDING_HOME_CAPACITY.get(building_type, 0)
+        vacancies = [
+            JobVacancy(building_id=building_id, occupation=occupation)
+            for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[building_type]
+            for _ in range(count)
+        ]
+        name_pool = BUILDING_NAME_POOLS.get(building_type)
+        name = rng.choice(name_pool) if name_pool else None
 
-            type_weights = resolve_building_type_weights(zone_type, target_population, magic_prevalence, rng)
-            subtypes = list(type_weights.keys())
-            weights = list(type_weights.values())
-            building_type = rng.choices(subtypes, weights=weights, k=1)[0]
-            capacity = BUILDING_HOME_CAPACITY.get(building_type, 0)
-            vacancies = [
-                JobVacancy(building_id=building_id, occupation=occupation)
-                for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[building_type]
-                for _ in range(count)
-            ]
-            name_pool = BUILDING_NAME_POOLS.get(building_type)
-            name = rng.choice(name_pool) if name_pool else None
-
-            building = Building(
-                id=building_id,
-                district_id=district.id,
-                district_zone_type=zone_type,
-                x=lot_center_x,
-                y=lot_center_y,
-                building_type=building_type,
-                capacity=capacity,
-                vacancies=vacancies,
-                name=name,
-                width=frontage * FOOTPRINT_FILL_FRACTION,
-                height=depth * FOOTPRINT_FILL_FRACTION,
-                rotation=rotation,
-            )
-
-            # Check for overlap with existing buildings
-            new_footprint = _building_footprint_polygon(building)
-            overlaps = False
-            for existing in buildings:
-                existing_footprint = _building_footprint_polygon(existing)
-                if new_footprint.intersection(existing_footprint).area > 1e-6:
-                    overlaps = True
-                    break
-
-            fits_in_block = ShapelyPolygon(block_polygon).buffer(0.5).contains(new_footprint)
-            if not overlaps and fits_in_block:
-                buildings.append(building)
-                building_id += 1
+        buildings.append(Building(
+            id=building_id,
+            district_id=district.id,
+            district_zone_type=zone_type,
+            x=cx,
+            y=cy,
+            building_type=building_type,
+            capacity=capacity,
+            vacancies=vacancies,
+            name=name,
+            width=width,
+            height=height,
+            rotation=rotation,
+        ))
+        building_id += 1
 
     return buildings
 
 
 def generate_blocks_and_buildings(
-    district: District, town_seed, next_building_id: int, next_node_id: int, next_edge_id: int,
+    district: District, town_seed, next_building_id: int,
     target_population: int = 0, density_multiplier: float = 1.0, magic_prevalence: float = 0.0,
-) -> Tuple[List[Building], List[RoadNode], List[RoadEdge], int, int]:
+    notable_building_counts: Optional[Dict[str, int]] = None,
+) -> List[Building]:
     rng = rng_for(town_seed, "blocks", district.id)
+    if notable_building_counts is None:
+        notable_building_counts = {}
+
     buildings: List[Building] = []
-    local_nodes: List[RoadNode] = []
-    local_edges: List[RoadEdge] = []
     building_id = next_building_id
 
     for part in district.polygon_parts:
-        blocks, part_nodes, part_edges, next_node_id, next_edge_id = subdivide_into_blocks(
-            part, district.zone_type, rng, next_node_id, next_edge_id,
-        )
-        local_nodes.extend(part_nodes)
-        local_edges.extend(part_edges)
+        inset_part = inset_polygon(part, DISTRICT_INSET_DISTANCE)
+        if len(inset_part) < 3:
+            continue
+        blocks = subdivide_into_blocks(inset_part, district.zone_type, rng)
         for block in blocks:
             block_buildings = place_buildings_in_block(
-                block, district, rng, building_id, target_population, magic_prevalence, density_multiplier,
+                block, district, rng, building_id, target_population, magic_prevalence,
+                notable_building_counts=notable_building_counts, density_multiplier=density_multiplier,
             )
             buildings.extend(block_buildings)
             building_id += len(block_buildings)
 
-    return buildings, local_nodes, local_edges, next_node_id, next_edge_id
+    return buildings

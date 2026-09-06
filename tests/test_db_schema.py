@@ -274,7 +274,7 @@ def test_generate_town_database_persists_road_network(tmp_path):
     for edge in edge_rows:
         assert edge[1] in node_ids
         assert edge[2] in node_ids
-        assert edge[3] in ("radial", "boundary", "spur", "local")
+        assert edge[3] in ("artery", "boundary", "spur")
 
 
 def test_generate_town_database_persists_building_footprints(tmp_path):

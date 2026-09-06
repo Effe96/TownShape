@@ -1,6 +1,8 @@
 import math
 from typing import List, Tuple
 
+from shapely.geometry import Polygon as ShapelyPolygon
+
 Point = Tuple[float, float]
 Polygon = List[Point]
 
@@ -85,3 +87,25 @@ def clip_polygon_to_bounds(polygon: Polygon, bounds: Tuple[float, float, float, 
         edge_end = clip_edges[(i + 1) % len(clip_edges)]
         output = clip_polygon_by_line(output, edge_start, edge_end)
     return output
+
+
+def inset_polygon(polygon: Polygon, distance: float) -> Polygon:
+    """Insets `polygon` inward by `distance` via shapely's buffer
+    operation. Replaces an earlier hand-rolled half-plane-intersection
+    approach that was convex-only and separately broke on clockwise
+    winding and near-duplicate vertices -- shapely's buffer handles all
+    three correctly in one call."""
+    if len(polygon) < 3:
+        return []
+    shapely_poly = ShapelyPolygon(polygon)
+    if shapely_poly.is_empty:
+        return []
+    # No is_valid guard on purpose: a near-duplicate vertex (a routine
+    # floating-point artifact of the Sutherland-Hodgman clips upstream) makes
+    # shapely report "self-intersection", but buffer still insets it correctly.
+    result = shapely_poly.buffer(-distance, join_style="mitre")
+    if result.is_empty:
+        return []
+    if result.geom_type == "MultiPolygon":
+        result = max(result.geoms, key=lambda g: g.area)
+    return list(result.exterior.coords)[:-1]

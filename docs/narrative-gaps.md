@@ -133,7 +133,7 @@ number) per town instead of drawing independently per slot.
 
 ### Usability gap (not a narrative-mapping gap): merchant building counts are realistic but unmanageable for a campaign
 
-**Status:** Open
+**Status:** Addressed
 
 The ~10,000-resident test town generated **202 shops** and **91 taverns**
 (0 arcane shops, since `magic_prevalence=0.0`). Demographically this may
@@ -151,6 +151,15 @@ population-scaled cap (not just a density-per-area roll) for
 narratively-prominent building types like taverns and shops, separate
 from the question of how many are needed to support the underlying
 economic simulation (jobs, purchases, tax base).
+
+**2026-09-04 note:** substantially addressed. The population-scaled
+business-density cap specified in
+`docs/superpowers/specs/2026-09-04-organic-town-rendering-design.md` is
+exactly the "population-scaled cap, not just a density-per-area roll"
+this entry asked for. Measured at the same population scale during that
+branch's final review: shops down from 202 to roughly 100, taverns down
+from 91 to roughly 10. Name uniqueness within a category is a separate
+issue, tracked on its own elsewhere.
 
 ## 2026-08-27 — spot-checking individual resident profiles
 
