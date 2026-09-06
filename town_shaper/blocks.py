@@ -6,7 +6,7 @@ from shapely.geometry import Polygon as ShapelyPolygon
 from town_shaper.buildings import (
     BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS, JOB_VACANCIES_BY_BUILDING_TYPE, pick_building_type_with_cap,
 )
-from town_shaper.geometry import clip_polygon_by_line, distance, inset_polygon, polygon_area
+from town_shaper.geometry import clip_polygon_by_line, distance, inset_polygon, jaggify_polygon, polygon_area
 from town_shaper.models import Building, District, JobVacancy, ZoneType
 from town_shaper.seeding import rng_for
 
@@ -211,6 +211,27 @@ def place_buildings_in_block(
     return buildings
 
 
+def compute_district_blocks(district: District, town_seed) -> List[Polygon]:
+    """Inset each of the district's polygon parts, jaggify the inset
+    boundary (fixes the straight Voronoi-cell-edge look), then subdivide
+    into blocks. Split out from generate_blocks_and_buildings so the
+    two-pass residential flow (town_shaper/generate.py) can compute every
+    residential district's block geometry and total area before deriving
+    a demand-driven leaf target area -- see the design spec's two-pass
+    description."""
+    rng = rng_for(town_seed, "blocks", district.id)
+    blocks: List[Polygon] = []
+    for part in district.polygon_parts:
+        inset_part = inset_polygon(part, DISTRICT_INSET_DISTANCE)
+        if len(inset_part) < 3:
+            continue
+        # Absolute cap so the perturbation can never push a vertex back out
+        # past most of its own inset margin into a neighbouring district.
+        jagged = jaggify_polygon(inset_part, rng, max_absolute_offset=DISTRICT_INSET_DISTANCE * 0.8)
+        blocks.extend(subdivide_into_blocks(jagged, district.zone_type, rng))
+    return blocks
+
+
 def generate_blocks_and_buildings(
     district: District, town_seed, next_building_id: int,
     target_population: int = 0, density_multiplier: float = 1.0, magic_prevalence: float = 0.0,
@@ -223,17 +244,12 @@ def generate_blocks_and_buildings(
     buildings: List[Building] = []
     building_id = next_building_id
 
-    for part in district.polygon_parts:
-        inset_part = inset_polygon(part, DISTRICT_INSET_DISTANCE)
-        if len(inset_part) < 3:
-            continue
-        blocks = subdivide_into_blocks(inset_part, district.zone_type, rng)
-        for block in blocks:
-            block_buildings = place_buildings_in_block(
-                block, district, rng, building_id, target_population, magic_prevalence,
-                notable_building_counts=notable_building_counts, density_multiplier=density_multiplier,
-            )
-            buildings.extend(block_buildings)
-            building_id += len(block_buildings)
+    for block in compute_district_blocks(district, town_seed):
+        block_buildings = place_buildings_in_block(
+            block, district, rng, building_id, target_population, magic_prevalence,
+            notable_building_counts=notable_building_counts, density_multiplier=density_multiplier,
+        )
+        buildings.extend(block_buildings)
+        building_id += len(block_buildings)
 
     return buildings

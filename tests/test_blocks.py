@@ -370,3 +370,36 @@ def test_generate_blocks_and_buildings_shares_notable_building_counts_across_par
     tavern_count = sum(1 for b in buildings if b.building_type == "tavern")
     assert tavern_count <= notable_building_cap("tavern", target_population)
     assert notable_building_counts.get("tavern", 0) == tavern_count
+
+
+def test_compute_district_blocks_covers_every_polygon_part():
+    from town_shaper.blocks import compute_district_blocks
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(40.0, 20.0), _rectangle(30.0, 15.0)])
+    blocks = compute_district_blocks(district, ("town", 1))
+    assert len(blocks) > 0
+
+
+def test_compute_district_blocks_is_deterministic():
+    from town_shaper.blocks import compute_district_blocks
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0)])
+    blocks1 = compute_district_blocks(district, ("town", 1))
+    blocks2 = compute_district_blocks(district, ("town", 1))
+    assert [sorted(b) for b in blocks1] == [sorted(b) for b in blocks2]
+
+
+def test_compute_district_blocks_stays_within_the_original_district_polygon():
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    from town_shaper.blocks import compute_district_blocks
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0)])
+    blocks = compute_district_blocks(district, ("town", 1))
+
+    original = ShapelyPolygon(_rectangle(60.0, 60.0))
+    for block in blocks:
+        # jaggify_polygon's max_absolute_offset keeps the perturbed inset
+        # boundary from bleeding past the original district edge -- a
+        # small buffer absorbs floating-point/clip slack, not design slack.
+        assert original.buffer(0.5).contains(ShapelyPolygon(block))
