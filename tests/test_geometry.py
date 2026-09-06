@@ -1,6 +1,7 @@
 import math
 
-from town_shaper.geometry import clip_polygon_by_line, clip_polygon_to_bounds, distance, inset_polygon, point_in_polygon, polygon_area
+from town_shaper.geometry import clip_polygon_by_line, clip_polygon_to_bounds, distance, inset_polygon, jaggify_polygon, point_in_polygon, polygon_area
+from town_shaper.seeding import rng_for
 
 
 def test_polygon_area_of_unit_square():
@@ -127,3 +128,66 @@ def test_inset_polygon_handles_non_convex_l_shape():
     l_shape = [(0.0, 0.0), (40.0, 0.0), (40.0, 20.0), (20.0, 20.0), (20.0, 40.0), (0.0, 40.0)]
     result = inset_polygon(l_shape, 2.0)
     assert math.isclose(polygon_area(result), 896.0, rel_tol=1e-9)
+
+
+def test_jaggify_polygon_preserves_vertex_count_doubling():
+    square = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    rng = rng_for(("town", 1), "jaggify-test", 1)
+    result = jaggify_polygon(square, rng, iterations=2)
+    assert len(result) == len(square) * 4  # each iteration doubles vertex count
+
+
+def test_jaggify_polygon_is_deterministic():
+    square = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    rng1 = rng_for(("town", 1), "jaggify-test", 2)
+    rng2 = rng_for(("town", 1), "jaggify-test", 2)
+    assert jaggify_polygon(square, rng1) == jaggify_polygon(square, rng2)
+
+
+def test_jaggify_polygon_perturbs_at_least_one_vertex_off_the_original_edges():
+    square = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    rng = rng_for(("town", 1), "jaggify-test", 3)
+    result = jaggify_polygon(square, rng, iterations=1, max_offset_fraction=0.3)
+    # midpoints are inserted between original vertices -- at least one should
+    # have moved off the square's exact boundary (a random offset of 0.0 for
+    # every one of 4 edges is not plausible with this rng/seed combination).
+    on_boundary = lambda p: p[0] in (0.0, 10.0) or p[1] in (0.0, 10.0)
+    assert not all(on_boundary(p) for p in result)
+
+
+def test_jaggify_polygon_zero_iterations_returns_the_same_shape():
+    triangle = [(0.0, 0.0), (10.0, 0.0), (5.0, 8.0)]
+    rng = rng_for(("town", 1), "jaggify-test", 4)
+    result = jaggify_polygon(triangle, rng, iterations=0)
+    assert result == triangle
+
+
+def test_jaggify_polygon_respects_max_absolute_offset():
+    # A huge max_offset_fraction would normally displace midpoints far off
+    # the original edge -- max_absolute_offset must clamp that regardless
+    # of how large the fractional request is (this is what keeps a
+    # jaggified district's own boundary from bleeding past its own inset
+    # margin into a neighbouring district).
+    square = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)]
+    rng = rng_for(("town", 1), "jaggify-test", 5)
+    result = jaggify_polygon(square, rng, iterations=1, max_offset_fraction=0.9, max_absolute_offset=1.0)
+    original_edges = [
+        ((0.0, 0.0), (100.0, 0.0)), ((100.0, 0.0), (100.0, 100.0)),
+        ((100.0, 100.0), (0.0, 100.0)), ((0.0, 100.0), (0.0, 0.0)),
+    ]
+
+    def distance_to_segment(p, a, b):
+        ax, ay = a
+        bx, by = b
+        px, py = p
+        dx, dy = bx - ax, by - ay
+        length_sq = dx * dx + dy * dy
+        t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length_sq))
+        cx, cy = ax + t * dx, ay + t * dy
+        return math.hypot(px - cx, py - cy)
+
+    # Every inserted midpoint (odd-indexed vertices) must stay within
+    # max_absolute_offset of the edge it was displaced from.
+    for i in range(1, len(result), 2):
+        edge = original_edges[(i - 1) // 2]
+        assert distance_to_segment(result[i], *edge) <= 1.0 + 1e-9
