@@ -110,12 +110,16 @@ def test_place_buildings_in_block_footprints_dont_overlap():
     # whose OBB-derived footprint over-covers the leaf, so adjacent footprints
     # can overlap a bit even though the underlying leaves never do. Bound the
     # overlap as a fraction of the smaller footprint instead of requiring zero.
+    # This pinned seed measures ~0.269 overlap fraction at the worst pair;
+    # 0.4 gives real margin above that measured value without being loose
+    # enough to miss a regression (unlike a threshold sized to a many-seed
+    # worst case, which a single fixed-seed test never needs).
     shapes = [_footprint_shape(b) for b in buildings]
     for i in range(len(shapes)):
         for j in range(i + 1, len(shapes)):
             overlap = shapes[i].intersection(shapes[j]).area
             smaller_area = min(shapes[i].area, shapes[j].area)
-            assert overlap < smaller_area * 0.6
+            assert overlap < smaller_area * 0.4
 
 
 def test_leaf_footprint_never_over_covers_a_non_rectangular_leaf():
@@ -163,12 +167,15 @@ def test_place_buildings_in_non_rectangular_block_fit_and_dont_overlap():
         assert roomy_block.contains(shape)
     # Same bounded-overlap tolerance as the rectangular-block overlap test above,
     # for the same OBB-over-coverage reason -- non-rectangular leaves here make
-    # the overshoot larger, hence the wider fraction.
+    # the overshoot larger, hence the wider fraction. This pinned seed measures
+    # ~0.531 at the worst pair; 0.6 gives real margin over that measured value
+    # (not sized to any multi-seed worst case, which this fixed-seed test never
+    # needs to accommodate).
     for i in range(len(shapes)):
         for j in range(i + 1, len(shapes)):
             overlap = shapes[i].intersection(shapes[j]).area
             smaller_area = min(shapes[i].area, shapes[j].area)
-            assert overlap < smaller_area * 0.65
+            assert overlap < smaller_area * 0.6
 
 
 def test_place_buildings_in_block_rotations_vary_for_a_rectangular_block():
