@@ -40,3 +40,20 @@ def test_resident_slot_starts_unassigned():
     assert resident.home_building_id is None
     assert resident.workplace_building_id is None
     assert resident.occupation is None
+
+
+def test_building_footprint_defaults_to_none():
+    building = Building(
+        id=1, district_id=1, district_zone_type=ZoneType.POOR_RESIDENTIAL,
+        x=0.0, y=0.0, building_type="residence", capacity=6,
+    )
+    assert building.footprint is None
+
+
+def test_building_accepts_an_explicit_footprint():
+    footprint = [(0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0)]
+    building = Building(
+        id=1, district_id=1, district_zone_type=ZoneType.POOR_RESIDENTIAL,
+        x=2.5, y=2.5, building_type="residence", capacity=6, footprint=footprint,
+    )
+    assert building.footprint == footprint

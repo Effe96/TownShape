@@ -289,3 +289,48 @@ def test_generate_town_database_persists_building_footprints(tmp_path):
 
     assert len(rows) > 0
     assert all(row[0] > 0 and row[1] > 0 for row in rows)
+
+
+def test_buildings_footprint_defaults_to_null(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute("INSERT INTO districts (id, zone_type, polygon) VALUES (1, 'civic', '[]')")
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity) "
+        "VALUES (1, 1, 'civic', 'temple', 0.0, 0.0, 0)"
+    )
+    row = conn.execute("SELECT footprint FROM buildings WHERE id = 1").fetchone()
+    assert row[0] is None
+
+
+def test_buildings_footprint_accepts_a_json_polygon(tmp_path):
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute("INSERT INTO districts (id, zone_type, polygon) VALUES (1, 'civic', '[]')")
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, footprint) "
+        "VALUES (1, 1, 'civic', 'temple', 0.0, 0.0, 0, ?)",
+        ('[[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0]]',),
+    )
+    row = conn.execute("SELECT footprint FROM buildings WHERE id = 1").fetchone()
+    assert row[0] == '[[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0]]'
+
+
+def test_generate_town_database_persists_building_footprint_polygons(tmp_path):
+    import json
+
+    from town_db.generate import generate_town_database
+
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+
+    conn = connect(db_path)
+    rows = conn.execute(
+        "SELECT footprint FROM buildings WHERE zone_type != 'farmland_edge'"
+    ).fetchall()
+    conn.close()
+
+    assert len(rows) > 0
+    # Not populated with real geometry until Task 6/7 wire it in -- for now
+    # this just proves the column round-trips NULL cleanly end-to-end.
+    assert all(row[0] is None for row in rows)

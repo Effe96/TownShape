@@ -49,6 +49,7 @@ class Building:
     width: float = 0.0
     height: float = 0.0
     rotation: float = 0.0
+    footprint: Optional[List[Tuple[float, float]]] = None
 
 
 @dataclass

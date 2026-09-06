@@ -18,7 +18,8 @@ CREATE TABLE buildings (
     name TEXT,
     width REAL NOT NULL DEFAULT 0,
     height REAL NOT NULL DEFAULT 0,
-    rotation REAL NOT NULL DEFAULT 0
+    rotation REAL NOT NULL DEFAULT 0,
+    footprint TEXT
 );
 
 CREATE TABLE road_nodes (

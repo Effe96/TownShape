@@ -93,10 +93,11 @@ def generate_town_database(
     )
     conn.executemany(
         "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, "
-        "width, height, rotation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "width, height, rotation, footprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [(building.id, district.id, district.zone_type.value, building.building_type,
           building.x, building.y, building.capacity, building.name,
-          building.width, building.height, building.rotation)
+          building.width, building.height, building.rotation,
+          json.dumps(building.footprint) if building.footprint is not None else None)
          for district in town.districts for building in district.buildings],
     )
 
