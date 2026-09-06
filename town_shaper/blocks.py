@@ -59,13 +59,19 @@ def _polygon_centroid(polygon: Polygon) -> Point:
 
 
 def _split_polygon(polygon: Polygon, rng, gap: float) -> Tuple[Polygon, Polygon]:
-    """Split `polygon` into two halves along its longer OBB axis, offset by `gap`."""
+    """Split `polygon` into two halves along a jittered axis (angle offset
+    from the longer OBB axis, wider ratio range than a clean 50/50) --
+    this plus the per-leaf finishing pass is what gives buildings local
+    irregularity, distinct from the one coarse jaggify_polygon pass on
+    the district boundary."""
     axis_dir = _longer_axis_direction(polygon)
-    split_dir = (-axis_dir[1], axis_dir[0])  # perpendicular to the longer axis
+    angle = math.atan2(axis_dir[1], axis_dir[0]) + rng.uniform(-0.35, 0.35)  # +/- ~20 degrees
+    axis_dir = (math.cos(angle), math.sin(angle))
+    split_dir = (-axis_dir[1], axis_dir[0])  # perpendicular to the jittered axis
     cx, cy = _polygon_centroid(polygon)
 
     span = max((distance(p, q) for p in polygon for q in polygon), default=0.0) + 1.0
-    split_fraction = rng.uniform(0.4, 0.6)
+    split_fraction = rng.uniform(0.3, 0.7)
     offset_along_axis = (split_fraction - 0.5) * span
     center = (cx + axis_dir[0] * offset_along_axis, cy + axis_dir[1] * offset_along_axis)
 
