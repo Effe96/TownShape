@@ -1,5 +1,5 @@
 import math
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from shapely.geometry import Polygon as ShapelyPolygon
 
@@ -109,3 +109,40 @@ def inset_polygon(polygon: Polygon, distance: float) -> Polygon:
     if result.geom_type == "MultiPolygon":
         result = max(result.geoms, key=lambda g: g.area)
     return list(result.exterior.coords)[:-1]
+
+
+def jaggify_polygon(
+    polygon: Polygon, rng, iterations: int = 2,
+    max_offset_fraction: float = 0.18, max_absolute_offset: Optional[float] = None,
+) -> Polygon:
+    """Midpoint-displacement fractal edge perturbation (classic coastline-
+    generator technique): each edge's midpoint is pushed perpendicular by a
+    random offset scaled to that edge's own length, repeated `iterations`
+    times (vertex count doubles each round, so amplitude naturally decays
+    each round -- one call already produces a 2-level fractal). Fixes the
+    straight Voronoi-cell-edge look of district boundaries.
+
+    `max_absolute_offset`, when given, clamps the offset in map units
+    regardless of edge length -- needed when jaggifying an already-inset
+    polygon, so the perturbation can never push a vertex back out past its
+    own inset margin into a neighbouring district's territory.
+    """
+    pts = list(polygon)
+    for _ in range(iterations):
+        new_pts = []
+        n = len(pts)
+        for i in range(n):
+            p1, p2 = pts[i], pts[(i + 1) % n]
+            new_pts.append(p1)
+            dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+            length = math.hypot(dx, dy)
+            if length == 0:
+                continue
+            mx, my = (p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0
+            perp = (-dy / length, dx / length)
+            offset = rng.uniform(-max_offset_fraction, max_offset_fraction) * length
+            if max_absolute_offset is not None:
+                offset = max(-max_absolute_offset, min(max_absolute_offset, offset))
+            new_pts.append((mx + perp[0] * offset, my + perp[1] * offset))
+        pts = new_pts
+    return pts

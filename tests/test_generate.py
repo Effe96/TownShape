@@ -197,3 +197,60 @@ def test_generate_town_populates_road_network():
     # One anchor node per district -- town_shaper.districts.build_districts
     # creates exactly one District per Anchor, same id.
     assert sum(1 for n in town.road_network.nodes if n.kind == "anchor") == len(town.districts)
+
+
+def test_generate_town_residential_building_counts_are_proportional_to_households():
+    # Regression guard for the bug that motivated this whole plan: a real
+    # test town had 10,436 "residence" buildings for 1,372 households
+    # (under 3% occupancy). Building count should now land within a
+    # generous multiple of real household demand, not two orders of
+    # magnitude over it.
+    from town_shaper.buildings import BUILDING_HOME_CAPACITY
+    from town_shaper.households import AVERAGE_HOUSEHOLD_SIZE, estimate_household_counts
+    from town_shaper.models import SES
+
+    town = generate_town(("town", 1), target_population=5000, rich_proportion=0.05)
+
+    household_ses = {}
+    for r in town.residents:
+        household_ses.setdefault(r.household_id, r.ses)
+    poor_households = sum(1 for s in household_ses.values() if s == SES.POOR)
+    rich_households = sum(1 for s in household_ses.values() if s == SES.RICH)
+
+    residence_count = sum(
+        1 for d in town.districts for b in d.buildings if b.building_type == "residence"
+    )
+    manor_count = sum(
+        1 for d in town.districts for b in d.buildings if b.building_type == "manor"
+    )
+
+    # Generous upper bound (2x the raw household count, ignoring capacity
+    # and slack entirely) -- the old behavior blew past this by ~8x.
+    assert residence_count <= max(1, poor_households) * 2
+    assert manor_count <= max(1, rich_households) * 2
+    assert residence_count > 0
+
+    # Lower-bound companion: a households-to-resident-slots unit error (the
+    # bug fixed alongside this test) under-provisions capacity without
+    # necessarily dropping the upper bound above, and could pass unnoticed
+    # if only the aggregate population-conservation test existed (residents
+    # can fall back to the OTHER SES's buildings when their own pool is
+    # full, so an aggregate check alone doesn't pin down each pool). Floor
+    # is half of the capacity-based expected building count, allowing slack
+    # for non-residence building types sharing the same zone and for
+    # garden-culled leaves.
+    assert residence_count >= (poor_households * AVERAGE_HOUSEHOLD_SIZE) / (BUILDING_HOME_CAPACITY["residence"] * 2)
+    assert manor_count >= (rich_households * AVERAGE_HOUSEHOLD_SIZE) / (BUILDING_HOME_CAPACITY["manor"] * 2)
+
+
+def test_generate_town_houses_nearly_all_target_population():
+    # Regression guard for a households-to-resident-slots unit error:
+    # generate.py used to divide a household count by BUILDING_HOME_CAPACITY
+    # (a resident-slot/person count) without first converting households to
+    # residents via AVERAGE_HOUSEHOLD_SIZE, under-provisioning residential
+    # capacity by ~3.5x. assign_residents silently skips residents once
+    # capacity runs out, so this measures actual housed population instead
+    # of re-deriving the same (buggy) target-count formula.
+    for pop in (500, 5000):
+        town = generate_town(("town", 1), target_population=pop)
+        assert len(town.residents) >= 0.98 * pop

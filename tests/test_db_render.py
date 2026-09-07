@@ -134,3 +134,44 @@ def test_render_town_draws_rotated_building_footprints(tmp_path):
     with open(output_path, "rb") as f:
         header = f.read(8)
     assert header == b"\x89PNG\r\n\x1a\n"
+
+
+def test_render_town_draws_a_real_footprint_polygon_when_present(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    output_path = str(tmp_path / "town.png")
+
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO districts (id, zone_type, polygon) VALUES (1, 'poor_residential', ?)",
+        (json.dumps([[[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]]]),),
+    )
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, "
+        "width, height, rotation, footprint) VALUES (1, 1, 'poor_residential', 'residence', "
+        "20.0, 20.0, 6, 5.0, 6.0, 0.0, ?)",
+        (json.dumps([[18.0, 17.0], [23.0, 17.0], [23.0, 22.0], [19.0, 22.0], [18.0, 20.0]]),),
+    )
+    conn.commit()
+    conn.close()
+
+    render_town(db_path, output_path)  # must not raise
+
+    with open(output_path, "rb") as f:
+        header = f.read(8)
+    assert header == b"\x89PNG\r\n\x1a\n"
+
+
+def test_render_town_falls_back_to_rotated_rect_when_footprint_is_null(tmp_path):
+    # Every pre-existing test fixture in this suite inserts buildings
+    # without a footprint -- render.py must keep working against them via
+    # the width/height/rotation rectangle, not just for new data.
+    db_path = str(tmp_path / "town.db")
+    output_path = str(tmp_path / "town.png")
+    _build_minimal_town(db_path)  # existing helper, no footprint column set
+
+    render_town(db_path, output_path)  # must not raise
+
+    with open(output_path, "rb") as f:
+        header = f.read(8)
+    assert header == b"\x89PNG\r\n\x1a\n"

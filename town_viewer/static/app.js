@@ -94,6 +94,7 @@ function draw() {
   ctx.globalAlpha = 0.6;
   for (const water of mapData.water_features) drawPolygon(water.polygon, WATER_COLOR, null);
   for (const district of mapData.districts) {
+    if (district.zone_type !== "farmland_edge") continue;
     const color = ZONE_COLORS[district.zone_type] || DEFAULT_ZONE_COLOR;
     drawPolygon(district.polygon, color, "black");
   }
@@ -116,30 +117,54 @@ function draw() {
   }
 
   for (const building of mapData.buildings) {
-    const { sx, sy } = worldToScreen(building.x, building.y);
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(building.rotation);
-    const screenWidth = building.width * view.scale;
-    const screenHeight = building.height * view.scale;
     ctx.fillStyle = buildingColor(building.building_type);
-    ctx.fillRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
-    ctx.restore();
+    if (building.footprint) {
+      ctx.beginPath();
+      building.footprint.forEach(([x, y], i) => {
+        const { sx, sy } = worldToScreen(x, y);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      const { sx, sy } = worldToScreen(building.x, building.y);
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(building.rotation);
+      const screenWidth = building.width * view.scale;
+      const screenHeight = building.height * view.scale;
+      ctx.fillRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
+      ctx.restore();
+    }
   }
 
   for (const buildingId of highlightedBuildingIds) {
     const building = mapData.buildings.find((b) => b.id === buildingId);
     if (!building) continue;
-    const { sx, sy } = worldToScreen(building.x, building.y);
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(building.rotation);
-    const screenWidth = building.width * view.scale;
-    const screenHeight = building.height * view.scale;
     ctx.strokeStyle = "#ff2222";
     ctx.lineWidth = 3;
-    ctx.strokeRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
-    ctx.restore();
+    if (building.footprint) {
+      // Same footprint path used for the fill above, so the highlight
+      // traces the actual drawn shape instead of the OBB-derived
+      // width/height/rotation rectangle (which _leaf_footprint shrinks to
+      // match the leaf's real area, so it no longer matches the fill).
+      ctx.beginPath();
+      building.footprint.forEach(([x, y], i) => {
+        const { sx, sy } = worldToScreen(x, y);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.closePath();
+      ctx.stroke();
+    } else {
+      const { sx, sy } = worldToScreen(building.x, building.y);
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(building.rotation);
+      const screenWidth = building.width * view.scale;
+      const screenHeight = building.height * view.scale;
+      ctx.strokeRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
+      ctx.restore();
+    }
   }
 }
 
