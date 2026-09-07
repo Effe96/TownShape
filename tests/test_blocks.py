@@ -460,6 +460,50 @@ def test_organic_subdivide_is_deterministic():
     assert [sorted(leaf) for leaf in leaves1] == [sorted(leaf) for leaf in leaves2]
 
 
+def test_organic_subdivide_keeps_splitting_past_max_depth_when_must_split():
+    # A hard_cap_area small enough relative to the starting polygon that
+    # getting every leaf under it takes more than max_depth splits: with
+    # area 10000 and hard_cap_area 625, four halvings (10000 -> 5000 ->
+    # 2500 -> 1250 -> 625) are needed, but max_depth=2 caps recursion at
+    # depth 2 (area still ~2500, far over the cap). must_split (area >
+    # hard_cap_area) must force splitting to continue past max_depth --
+    # the depth limit is documented as a soft-stop-only cap, not an
+    # override of the hard-cap guarantee.
+    from town_shaper.blocks import organic_subdivide
+
+    large_square = _square(100.0)  # area 10000
+    rng = rng_for(("town", 1), "organic-test", 10)
+
+    leaves = organic_subdivide(large_square, target_area=50.0, hard_cap_area=625.0, rng=rng, max_depth=2)
+
+    assert len(leaves) > 4  # more leaves than max_depth=2 (4) could produce alone
+    for leaf in leaves:
+        assert polygon_area(leaf) <= 625.0 + 1e-6
+
+
+def _l_shape():
+    # Concave L: a 40x40 square missing its 20x20 top-right quadrant, area 1200.
+    return [(0.0, 0.0), (40.0, 0.0), (40.0, 20.0), (20.0, 20.0), (20.0, 40.0), (0.0, 40.0)]
+
+
+def test_organic_subdivide_never_exceeds_the_hard_cap_on_a_concave_polygon():
+    # Task 6's shipped hard-cap tests only exercised symmetric squares. A
+    # concave polygon is more likely to make _split_polygon produce a
+    # degenerate side (len < 3), which also makes organic_subdivide bail
+    # out and return an oversized leaf unsplit -- a second, related way
+    # the "never exceeds hard cap" guarantee can silently fail.
+    from town_shaper.blocks import organic_subdivide
+
+    l_shape = _l_shape()  # area 1200
+    rng = rng_for(("town", 1), "organic-test", 11)
+
+    leaves = organic_subdivide(l_shape, target_area=50.0, hard_cap_area=300.0, rng=rng)
+
+    assert len(leaves) > 1
+    for leaf in leaves:
+        assert polygon_area(leaf) <= 300.0 + 1e-6
+
+
 def test_notch_corner_never_increases_area():
     from town_shaper.blocks import notch_corner
 

@@ -299,6 +299,13 @@ def organic_subdivide(
     earlier version of this algorithm hit: an undersized block became one
     giant, unfinished single "building").
 
+    max_depth only caps recursion in the soft-stop case -- once must_split
+    is true (area > hard_cap_area), splitting keeps going past max_depth,
+    since the hard-cap guarantee is depth-independent. The only remaining
+    way it can be violated is if the polygon genuinely can't be split
+    further (_split_polygon degenerates to a <3-vertex side below), an
+    inherent geometric limit rather than a depth-budget bug.
+
     gap_range controls the party-wall gap between adjacent leaves at every
     split. The default (0.25, 0.6) suits splitting an already-small block
     into individual lots. Residential zones pass a wider range (see
@@ -310,7 +317,7 @@ def organic_subdivide(
     area = polygon_area(polygon)
     stop_area = target_area * rng.uniform(0.55, 1.4)
     must_split = area > hard_cap_area
-    if len(polygon) < 3 or depth >= max_depth or (area <= stop_area and not must_split):
+    if len(polygon) < 3 or (depth >= max_depth and not must_split) or (area <= stop_area and not must_split):
         return [polygon]
 
     result = _split_polygon(polygon, rng, gap=rng.uniform(*gap_range))
