@@ -597,3 +597,50 @@ def test_generate_blocks_and_buildings_accepts_precomputed_blocks():
     )
 
     assert len(buildings) > 0
+
+
+def test_generate_blocks_and_buildings_culls_some_residential_leaves_as_gardens():
+    from town_shaper.blocks import compute_district_blocks, generate_blocks_and_buildings
+
+    district = _multi_part_district(ZoneType.POOR_RESIDENTIAL, [_rectangle(80.0, 80.0)])
+    blocks = compute_district_blocks(district, ("town", 1))
+
+    # A small target_area forces many leaves from an 80x80 block -- with
+    # GARDEN_CULL_FRACTION > 0, the building count should land measurably
+    # below the raw leaf count organic_subdivide alone would produce.
+    from town_shaper.blocks import DEFAULT_HARD_CAP_AREA, organic_subdivide
+
+    rng_probe = rng_for(("town", 1), "blocks", district.id)
+    raw_leaf_count = sum(
+        len(organic_subdivide(b, target_area=40.0, hard_cap_area=DEFAULT_HARD_CAP_AREA, rng=rng_probe))
+        for b in blocks
+    )
+
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=3000, magic_prevalence=0.0,
+        blocks=blocks, target_area=40.0, hard_cap_area=DEFAULT_HARD_CAP_AREA,
+    )
+
+    assert 0 < len(buildings) < raw_leaf_count
+
+
+def test_generate_blocks_and_buildings_does_not_cull_merchant_leaves():
+    from town_shaper.blocks import DEFAULT_HARD_CAP_AREA, compute_district_blocks, generate_blocks_and_buildings, organic_subdivide, finish_leaves
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(80.0, 80.0)])
+    blocks = compute_district_blocks(district, ("town", 1))
+
+    rng_probe = rng_for(("town", 1), "blocks", district.id)
+    raw_leaf_count = sum(
+        len(finish_leaves(organic_subdivide(b, target_area=40.0, hard_cap_area=DEFAULT_HARD_CAP_AREA, rng=rng_probe), rng=rng_probe))
+        for b in blocks
+    )
+
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=3000, magic_prevalence=0.0,
+        blocks=blocks, target_area=40.0, hard_cap_area=DEFAULT_HARD_CAP_AREA,
+    )
+
+    # Merchant/civic/port are NOT culled -- every generated leaf (except slivers)
+    # becomes a building (named or infill).
+    assert len(buildings) >= raw_leaf_count - 1

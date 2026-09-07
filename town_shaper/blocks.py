@@ -164,6 +164,9 @@ def place_buildings_in_block(
     raw_leaves = organic_subdivide(block_polygon, target_area, hard_cap_area, rng)
     leaves = finish_leaves(raw_leaves, rng)
 
+    if zone_type in RESIDENTIAL_ZONE_TYPES:
+        leaves = [leaf for leaf in leaves if rng.random() >= GARDEN_CULL_FRACTION]
+
     buildings: List[Building] = []
     building_id = next_building_id
     for leaf in leaves:
@@ -272,6 +275,8 @@ def generate_blocks_and_buildings(
 
 HARD_CAP_AREA_MULTIPLIER = 4.0
 RESIDENTIAL_SLACK = 1.25
+GARDEN_CULL_FRACTION = 0.12
+RESIDENTIAL_ZONE_TYPES = (ZoneType.POOR_RESIDENTIAL, ZoneType.RICH_RESIDENTIAL)
 DEFAULT_HARD_CAP_AREA = (
     HARD_CAP_AREA_MULTIPLIER
     * LOT_FRONTAGE_BY_ZONE[ZoneType.POOR_RESIDENTIAL]
