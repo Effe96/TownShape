@@ -57,7 +57,7 @@ def render_town(db_path: str, output_path: str) -> None:
     conn = sqlite3.connect(db_path)
     districts = conn.execute("SELECT zone_type, polygon FROM districts").fetchall()
     buildings = conn.execute(
-        "SELECT x, y, building_type, width, height, rotation FROM buildings"
+        "SELECT x, y, building_type, width, height, rotation, footprint FROM buildings"
     ).fetchall()
     water_features = conn.execute("SELECT kind, polygon FROM water_features").fetchall()
     road_nodes = conn.execute("SELECT id, x, y FROM road_nodes").fetchall()
@@ -74,11 +74,15 @@ def render_town(db_path: str, output_path: str) -> None:
 
     seen_zone_types: List[str] = []
     for zone_type, polygon_json in districts:
-        color = ZONE_COLORS.get(zone_type, DEFAULT_ZONE_COLOR)
-        for ring in json.loads(polygon_json):
-            ax.add_patch(MplPolygon(
-                ring, closed=True, facecolor=color, edgecolor="black", linewidth=0.5, alpha=0.6, zorder=2,
-            ))
+        if zone_type == "farmland_edge":
+            # Farmland keeps an ambient background tint -- it's not a hard
+            # urban boundary the way civic/merchant/residential/port are,
+            # and the field-grid look benefits from a background wash.
+            color = ZONE_COLORS.get(zone_type, DEFAULT_ZONE_COLOR)
+            for ring in json.loads(polygon_json):
+                ax.add_patch(MplPolygon(
+                    ring, closed=True, facecolor=color, edgecolor="black", linewidth=0.5, alpha=0.6, zorder=2,
+                ))
         if zone_type not in seen_zone_types:
             seen_zone_types.append(zone_type)
 
@@ -94,11 +98,11 @@ def render_town(db_path: str, output_path: str) -> None:
         ax.plot([x1, x2], [y1, y2], color=style["color"], linewidth=style["width"], zorder=2.5)
 
     landmark_points: Dict[str, List[Tuple[float, float]]] = {}
-    for x, y, building_type, width, height, rotation in buildings:
+    for x, y, building_type, width, height, rotation, footprint_json in buildings:
         if building_type in LANDMARK_BUILDING_TYPES:
             landmark_points.setdefault(building_type, []).append((x, y))
         else:
-            corners = _rotated_rect_corners(x, y, width, height, rotation)
+            corners = json.loads(footprint_json) if footprint_json else _rotated_rect_corners(x, y, width, height, rotation)
             ax.add_patch(MplPolygon(
                 corners, closed=True, facecolor=GENERIC_BUILDING_COLOR, edgecolor="none", zorder=3,
             ))
