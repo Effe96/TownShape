@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from shapely.ops import unary_union
 
@@ -7,7 +7,7 @@ from town_shaper.anchors import place_anchors
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION, assign_residents
 from town_shaper.blocks import (
     DEFAULT_HARD_CAP_AREA, HARD_CAP_AREA_MULTIPLIER, LOT_DEPTH_BY_ZONE, LOT_FRONTAGE_BY_ZONE, RESIDENTIAL_SLACK,
-    compute_district_blocks, generate_blocks_and_buildings,
+    Polygon, compute_district_blocks, generate_blocks_and_buildings,
 )
 from town_shaper.buildings import BUILDING_HOME_CAPACITY, fill_district_buildings
 from town_shaper.districts import build_districts
@@ -55,16 +55,30 @@ def generate_town(
     # (cached, not recomputed in pass 2) -- lets the leaf target area be
     # derived from real household demand instead of a fixed lot constant.
     residential_zone_types = (ZoneType.POOR_RESIDENTIAL, ZoneType.RICH_RESIDENTIAL)
-    blocks_by_district_id: Dict[int, list] = {}
+    blocks_by_district_id: Dict[int, List[Polygon]] = {}
     block_area_by_zone: Dict[ZoneType, float] = {zt: 0.0 for zt in residential_zone_types}
     for district in districts:
         if district.zone_type in residential_zone_types:
-            district_blocks = compute_district_blocks(district, seed)
+            # skip_block_subdivision=True: residential blocks are already
+            # smaller than the demand-driven leaf target_area computed below,
+            # so subdividing into blocks here first would leave
+            # organic_subdivide nothing to do -- each block would become
+            # exactly one leaf/building, and count would collapse to block
+            # count, disconnected from household demand. One "block" per
+            # polygon part (inset+jaggified only) instead, and let
+            # organic_subdivide (with the real target_area) do the real
+            # subdivision work.
+            district_blocks = compute_district_blocks(district, seed, skip_block_subdivision=True)
             blocks_by_district_id[district.id] = district_blocks
             block_area_by_zone[district.zone_type] += sum(polygon_area(b) for b in district_blocks)
 
     poor_household_count, rich_household_count = estimate_household_counts(target_population, rich_proportion)
-    effective_slack = RESIDENTIAL_SLACK / density_multiplier
+    # Higher density_multiplier means more, smaller buildings (matches the
+    # non-residential path's LOT_FRONTAGE_BY_ZONE[zone]/density_multiplier,
+    # which shrinks target_area -- and so raises count -- as density rises).
+    # Multiplying (not dividing) here raises poor/rich_target_count as
+    # density rises, which lowers residential_target_area below -- consistent.
+    effective_slack = RESIDENTIAL_SLACK * density_multiplier
     poor_target_count = max(1, math.ceil(poor_household_count * effective_slack / BUILDING_HOME_CAPACITY["residence"]))
     rich_target_count = max(1, math.ceil(rich_household_count * effective_slack / BUILDING_HOME_CAPACITY["manor"]))
 

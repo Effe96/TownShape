@@ -33,7 +33,6 @@ LOT_DEPTH_BY_ZONE: Dict[ZoneType, float] = {
 }
 LOCAL_STREET_WIDTH = 4.0
 DISTRICT_INSET_DISTANCE = 2.0
-BUILDING_GAP = 0.4
 MAX_SPLIT_DEPTH = 8
 
 Point = Tuple[float, float]
@@ -204,15 +203,29 @@ def place_buildings_in_block(
     return buildings
 
 
-def compute_district_blocks(district: District, town_seed) -> List[Polygon]:
+def compute_district_blocks(district: District, town_seed, skip_block_subdivision: bool = False) -> List[Polygon]:
     """Inset each of the district's polygon parts, jaggify the inset
     boundary (fixes the straight Voronoi-cell-edge look), then subdivide
     into blocks. Split out from generate_blocks_and_buildings so the
     two-pass residential flow (town_shaper/generate.py) can compute every
     residential district's block geometry and total area before deriving
     a demand-driven leaf target area -- see the design spec's two-pass
-    description."""
-    rng = rng_for(town_seed, "blocks", district.id)
+    description.
+
+    skip_block_subdivision=True skips the TARGET_BLOCK_AREA_BY_ZONE-driven
+    subdivide_into_blocks step, returning one "block" per polygon part
+    (just inset+jaggified) instead. Used for residential zones: their
+    blocks are already smaller than the demand-driven leaf target_area,
+    so subdividing into blocks here first leaves organic_subdivide nothing
+    to do -- each block becomes exactly one leaf/building, and building
+    count collapses to block count, disconnected from household demand.
+    Skipping this step lets organic_subdivide (with the real target_area)
+    be the only thing that subdivides residential zones."""
+    # Distinct path segment from generate_blocks_and_buildings' own
+    # rng_for(town_seed, "blocks", district.id) -- both used to share this
+    # exact path, so calling them both replayed the identical sequence
+    # instead of continuing one stream.
+    rng = rng_for(town_seed, "blocks", district.id, "geometry")
     blocks: List[Polygon] = []
     for part in district.polygon_parts:
         inset_part = inset_polygon(part, DISTRICT_INSET_DISTANCE)
@@ -221,7 +234,10 @@ def compute_district_blocks(district: District, town_seed) -> List[Polygon]:
         # Absolute cap so the perturbation can never push a vertex back out
         # past most of its own inset margin into a neighbouring district.
         jagged = jaggify_polygon(inset_part, rng, max_absolute_offset=DISTRICT_INSET_DISTANCE * 0.8)
-        blocks.extend(subdivide_into_blocks(jagged, district.zone_type, rng))
+        if skip_block_subdivision:
+            blocks.append(jagged)
+        else:
+            blocks.extend(subdivide_into_blocks(jagged, district.zone_type, rng))
     return blocks
 
 
