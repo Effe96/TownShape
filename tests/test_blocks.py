@@ -458,3 +458,86 @@ def test_organic_subdivide_is_deterministic():
     leaves2 = organic_subdivide(large_square, 50.0, 200.0, rng2)
 
     assert [sorted(leaf) for leaf in leaves1] == [sorted(leaf) for leaf in leaves2]
+
+
+def test_notch_corner_never_increases_area():
+    from town_shaper.blocks import notch_corner
+
+    square = _square(20.0)
+    rng = rng_for(("town", 1), "notch-test", 1)
+    for i in range(20):  # sample several rng draws -- notch is probabilistic
+        r = rng_for(("town", 1), "notch-test", i)
+        result = notch_corner(square, r)
+        assert polygon_area(result) <= polygon_area(square) + 1e-9
+
+
+def test_notch_corner_is_deterministic():
+    from town_shaper.blocks import notch_corner
+
+    square = _square(20.0)
+    rng1 = rng_for(("town", 1), "notch-test", 5)
+    rng2 = rng_for(("town", 1), "notch-test", 5)
+    assert notch_corner(square, rng1) == notch_corner(square, rng2)
+
+
+def test_add_appendage_produces_a_simple_polygon_or_leaves_it_unchanged():
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    from town_shaper.blocks import add_appendage
+
+    square = _square(20.0)
+    for i in range(30):  # sample several draws -- appendage/curve are both probabilistic
+        rng = rng_for(("town", 1), "appendage-test", i)
+        result = add_appendage(square, rng)
+        shape = ShapelyPolygon(result)
+        assert shape.is_valid
+        assert shape.geom_type == "Polygon"
+
+
+def test_add_appendage_area_is_at_least_the_original():
+    from town_shaper.blocks import add_appendage
+
+    square = _square(20.0)
+    for i in range(30):
+        rng = rng_for(("town", 1), "appendage-test", 100 + i)
+        result = add_appendage(square, rng)
+        assert polygon_area(result) >= polygon_area(square) - 1e-9
+
+
+def test_finish_leaves_never_produces_overlapping_footprints():
+    # The Known Risk from the design spec: an appendage grown outward from
+    # one leaf's edge could reach into a neighbouring leaf across the
+    # narrow party-wall gap between them. finish_leaves must check every
+    # candidate appendage against every sibling leaf in the same block and
+    # skip it (not shrink it) if it would overlap.
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    from town_shaper.blocks import finish_leaves, organic_subdivide
+
+    block = _rectangle(40.0, 20.0)
+    rng = rng_for(("town", 1), "finish-test", 1)
+    raw_leaves = organic_subdivide(block, target_area=30.0, hard_cap_area=120.0, rng=rng)
+
+    finish_rng = rng_for(("town", 1), "finish-test", 2)
+    finished = finish_leaves(raw_leaves, finish_rng)
+
+    assert len(finished) == len(raw_leaves)
+    shapes = [ShapelyPolygon(leaf) for leaf in finished]
+    for i in range(len(shapes)):
+        for j in range(i + 1, len(shapes)):
+            assert shapes[i].intersection(shapes[j]).area < 1e-6
+
+
+def test_finish_leaves_is_deterministic():
+    from town_shaper.blocks import finish_leaves, organic_subdivide
+
+    block = _rectangle(40.0, 20.0)
+    gen_rng = rng_for(("town", 1), "finish-test", 3)
+    raw_leaves = organic_subdivide(block, target_area=30.0, hard_cap_area=120.0, rng=gen_rng)
+
+    rng1 = rng_for(("town", 1), "finish-test", 4)
+    finished1 = finish_leaves(raw_leaves, rng1)
+    rng2 = rng_for(("town", 1), "finish-test", 4)
+    finished2 = finish_leaves(raw_leaves, rng2)
+
+    assert finished1 == finished2

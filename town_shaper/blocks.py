@@ -289,3 +289,95 @@ def organic_subdivide(
         organic_subdivide(side_a, target_area, hard_cap_area, rng, depth + 1, max_depth)
         + organic_subdivide(side_b, target_area, hard_cap_area, rng, depth + 1, max_depth)
     )
+
+
+def notch_corner(polygon: Polygon, rng) -> Polygon:
+    """Shave a small triangular notch off one random corner, ~35% of the
+    time -- a straight-wall L-shaped front. Can only shrink the polygon,
+    never grow it, so it can never introduce a new overlap with a
+    neighbour."""
+    if len(polygon) < 4 or rng.random() > 0.35:
+        return polygon
+    idx = rng.randrange(len(polygon))
+    v = polygon[idx]
+    prev_v = polygon[idx - 1]
+    next_v = polygon[(idx + 1) % len(polygon)]
+    frac = rng.uniform(0.25, 0.45)
+    p1 = (v[0] + (prev_v[0] - v[0]) * frac, v[1] + (prev_v[1] - v[1]) * frac)
+    p2 = (v[0] + (next_v[0] - v[0]) * frac, v[1] + (next_v[1] - v[1]) * frac)
+    return polygon[:idx] + [p1, p2] + polygon[idx + 1:]
+
+
+def add_appendage(polygon: Polygon, rng) -> Polygon:
+    """Attach a small straight-walled porch/annex to one edge, at a
+    slightly different orientation than the main body -- or, ~30% of the
+    time, a curved bay/turret bulge instead of a rectangular one. Real
+    building-shaped irregularity (real walls, a real addition), never
+    edge noise. ~40% chance of doing anything at all; the caller
+    (finish_leaves) is responsible for rejecting the result if it would
+    overlap a sibling leaf -- this function only ever grows the polygon
+    outward, it has no notion of neighbours."""
+    if len(polygon) < 4 or rng.random() > 0.4:
+        return polygon
+    idx = rng.randrange(len(polygon))
+    p1, p2 = polygon[idx], polygon[(idx + 1) % len(polygon)]
+    edge_len = math.dist(p1, p2)
+    if edge_len < 3.0:
+        return polygon
+
+    ex, ey = (p2[0] - p1[0]) / edge_len, (p2[1] - p1[1]) / edge_len
+    angle_dev = rng.uniform(-0.2, 0.2)
+    cos_d, sin_d = math.cos(angle_dev), math.sin(angle_dev)
+    ex2, ey2 = ex * cos_d - ey * sin_d, ex * sin_d + ey * cos_d
+    perp = (-ey2, ex2)
+
+    frac = rng.uniform(0.3, 0.55)
+    start_t = rng.uniform(0.0, 1.0 - frac)
+    base1 = (p1[0] + ex * edge_len * start_t, p1[1] + ey * edge_len * start_t)
+    base2 = (p1[0] + ex * edge_len * (start_t + frac), p1[1] + ey * edge_len * (start_t + frac))
+    seg_len = edge_len * frac
+    depth = max(0.8, rng.uniform(0.25, 0.6) * seg_len)
+    out1 = (base1[0] + perp[0] * depth, base1[1] + perp[1] * depth)
+    out2 = (base2[0] + perp[0] * depth, base2[1] + perp[1] * depth)
+
+    if rng.random() < 0.3:
+        mid = ((out1[0] + out2[0]) / 2.0, (out1[1] + out2[1]) / 2.0)
+        bulge = depth * rng.uniform(0.3, 0.6)
+        arc_peak = (mid[0] + perp[0] * bulge, mid[1] + perp[1] * bulge)
+        appendage_pts = [base1, out1]
+        for t in (0.25, 0.5, 0.75):
+            appendage_pts.append((
+                (1 - t) ** 2 * out1[0] + 2 * (1 - t) * t * arc_peak[0] + t ** 2 * out2[0],
+                (1 - t) ** 2 * out1[1] + 2 * (1 - t) * t * arc_peak[1] + t ** 2 * out2[1],
+            ))
+        appendage_pts += [out2, base2]
+    else:
+        appendage_pts = [base1, out1, out2, base2]
+
+    try:
+        merged = ShapelyPolygon(polygon).buffer(0).union(ShapelyPolygon(appendage_pts).buffer(0))
+        if merged.geom_type == "Polygon":
+            return list(merged.exterior.coords)[:-1]
+    except Exception:
+        pass
+    return polygon
+
+
+def finish_leaves(leaves: List[Polygon], rng) -> List[Polygon]:
+    """Per-block finishing pass: notch (always safe -- never grows a
+    leaf) then a candidate appendage per leaf, checked against every
+    OTHER leaf already finished in this same block; a candidate that
+    would overlap a sibling is rejected outright (never shrunk -- the
+    appendage is probabilistic in the first place, occasionally skipping
+    one for lack of room is an acceptable, minor loss)."""
+    finished: List[Polygon] = []
+    shapes: List[ShapelyPolygon] = []
+    for leaf in leaves:
+        notched = notch_corner(leaf, rng)
+        candidate = add_appendage(notched, rng)
+        candidate_shape = ShapelyPolygon(candidate).buffer(0)
+        overlaps = any(candidate_shape.intersection(other).area > 1e-6 for other in shapes)
+        final = notched if overlaps else candidate
+        finished.append(final)
+        shapes.append(ShapelyPolygon(final).buffer(0))
+    return finished
