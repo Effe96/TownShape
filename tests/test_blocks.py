@@ -644,3 +644,50 @@ def test_generate_blocks_and_buildings_does_not_cull_merchant_leaves():
     # Merchant/civic/port are NOT culled -- every generated leaf (except slivers)
     # becomes a building (named or infill).
     assert len(buildings) >= raw_leaf_count - 1
+
+
+def test_organic_subdivide_respects_a_caller_supplied_gap_range():
+    from town_shaper.blocks import organic_subdivide
+
+    large_square = _square(100.0)  # area 10000
+    rng_narrow = rng_for(("town", 1), "gap-test", 1)
+    narrow_leaves = organic_subdivide(
+        large_square, target_area=50.0, hard_cap_area=200.0, rng=rng_narrow, gap_range=(0.25, 0.6),
+    )
+    rng_wide = rng_for(("town", 1), "gap-test", 1)
+    wide_leaves = organic_subdivide(
+        large_square, target_area=50.0, hard_cap_area=200.0, rng=rng_wide, gap_range=(2.0, 4.0),
+    )
+
+    # A wider party-wall gap eats more area per split -- with the identical
+    # seed and identical split decisions, total leaf area must be smaller
+    # under the wider gap.
+    total_narrow_area = sum(polygon_area(leaf) for leaf in narrow_leaves)
+    total_wide_area = sum(polygon_area(leaf) for leaf in wide_leaves)
+    assert total_wide_area < total_narrow_area
+
+
+def test_place_buildings_in_block_uses_a_wider_gap_for_residential_zones():
+    from town_shaper.blocks import place_buildings_in_block
+
+    block = _rectangle(60.0, 60.0)  # area 3600
+    poor_district = _district(ZoneType.POOR_RESIDENTIAL)
+    merchant_district = _district(ZoneType.MERCHANT)
+
+    rng_poor = rng_for(("town", 1), "gap-test", 2)
+    poor_buildings = place_buildings_in_block(
+        block, poor_district, rng_poor, 0, target_population=3000, magic_prevalence=0.0,
+        notable_building_counts={}, target_area=40.0, hard_cap_area=200.0,
+    )
+    rng_merchant = rng_for(("town", 1), "gap-test", 2)
+    merchant_buildings = place_buildings_in_block(
+        block, merchant_district, rng_merchant, 0, target_population=3000, magic_prevalence=0.0,
+        notable_building_counts={}, target_area=40.0, hard_cap_area=200.0,
+    )
+
+    # Same seed, same block, same target/cap -- the only difference is zone
+    # type, so the wider residential gap should leave measurably less total
+    # building footprint area than the merchant path's narrow gap.
+    poor_total_area = sum(polygon_area(b.footprint) for b in poor_buildings)
+    merchant_total_area = sum(polygon_area(b.footprint) for b in merchant_buildings)
+    assert poor_total_area < merchant_total_area

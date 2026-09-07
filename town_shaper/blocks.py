@@ -161,7 +161,8 @@ def place_buildings_in_block(
     if hard_cap_area is None:
         hard_cap_area = DEFAULT_HARD_CAP_AREA
 
-    raw_leaves = organic_subdivide(block_polygon, target_area, hard_cap_area, rng)
+    gap_range = RESIDENTIAL_SPLIT_GAP_RANGE if zone_type in RESIDENTIAL_ZONE_TYPES else (0.25, 0.6)
+    raw_leaves = organic_subdivide(block_polygon, target_area, hard_cap_area, rng, gap_range=gap_range)
     leaves = finish_leaves(raw_leaves, rng)
 
     if zone_type in RESIDENTIAL_ZONE_TYPES:
@@ -277,6 +278,7 @@ HARD_CAP_AREA_MULTIPLIER = 4.0
 RESIDENTIAL_SLACK = 1.25
 GARDEN_CULL_FRACTION = 0.12
 RESIDENTIAL_ZONE_TYPES = (ZoneType.POOR_RESIDENTIAL, ZoneType.RICH_RESIDENTIAL)
+RESIDENTIAL_SPLIT_GAP_RANGE = (LOCAL_STREET_WIDTH * 0.5, LOCAL_STREET_WIDTH)
 DEFAULT_HARD_CAP_AREA = (
     HARD_CAP_AREA_MULTIPLIER
     * LOT_FRONTAGE_BY_ZONE[ZoneType.POOR_RESIDENTIAL]
@@ -286,6 +288,7 @@ DEFAULT_HARD_CAP_AREA = (
 
 def organic_subdivide(
     polygon: Polygon, target_area: float, hard_cap_area: float, rng, depth: int = 0, max_depth: int = 9,
+    gap_range: Tuple[float, float] = (0.25, 0.6),
 ) -> List[Polygon]:
     """Recursively split `polygon` into building-sized leaves. Soft stop at
     a randomized fraction of target_area (size variance between leaves);
@@ -294,21 +297,30 @@ def organic_subdivide(
     the rest of a zone just because its containing block happened to be
     smaller than target_area to begin with (the degenerate case an
     earlier version of this algorithm hit: an undersized block became one
-    giant, unfinished single "building")."""
+    giant, unfinished single "building").
+
+    gap_range controls the party-wall gap between adjacent leaves at every
+    split. The default (0.25, 0.6) suits splitting an already-small block
+    into individual lots. Residential zones pass a wider range (see
+    RESIDENTIAL_SPLIT_GAP_RANGE) because, since Task 8, organic_subdivide
+    runs directly on a whole district part for those zones (no separate
+    block-level street grid) -- every split here is the only thing
+    visually separating two buildings, so it needs to read as a real
+    street, not a hairline crack."""
     area = polygon_area(polygon)
     stop_area = target_area * rng.uniform(0.55, 1.4)
     must_split = area > hard_cap_area
     if len(polygon) < 3 or depth >= max_depth or (area <= stop_area and not must_split):
         return [polygon]
 
-    result = _split_polygon(polygon, rng, gap=rng.uniform(0.25, 0.6))
+    result = _split_polygon(polygon, rng, gap=rng.uniform(*gap_range))
     side_a, side_b = result
     if len(side_a) < 3 or len(side_b) < 3:
         return [polygon]
 
     return (
-        organic_subdivide(side_a, target_area, hard_cap_area, rng, depth + 1, max_depth)
-        + organic_subdivide(side_b, target_area, hard_cap_area, rng, depth + 1, max_depth)
+        organic_subdivide(side_a, target_area, hard_cap_area, rng, depth + 1, max_depth, gap_range)
+        + organic_subdivide(side_b, target_area, hard_cap_area, rng, depth + 1, max_depth, gap_range)
     )
 
 
