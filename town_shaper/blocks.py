@@ -114,20 +114,6 @@ def _subdivide(polygon_part: Polygon, target_area: float, rng, depth: int) -> Li
     return _subdivide(side_a, target_area, rng, depth + 1) + _subdivide(side_b, target_area, rng, depth + 1)
 
 
-def _subdivide_into_buildings(block_polygon: Polygon, target_area: float, rng, depth: int = 0) -> List[Polygon]:
-    if len(block_polygon) < 3 or depth >= MAX_SPLIT_DEPTH or polygon_area(block_polygon) <= target_area:
-        return [block_polygon]
-
-    side_a, side_b = _split_polygon(block_polygon, rng, BUILDING_GAP)
-    if len(side_a) < 3 or len(side_b) < 3:
-        return [block_polygon]
-
-    return (
-        _subdivide_into_buildings(side_a, target_area, rng, depth + 1)
-        + _subdivide_into_buildings(side_b, target_area, rng, depth + 1)
-    )
-
-
 def _leaf_footprint(leaf: Polygon) -> Tuple[float, float, float, float, float]:
     """Center (x, y), width, height, and rotation of `leaf`'s minimum
     rotated rectangle -- same OBB approach _longer_axis_direction uses."""
@@ -161,17 +147,23 @@ def place_buildings_in_block(
     next_building_id: int, target_population: int, magic_prevalence: float,
     notable_building_counts: Optional[Dict[str, int]] = None,
     density_multiplier: float = 1.0,
+    target_area: Optional[float] = None,
+    hard_cap_area: Optional[float] = None,
 ) -> List[Building]:
     if notable_building_counts is None:
         notable_building_counts = {}
 
     zone_type = district.zone_type
-    target_area = (
-        (LOT_FRONTAGE_BY_ZONE[zone_type] / density_multiplier)
-        * (LOT_DEPTH_BY_ZONE[zone_type] / density_multiplier)
-    )
+    if target_area is None:
+        target_area = (
+            (LOT_FRONTAGE_BY_ZONE[zone_type] / density_multiplier)
+            * (LOT_DEPTH_BY_ZONE[zone_type] / density_multiplier)
+        )
+    if hard_cap_area is None:
+        hard_cap_area = DEFAULT_HARD_CAP_AREA
 
-    leaves = _subdivide_into_buildings(block_polygon, target_area, rng)
+    raw_leaves = organic_subdivide(block_polygon, target_area, hard_cap_area, rng)
+    leaves = finish_leaves(raw_leaves, rng)
 
     buildings: List[Building] = []
     building_id = next_building_id
@@ -205,6 +197,7 @@ def place_buildings_in_block(
             width=width,
             height=height,
             rotation=rotation,
+            footprint=leaf,
         ))
         building_id += 1
 
@@ -236,18 +229,24 @@ def generate_blocks_and_buildings(
     district: District, town_seed, next_building_id: int,
     target_population: int = 0, density_multiplier: float = 1.0, magic_prevalence: float = 0.0,
     notable_building_counts: Optional[Dict[str, int]] = None,
+    blocks: Optional[List[Polygon]] = None,
+    target_area: Optional[float] = None,
+    hard_cap_area: Optional[float] = None,
 ) -> List[Building]:
     rng = rng_for(town_seed, "blocks", district.id)
     if notable_building_counts is None:
         notable_building_counts = {}
+    if blocks is None:
+        blocks = compute_district_blocks(district, town_seed)
 
     buildings: List[Building] = []
     building_id = next_building_id
 
-    for block in compute_district_blocks(district, town_seed):
+    for block in blocks:
         block_buildings = place_buildings_in_block(
             block, district, rng, building_id, target_population, magic_prevalence,
             notable_building_counts=notable_building_counts, density_multiplier=density_multiplier,
+            target_area=target_area, hard_cap_area=hard_cap_area,
         )
         buildings.extend(block_buildings)
         building_id += len(block_buildings)
@@ -256,6 +255,7 @@ def generate_blocks_and_buildings(
 
 
 HARD_CAP_AREA_MULTIPLIER = 4.0
+RESIDENTIAL_SLACK = 1.25
 DEFAULT_HARD_CAP_AREA = (
     HARD_CAP_AREA_MULTIPLIER
     * LOT_FRONTAGE_BY_ZONE[ZoneType.POOR_RESIDENTIAL]

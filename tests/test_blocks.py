@@ -541,3 +541,59 @@ def test_finish_leaves_is_deterministic():
     finished2 = finish_leaves(raw_leaves, rng2)
 
     assert finished1 == finished2
+
+
+def test_place_buildings_in_block_footprints_now_set_on_every_building():
+    from town_shaper.blocks import place_buildings_in_block
+
+    block = _rectangle(40.0, 20.0)
+    district = _district(ZoneType.MERCHANT)
+    rng = rng_for(("town", 1), "blocks-test", 30)
+
+    buildings = place_buildings_in_block(
+        block, district, rng, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
+    )
+
+    assert buildings
+    for b in buildings:
+        assert b.footprint is not None
+        assert len(b.footprint) >= 3
+
+
+def test_place_buildings_in_block_respects_a_caller_supplied_target_area():
+    from town_shaper.blocks import place_buildings_in_block
+
+    block = _rectangle(60.0, 60.0)  # area 3600
+    district = _district(ZoneType.POOR_RESIDENTIAL)
+    rng_small_target = rng_for(("town", 1), "blocks-test", 31)
+    small_target = place_buildings_in_block(
+        block, district, rng_small_target, 0, target_population=3000, magic_prevalence=0.0,
+        notable_building_counts={}, target_area=30.0, hard_cap_area=200.0,
+    )
+    rng_large_target = rng_for(("town", 1), "blocks-test", 31)
+    large_target = place_buildings_in_block(
+        block, district, rng_large_target, 0, target_population=3000, magic_prevalence=0.0,
+        notable_building_counts={}, target_area=900.0, hard_cap_area=3600.0,
+    )
+
+    # A much bigger target area should produce noticeably fewer buildings
+    # from the same block.
+    assert len(large_target) < len(small_target)
+
+
+def test_generate_blocks_and_buildings_accepts_precomputed_blocks():
+    from town_shaper.blocks import (
+        DEFAULT_HARD_CAP_AREA, LOT_DEPTH_BY_ZONE, LOT_FRONTAGE_BY_ZONE,
+        compute_district_blocks, generate_blocks_and_buildings,
+    )
+
+    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(40.0, 20.0)])
+    precomputed = compute_district_blocks(district, ("town", 1))
+
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=3000, magic_prevalence=0.0,
+        blocks=precomputed, target_area=LOT_FRONTAGE_BY_ZONE[ZoneType.MERCHANT] * LOT_DEPTH_BY_ZONE[ZoneType.MERCHANT],
+        hard_cap_area=DEFAULT_HARD_CAP_AREA,
+    )
+
+    assert len(buildings) > 0

@@ -331,6 +331,10 @@ def test_generate_town_database_persists_building_footprint_polygons(tmp_path):
     conn.close()
 
     assert len(rows) > 0
-    # Not populated with real geometry until Task 6/7 wire it in -- for now
-    # this just proves the column round-trips NULL cleanly end-to-end.
-    assert all(row[0] is None for row in rows)
+    # Wired in by Task 8 (organic_subdivide + finish_leaves via
+    # place_buildings_in_block): every non-farmland building now gets a real
+    # footprint polygon, persisted as a JSON list of >= 3 [x, y] points.
+    for row in rows:
+        assert row[0] is not None
+        points = json.loads(row[0])
+        assert len(points) >= 3

@@ -197,3 +197,35 @@ def test_generate_town_populates_road_network():
     # One anchor node per district -- town_shaper.districts.build_districts
     # creates exactly one District per Anchor, same id.
     assert sum(1 for n in town.road_network.nodes if n.kind == "anchor") == len(town.districts)
+
+
+def test_generate_town_residential_building_counts_are_proportional_to_households():
+    # Regression guard for the bug that motivated this whole plan: a real
+    # test town had 10,436 "residence" buildings for 1,372 households
+    # (under 3% occupancy). Building count should now land within a
+    # generous multiple of real household demand, not two orders of
+    # magnitude over it.
+    from town_shaper.buildings import BUILDING_HOME_CAPACITY
+    from town_shaper.households import estimate_household_counts
+    from town_shaper.models import SES
+
+    town = generate_town(("town", 1), target_population=5000, rich_proportion=0.05)
+
+    household_ses = {}
+    for r in town.residents:
+        household_ses.setdefault(r.household_id, r.ses)
+    poor_households = sum(1 for s in household_ses.values() if s == SES.POOR)
+    rich_households = sum(1 for s in household_ses.values() if s == SES.RICH)
+
+    residence_count = sum(
+        1 for d in town.districts for b in d.buildings if b.building_type == "residence"
+    )
+    manor_count = sum(
+        1 for d in town.districts for b in d.buildings if b.building_type == "manor"
+    )
+
+    # Generous upper bound (2x the raw household count, ignoring capacity
+    # and slack entirely) -- the old behavior blew past this by ~8x.
+    assert residence_count <= max(1, poor_households) * 2
+    assert manor_count <= max(1, rich_households) * 2
+    assert residence_count > 0
