@@ -253,3 +253,39 @@ def generate_blocks_and_buildings(
         building_id += len(block_buildings)
 
     return buildings
+
+
+HARD_CAP_AREA_MULTIPLIER = 4.0
+DEFAULT_HARD_CAP_AREA = (
+    HARD_CAP_AREA_MULTIPLIER
+    * LOT_FRONTAGE_BY_ZONE[ZoneType.POOR_RESIDENTIAL]
+    * LOT_DEPTH_BY_ZONE[ZoneType.POOR_RESIDENTIAL]
+)
+
+
+def organic_subdivide(
+    polygon: Polygon, target_area: float, hard_cap_area: float, rng, depth: int = 0, max_depth: int = 9,
+) -> List[Polygon]:
+    """Recursively split `polygon` into building-sized leaves. Soft stop at
+    a randomized fraction of target_area (size variance between leaves);
+    but always splits further if area exceeds hard_cap_area regardless of
+    that soft sample, so no leaf can end up "much much much" bigger than
+    the rest of a zone just because its containing block happened to be
+    smaller than target_area to begin with (the degenerate case an
+    earlier version of this algorithm hit: an undersized block became one
+    giant, unfinished single "building")."""
+    area = polygon_area(polygon)
+    stop_area = target_area * rng.uniform(0.55, 1.4)
+    must_split = area > hard_cap_area
+    if len(polygon) < 3 or depth >= max_depth or (area <= stop_area and not must_split):
+        return [polygon]
+
+    result = _split_polygon(polygon, rng, gap=rng.uniform(0.25, 0.6))
+    side_a, side_b = result
+    if len(side_a) < 3 or len(side_b) < 3:
+        return [polygon]
+
+    return (
+        organic_subdivide(side_a, target_area, hard_cap_area, rng, depth + 1, max_depth)
+        + organic_subdivide(side_b, target_area, hard_cap_area, rng, depth + 1, max_depth)
+    )

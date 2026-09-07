@@ -403,3 +403,58 @@ def test_compute_district_blocks_stays_within_the_original_district_polygon():
         # boundary from bleeding past the original district edge -- a
         # small buffer absorbs floating-point/clip slack, not design slack.
         assert original.buffer(0.5).contains(ShapelyPolygon(block))
+
+
+def test_organic_subdivide_never_exceeds_the_hard_cap():
+    from town_shaper.blocks import organic_subdivide
+
+    large_square = _square(100.0)  # area 10000
+    target_area = 50.0
+    hard_cap = 200.0
+    rng = rng_for(("town", 1), "organic-test", 1)
+
+    leaves = organic_subdivide(large_square, target_area, hard_cap, rng)
+
+    assert len(leaves) > 1
+    for leaf in leaves:
+        assert polygon_area(leaf) <= hard_cap + 1e-6
+
+
+def test_organic_subdivide_returns_original_when_already_small():
+    from town_shaper.blocks import organic_subdivide
+
+    small_square = _square(5.0)  # area 25, under any reasonable target
+    rng = rng_for(("town", 1), "organic-test", 2)
+
+    leaves = organic_subdivide(small_square, target_area=100.0, hard_cap_area=400.0, rng=rng)
+
+    assert leaves == [small_square]
+
+
+def test_organic_subdivide_forces_a_split_above_the_hard_cap_even_if_near_target():
+    # A polygon whose area sits between target_area and hard_cap_area could
+    # randomly sample a stop_area above its own area and stop immediately
+    # under the old design -- but once area exceeds hard_cap_area outright,
+    # it must always keep splitting regardless of the soft sample.
+    from town_shaper.blocks import organic_subdivide
+
+    square = _square(20.0)  # area 400
+    rng = rng_for(("town", 1), "organic-test", 3)
+
+    leaves = organic_subdivide(square, target_area=50.0, hard_cap_area=300.0, rng=rng)
+
+    assert len(leaves) > 1
+    for leaf in leaves:
+        assert polygon_area(leaf) <= 300.0 + 1e-6
+
+
+def test_organic_subdivide_is_deterministic():
+    from town_shaper.blocks import organic_subdivide
+
+    large_square = _square(100.0)
+    rng1 = rng_for(("town", 1), "organic-test", 4)
+    leaves1 = organic_subdivide(large_square, 50.0, 200.0, rng1)
+    rng2 = rng_for(("town", 1), "organic-test", 4)
+    leaves2 = organic_subdivide(large_square, 50.0, 200.0, rng2)
+
+    assert [sorted(leaf) for leaf in leaves1] == [sorted(leaf) for leaf in leaves2]
