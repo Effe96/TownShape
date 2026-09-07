@@ -13,9 +13,11 @@ def get_map_data(conn: sqlite3.Connection) -> Dict[str, Any]:
             "id": row[0], "district_id": row[1], "zone_type": row[2], "building_type": row[3],
             "x": row[4], "y": row[5], "name": row[6],
             "width": row[7], "height": row[8], "rotation": row[9],
+            "footprint": json.loads(row[10]) if row[10] else None,
         }
         for row in conn.execute(
-            "SELECT id, district_id, zone_type, building_type, x, y, name, width, height, rotation FROM buildings"
+            "SELECT id, district_id, zone_type, building_type, x, y, name, width, height, rotation, footprint "
+            "FROM buildings"
         )
     ]
     water_features = [
@@ -38,7 +40,7 @@ def get_map_data(conn: sqlite3.Connection) -> Dict[str, Any]:
 
 def get_building_detail(conn: sqlite3.Connection, building_id: int) -> Optional[Dict[str, Any]]:
     row = conn.execute(
-        "SELECT id, district_id, zone_type, building_type, x, y, capacity, name, width, height, rotation "
+        "SELECT id, district_id, zone_type, building_type, x, y, capacity, name, width, height, rotation, footprint "
         "FROM buildings WHERE id = ?",
         (building_id,),
     ).fetchone()
@@ -49,6 +51,7 @@ def get_building_detail(conn: sqlite3.Connection, building_id: int) -> Optional[
         "id": row[0], "district_id": row[1], "zone_type": row[2], "building_type": row[3],
         "x": row[4], "y": row[5], "capacity": row[6], "name": row[7],
         "width": row[8], "height": row[9], "rotation": row[10],
+        "footprint": json.loads(row[11]) if row[11] else None,
     }
     residents = [
         {

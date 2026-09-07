@@ -38,7 +38,7 @@ def test_get_map_data_returns_districts_buildings_and_water(tmp_path):
         {
             "id": 1, "district_id": 1, "zone_type": "civic", "building_type": "temple",
             "x": 10.0, "y": 10.0, "name": None,
-            "width": 0.0, "height": 0.0, "rotation": 0.0,
+            "width": 0.0, "height": 0.0, "rotation": 0.0, "footprint": None,
         }
     ]
     assert data["water_features"] == [
@@ -298,3 +298,46 @@ def test_get_building_detail_includes_footprint(tmp_path):
     assert building["width"] == 5.0
     assert building["height"] == 6.0
     assert building["rotation"] == 1.5
+
+
+def test_get_map_data_includes_null_footprint_when_not_set(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    _build_minimal_map(db_path)
+
+    conn = connect(db_path)
+    data = get_map_data(conn)
+    conn.close()
+
+    assert data["buildings"][0]["footprint"] is None
+
+
+def test_get_map_data_includes_a_real_footprint_when_set(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    create_schema(conn)
+    conn.execute(
+        "INSERT INTO districts (id, zone_type, polygon) VALUES (1, 'civic', ?)",
+        (json.dumps([[[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [0.0, 20.0]]]),),
+    )
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, footprint) "
+        "VALUES (1, 1, 'civic', 'temple', 10.0, 10.0, 0, ?)",
+        (json.dumps([[8.0, 8.0], [12.0, 8.0], [12.0, 12.0], [8.0, 12.0]]),),
+    )
+    conn.commit()
+
+    data = get_map_data(conn)
+    conn.close()
+
+    assert data["buildings"][0]["footprint"] == [[8.0, 8.0], [12.0, 8.0], [12.0, 12.0], [8.0, 12.0]]
+
+
+def test_get_building_detail_includes_null_footprint_when_not_set(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    building = get_building_detail(conn, 4)
+    conn.close()
+
+    assert building["footprint"] is None
