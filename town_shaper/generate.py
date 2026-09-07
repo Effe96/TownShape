@@ -12,7 +12,7 @@ from town_shaper.blocks import (
 from town_shaper.buildings import BUILDING_HOME_CAPACITY, fill_district_buildings
 from town_shaper.districts import build_districts
 from town_shaper.geometry import polygon_area
-from town_shaper.households import estimate_household_counts, generate_households
+from town_shaper.households import AVERAGE_HOUSEHOLD_SIZE, estimate_household_counts, generate_households
 from town_shaper.models import Town, ZoneType
 from town_shaper.roads import generate_road_network
 from town_shaper.water import generate_water_features
@@ -79,8 +79,13 @@ def generate_town(
     # Multiplying (not dividing) here raises poor/rich_target_count as
     # density rises, which lowers residential_target_area below -- consistent.
     effective_slack = RESIDENTIAL_SLACK * density_multiplier
-    poor_target_count = max(1, math.ceil(poor_household_count * effective_slack / BUILDING_HOME_CAPACITY["residence"]))
-    rich_target_count = max(1, math.ceil(rich_household_count * effective_slack / BUILDING_HOME_CAPACITY["manor"]))
+    # household counts are households, but BUILDING_HOME_CAPACITY is a
+    # resident-slot (person) count -- convert households to residents first,
+    # or capacity is under-provisioned by ~AVERAGE_HOUSEHOLD_SIZE.
+    poor_target_count = max(1, math.ceil(
+        poor_household_count * AVERAGE_HOUSEHOLD_SIZE * effective_slack / BUILDING_HOME_CAPACITY["residence"]))
+    rich_target_count = max(1, math.ceil(
+        rich_household_count * AVERAGE_HOUSEHOLD_SIZE * effective_slack / BUILDING_HOME_CAPACITY["manor"]))
 
     poor_min_leaf_area = LOT_FRONTAGE_BY_ZONE[ZoneType.POOR_RESIDENTIAL] * LOT_DEPTH_BY_ZONE[ZoneType.POOR_RESIDENTIAL]
     rich_min_leaf_area = LOT_FRONTAGE_BY_ZONE[ZoneType.RICH_RESIDENTIAL] * LOT_DEPTH_BY_ZONE[ZoneType.RICH_RESIDENTIAL]

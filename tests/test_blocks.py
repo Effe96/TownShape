@@ -106,20 +106,16 @@ def test_place_buildings_in_block_footprints_dont_overlap():
         block, district, rng, 0, target_population=3000, magic_prevalence=0.0, notable_building_counts={},
     )
 
-    # Jittered leaf splits (see _split_polygon) produce non-rectangular leaves
-    # whose OBB-derived footprint over-covers the leaf, so adjacent footprints
-    # can overlap a bit even though the underlying leaves never do. Bound the
-    # overlap as a fraction of the smaller footprint instead of requiring zero.
-    # This pinned seed measures ~0.269 overlap fraction at the worst pair;
-    # 0.4 gives real margin above that measured value without being loose
-    # enough to miss a regression (unlike a threshold sized to a many-seed
-    # worst case, which a single fixed-seed test never needs).
-    shapes = [_footprint_shape(b) for b in buildings]
+    # Every urban building has a real footprint polygon (Task 8+) and
+    # finish_leaves guarantees leaves never overlap, so check the real
+    # footprint rather than the OBB approximation (which can over-cover a
+    # non-rectangular leaf) -- and expect near-zero overlap, not a loose
+    # fraction.
+    shapes = [ShapelyPolygon(b.footprint) if b.footprint else _footprint_shape(b) for b in buildings]
     for i in range(len(shapes)):
         for j in range(i + 1, len(shapes)):
             overlap = shapes[i].intersection(shapes[j]).area
-            smaller_area = min(shapes[i].area, shapes[j].area)
-            assert overlap < smaller_area * 0.4
+            assert overlap < 1e-6
 
 
 def test_leaf_footprint_never_over_covers_a_non_rectangular_leaf():
@@ -165,17 +161,15 @@ def test_place_buildings_in_non_rectangular_block_fit_and_dont_overlap():
     roomy_block = block.buffer(5.0)
     for shape in shapes:
         assert roomy_block.contains(shape)
-    # Same bounded-overlap tolerance as the rectangular-block overlap test above,
-    # for the same OBB-over-coverage reason -- non-rectangular leaves here make
-    # the overshoot larger, hence the wider fraction. This pinned seed measures
-    # ~0.531 at the worst pair; 0.6 gives real margin over that measured value
-    # (not sized to any multi-seed worst case, which this fixed-seed test never
-    # needs to accommodate).
-    for i in range(len(shapes)):
-        for j in range(i + 1, len(shapes)):
-            overlap = shapes[i].intersection(shapes[j]).area
-            smaller_area = min(shapes[i].area, shapes[j].area)
-            assert overlap < smaller_area * 0.6
+    # Same real-footprint check as the rectangular-block overlap test above:
+    # finish_leaves guarantees leaves never overlap, so real footprints
+    # (rather than the OBB approximation, which over-covers non-rectangular
+    # leaves) should show near-zero overlap.
+    real_shapes = [ShapelyPolygon(b.footprint) if b.footprint else s for b, s in zip(buildings, shapes)]
+    for i in range(len(real_shapes)):
+        for j in range(i + 1, len(real_shapes)):
+            overlap = real_shapes[i].intersection(real_shapes[j]).area
+            assert overlap < 1e-6
 
 
 def test_place_buildings_in_block_rotations_vary_for_a_rectangular_block():
@@ -572,6 +566,42 @@ def test_finish_leaves_never_produces_overlapping_footprints():
             assert shapes[i].intersection(shapes[j]).area < 1e-6
 
 
+def test_finish_leaves_rejects_appendage_reaching_into_a_not_yet_processed_sibling(monkeypatch):
+    # finish_leaves used to check a candidate appendage only against
+    # ALREADY-finished siblings (those earlier in the list). A leaf
+    # processed first could grow an appendage straight into a sibling
+    # later in the list -- that later leaf's own overlap check (candidate
+    # vs already-finished shapes) doesn't help, because when it falls back
+    # to its un-grown "notched" self, that base body is what's actually
+    # sitting inside the earlier leaf's appendage; nothing ever re-checks
+    # it. Verified against a real generated town: 88-90 same-district
+    # overlap pairs (worst pair 72.6% of the smaller footprint) at
+    # pop=5000, seed=1, dropping to 0 once finish_leaves also checks a
+    # candidate against every OTHER leaf's raw (pre-notch) shape --
+    # a safe superset for a not-yet-decided sibling, computed with no
+    # extra rng draw so consumption order/count is unaffected.
+    import town_shaper.blocks as blocks_mod
+
+    leaf_a = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]
+    leaf_b = [(11.0, 0.0), (13.0, 0.0), (13.0, 10.0), (11.0, 10.0)]  # separate leaf, 1-unit gap from leaf_a
+
+    def fake_add_appendage(polygon, rng):
+        if list(polygon) == leaf_a:
+            # Bulge leaf_a's right edge across the gap, into leaf_b's territory.
+            return [(0.0, 0.0), (10.0, 0.0), (12.0, 3.0), (12.0, 7.0), (10.0, 10.0), (0.0, 10.0)]
+        return polygon
+
+    monkeypatch.setattr(blocks_mod, "notch_corner", lambda polygon, rng: polygon)
+    monkeypatch.setattr(blocks_mod, "add_appendage", fake_add_appendage)
+
+    rng = rng_for(("town", 1), "finish-lookahead-test", 1)
+    finished = blocks_mod.finish_leaves([leaf_a, leaf_b], rng)
+
+    shape_a = ShapelyPolygon(finished[0]).buffer(0)
+    shape_b = ShapelyPolygon(finished[1]).buffer(0)
+    assert shape_a.intersection(shape_b).area < 1e-6
+
+
 def test_finish_leaves_is_deterministic():
     from town_shaper.blocks import finish_leaves, organic_subdivide
 
@@ -641,6 +671,34 @@ def test_generate_blocks_and_buildings_accepts_precomputed_blocks():
     )
 
     assert len(buildings) > 0
+
+
+def test_generate_blocks_and_buildings_footprints_dont_overlap_across_blocks():
+    # Fix for the appendage-overlap Known Risk actually crossing block
+    # boundaries: finish_leaves used to start a fresh `shapes` list per
+    # block, so an appendage grown near a shared boundary between two
+    # blocks of the same district could reach across it undetected.
+    # generate_blocks_and_buildings now threads one accumulated shape list
+    # across every block in the district (district_shapes ->
+    # existing_shapes -> finish_leaves' seed_shapes), so two directly
+    # adjacent blocks (touching, not gapped by an inset) must still produce
+    # zero real-footprint overlap between buildings in different blocks.
+    from town_shaper.blocks import generate_blocks_and_buildings
+
+    block_a = _rectangle(40.0, 20.0)  # (0,0)-(40,20)
+    block_b = [(40.0, 0.0), (80.0, 0.0), (80.0, 20.0), (40.0, 20.0)]  # touches block_a at x=40
+    district = _multi_part_district(ZoneType.POOR_RESIDENTIAL, [block_a, block_b])
+
+    buildings = generate_blocks_and_buildings(
+        district, ("town", 1), next_building_id=0, target_population=3000, magic_prevalence=0.0,
+        blocks=[block_a, block_b], target_area=30.0, hard_cap_area=120.0,
+    )
+
+    assert len(buildings) > 1
+    shapes = [ShapelyPolygon(b.footprint) for b in buildings if b.footprint]
+    for i in range(len(shapes)):
+        for j in range(i + 1, len(shapes)):
+            assert shapes[i].intersection(shapes[j]).area < 1e-6
 
 
 def test_generate_blocks_and_buildings_culls_some_residential_leaves_as_gardens():

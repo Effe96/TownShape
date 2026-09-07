@@ -148,6 +148,7 @@ def place_buildings_in_block(
     density_multiplier: float = 1.0,
     target_area: Optional[float] = None,
     hard_cap_area: Optional[float] = None,
+    existing_shapes: Optional[List[ShapelyPolygon]] = None,
 ) -> List[Building]:
     if notable_building_counts is None:
         notable_building_counts = {}
@@ -163,7 +164,9 @@ def place_buildings_in_block(
 
     gap_range = RESIDENTIAL_SPLIT_GAP_RANGE if zone_type in RESIDENTIAL_ZONE_TYPES else (0.25, 0.6)
     raw_leaves = organic_subdivide(block_polygon, target_area, hard_cap_area, rng, gap_range=gap_range)
-    leaves = finish_leaves(raw_leaves, rng)
+    leaves = finish_leaves(raw_leaves, rng, seed_shapes=existing_shapes)
+    if existing_shapes is not None:
+        existing_shapes.extend(ShapelyPolygon(leaf).buffer(0) for leaf in leaves)
 
     if zone_type in RESIDENTIAL_ZONE_TYPES:
         leaves = [leaf for leaf in leaves if rng.random() >= GARDEN_CULL_FRACTION]
@@ -261,12 +264,19 @@ def generate_blocks_and_buildings(
 
     buildings: List[Building] = []
     building_id = next_building_id
+    # Accumulated across every block of this district so finish_leaves'
+    # appendage-overlap check sees siblings from earlier blocks/parts too,
+    # not just the current block -- a district can have many blocks (see
+    # compute_district_blocks' skip_block_subdivision path for residential
+    # zones), and appendages must not bridge across them undetected.
+    district_shapes: List[ShapelyPolygon] = []
 
     for block in blocks:
         block_buildings = place_buildings_in_block(
             block, district, rng, building_id, target_population, magic_prevalence,
             notable_building_counts=notable_building_counts, density_multiplier=density_multiplier,
             target_area=target_area, hard_cap_area=hard_cap_area,
+            existing_shapes=district_shapes,
         )
         buildings.extend(block_buildings)
         building_id += len(block_buildings)
@@ -403,20 +413,36 @@ def add_appendage(polygon: Polygon, rng) -> Polygon:
     return polygon
 
 
-def finish_leaves(leaves: List[Polygon], rng) -> List[Polygon]:
+def finish_leaves(leaves: List[Polygon], rng, seed_shapes: Optional[List[ShapelyPolygon]] = None) -> List[Polygon]:
     """Per-block finishing pass: notch (always safe -- never grows a
     leaf) then a candidate appendage per leaf, checked against every
-    OTHER leaf already finished in this same block; a candidate that
-    would overlap a sibling is rejected outright (never shrunk -- the
-    appendage is probabilistic in the first place, occasionally skipping
-    one for lack of room is an acceptable, minor loss)."""
+    OTHER leaf already finished in this same block (and, via seed_shapes,
+    every leaf already finished earlier in the same district -- so
+    appendages can't bridge across block/part boundaries within a
+    district); a candidate that would overlap a sibling is rejected
+    outright (never shrunk -- the appendage is probabilistic in the first
+    place, occasionally skipping one for lack of room is an acceptable,
+    minor loss).
+
+    Also checked against every sibling's RAW (pre-notch, pre-appendage)
+    shape, not just ones already finished -- otherwise a leaf processed
+    early could grow an appendage into a later sibling's own body before
+    that sibling has been decided, since the "already finished" list is
+    still empty for it at that point. The raw shape is a safe superset for
+    this (notching only shrinks, so "doesn't overlap the raw leaf" implies
+    "doesn't overlap its notched form either", and needs no extra rng draw
+    to compute, so this doesn't change rng consumption order/count.
+
+    seed_shapes is copied, never mutated -- the caller's list is unaffected."""
     finished: List[Polygon] = []
-    shapes: List[ShapelyPolygon] = []
-    for leaf in leaves:
+    shapes: List[ShapelyPolygon] = list(seed_shapes) if seed_shapes else []
+    raw_shapes: List[ShapelyPolygon] = [ShapelyPolygon(leaf).buffer(0) for leaf in leaves]
+    for idx, leaf in enumerate(leaves):
         notched = notch_corner(leaf, rng)
         candidate = add_appendage(notched, rng)
         candidate_shape = ShapelyPolygon(candidate).buffer(0)
-        overlaps = any(candidate_shape.intersection(other).area > 1e-6 for other in shapes)
+        others = shapes + raw_shapes[:idx] + raw_shapes[idx + 1:]
+        overlaps = any(candidate_shape.intersection(other).area > 1e-6 for other in others)
         final = notched if overlaps else candidate
         finished.append(final)
         shapes.append(ShapelyPolygon(final).buffer(0))

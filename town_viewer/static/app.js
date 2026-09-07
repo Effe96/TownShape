@@ -141,16 +141,30 @@ function draw() {
   for (const buildingId of highlightedBuildingIds) {
     const building = mapData.buildings.find((b) => b.id === buildingId);
     if (!building) continue;
-    const { sx, sy } = worldToScreen(building.x, building.y);
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(building.rotation);
-    const screenWidth = building.width * view.scale;
-    const screenHeight = building.height * view.scale;
     ctx.strokeStyle = "#ff2222";
     ctx.lineWidth = 3;
-    ctx.strokeRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
-    ctx.restore();
+    if (building.footprint) {
+      // Same footprint path used for the fill above, so the highlight
+      // traces the actual drawn shape instead of the OBB-derived
+      // width/height/rotation rectangle (which _leaf_footprint shrinks to
+      // match the leaf's real area, so it no longer matches the fill).
+      ctx.beginPath();
+      building.footprint.forEach(([x, y], i) => {
+        const { sx, sy } = worldToScreen(x, y);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.closePath();
+      ctx.stroke();
+    } else {
+      const { sx, sy } = worldToScreen(building.x, building.y);
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(building.rotation);
+      const screenWidth = building.width * view.scale;
+      const screenHeight = building.height * view.scale;
+      ctx.strokeRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
+      ctx.restore();
+    }
   }
 }
 
