@@ -7,6 +7,15 @@ Point = Tuple[float, float]
 Polygon = List[Point]
 
 
+def rotated_rect_corners(cx: float, cy: float, width: float, height: float, rotation: float) -> Polygon:
+    hw, hh = width / 2.0, height / 2.0
+    cos_r, sin_r = math.cos(rotation), math.sin(rotation)
+    return [
+        (cx + lx * cos_r - ly * sin_r, cy + lx * sin_r + ly * cos_r)
+        for lx, ly in [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+    ]
+
+
 def polygon_area(polygon: Polygon) -> float:
     if len(polygon) < 3:
         return 0.0
@@ -109,6 +118,24 @@ def inset_polygon(polygon: Polygon, distance: float) -> Polygon:
     if result.geom_type == "MultiPolygon":
         result = max(result.geoms, key=lambda g: g.area)
     return list(result.exterior.coords)[:-1]
+
+
+def chaikin_smooth(points: List[Point], iterations: int = 2) -> List[Point]:
+    """Corner-cutting smoothing that keeps the first and last point fixed
+    (an endpoint anchor shouldn't move) -- turns a jagged polyline through
+    a handful of waypoints into a smooth curve. Used for both artery-road
+    smoothing and river-path smoothing."""
+    for _ in range(iterations):
+        if len(points) < 3:
+            return points
+        smoothed = [points[0]]
+        for i in range(len(points) - 1):
+            p0, p1 = points[i], points[i + 1]
+            smoothed.append((0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1]))
+            smoothed.append((0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1]))
+        smoothed.append(points[-1])
+        points = smoothed
+    return points
 
 
 def jaggify_polygon(

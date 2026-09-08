@@ -284,11 +284,16 @@ def test_generate_town_database_persists_building_footprints(tmp_path):
     generate_town_database(("town", 1), target_population=3000, db_path=db_path)
 
     conn = connect(db_path)
-    rows = conn.execute("SELECT width, height, rotation FROM buildings").fetchall()
+    rows = conn.execute("SELECT width, height, rotation, footprint FROM buildings").fetchall()
     conn.close()
 
     assert len(rows) > 0
-    assert all(row[0] > 0 and row[1] > 0 for row in rows)
+    # A building with a real footprint polygon (organic residential leaves,
+    # courtyard buildings, countryside clusters) leaves width/height at the
+    # 0.0 default -- nothing reads them when a footprint is present (see
+    # town_shaper.blocks.generate_organic_residential_buildings). Every
+    # building has one or the other, never neither.
+    assert all(row[3] is not None or (row[0] > 0 and row[1] > 0) for row in rows)
 
 
 def test_buildings_footprint_defaults_to_null(tmp_path):
@@ -333,8 +338,12 @@ def test_generate_town_database_persists_building_footprint_polygons(tmp_path):
     assert len(rows) > 0
     # Wired in by Task 8 (organic_subdivide + finish_leaves via
     # place_buildings_in_block): every non-farmland building now gets a real
-    # footprint polygon, persisted as a JSON list of >= 3 [x, y] points.
+    # footprint polygon, persisted as a JSON list of >= 3 [x, y] points --
+    # or, for a courtyard building (town_shaper.blocks.ring_peel), a list
+    # of several such rings, each with >= 3 points.
     for row in rows:
         assert row[0] is not None
         points = json.loads(row[0])
-        assert len(points) >= 3
+        rings = points if isinstance(points[0][0], list) else [points]
+        for ring in rings:
+            assert len(ring) >= 3

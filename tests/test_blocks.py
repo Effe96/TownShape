@@ -283,7 +283,12 @@ def _multi_part_district(zone_type, polygon_parts):
     return District(id=1, zone_type=zone_type, anchor=anchor, polygon_parts=polygon_parts)
 
 
-def test_generate_blocks_and_buildings_covers_every_polygon_part():
+def test_generate_blocks_and_buildings_uses_the_largest_polygon_part():
+    # Only ever the largest polygon_part is built on -- a river/coastline
+    # can split a district's Voronoi cell into several parts, and treating
+    # every part as buildable produced a real, reproducible bug: a
+    # phantom, disconnected mini-neighbourhood (with its own street grid)
+    # stranded on a secondary fragment. See town_shaper.blocks.compute_district_blocks.
     from town_shaper.blocks import generate_blocks_and_buildings
 
     district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(40.0, 20.0), _rectangle(30.0, 15.0)])
@@ -347,31 +352,50 @@ def test_split_polygon_still_conserves_area_within_the_gap():
     assert total >= original_area * 0.85  # gap only removes a thin strip
 
 
-def test_generate_blocks_and_buildings_shares_notable_building_counts_across_parts():
+def test_generate_blocks_and_buildings_shares_notable_building_counts_across_districts():
+    # notable_building_counts is threaded through generate_town's per-
+    # district loop specifically so a cap like "at most N taverns in the
+    # whole town" holds across separate districts, not just within one --
+    # each district only ever builds on its own largest polygon_part (see
+    # test_compute_district_blocks_uses_the_largest_polygon_part), so
+    # sharing WITHIN one district's parts is no longer a real scenario;
+    # this exercises the one that still is.
     from town_shaper.blocks import generate_blocks_and_buildings
     from town_shaper.buildings import notable_building_cap
 
-    district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0), _rectangle(60.0, 60.0)])
+    district_a = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0)])
+    district_a.id = 1
+    district_b = _multi_part_district(ZoneType.MERCHANT, [_rectangle(60.0, 60.0)])
+    district_b.id = 2
     target_population = 3000
     notable_building_counts = {}
 
-    buildings = generate_blocks_and_buildings(
-        district, ("town", 1), next_building_id=0, target_population=target_population,
+    buildings_a = generate_blocks_and_buildings(
+        district_a, ("town", 1), next_building_id=0, target_population=target_population,
+        magic_prevalence=0.0, notable_building_counts=notable_building_counts,
+    )
+    buildings_b = generate_blocks_and_buildings(
+        district_b, ("town", 1), next_building_id=len(buildings_a), target_population=target_population,
         magic_prevalence=0.0, notable_building_counts=notable_building_counts,
     )
 
-    assert buildings
-    tavern_count = sum(1 for b in buildings if b.building_type == "tavern")
+    assert buildings_a and buildings_b
+    tavern_count = sum(1 for b in buildings_a + buildings_b if b.building_type == "tavern")
     assert tavern_count <= notable_building_cap("tavern", target_population)
     assert notable_building_counts.get("tavern", 0) == tavern_count
 
 
-def test_compute_district_blocks_covers_every_polygon_part():
+def test_compute_district_blocks_uses_the_largest_polygon_part():
+    # See test_generate_blocks_and_buildings_uses_the_largest_polygon_part
+    # -- every other part is ignored entirely, never just merged in.
     from town_shaper.blocks import compute_district_blocks
 
     district = _multi_part_district(ZoneType.MERCHANT, [_rectangle(40.0, 20.0), _rectangle(30.0, 15.0)])
     blocks = compute_district_blocks(district, ("town", 1))
     assert len(blocks) > 0
+
+    total_block_area = sum(polygon_area(b) for b in blocks)
+    assert total_block_area <= polygon_area(_rectangle(40.0, 20.0)) + 1e-6
 
 
 def test_compute_district_blocks_is_deterministic():

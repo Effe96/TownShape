@@ -38,6 +38,13 @@ DEFAULT_YEAR_START = date(1300, 1, 1)
 YEAR_LENGTH_DAYS = 365
 
 
+def _water_feature_rings(feature):
+    polygon = feature.polygon
+    return [list(polygon.exterior.coords)[:-1]] + [
+        list(interior.coords)[:-1] for interior in polygon.interiors
+    ]
+
+
 def generate_town_database(
     seed,
     target_population: int,
@@ -69,12 +76,6 @@ def generate_town_database(
 
     conn = connect(db_path)
     create_schema(conn)
-
-    def _water_feature_rings(feature):
-        polygon = feature.polygon
-        return [list(polygon.exterior.coords)[:-1]] + [
-            list(interior.coords)[:-1] for interior in polygon.interiors
-        ]
 
     conn.executemany(
         "INSERT INTO water_features (id, kind, polygon) VALUES (?, ?, ?)",

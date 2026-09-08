@@ -1,8 +1,15 @@
 ## Samwise Team Protocol
 
 This project uses Samwise for multi-agent collaboration across
-contributors' independent Claude Code sessions. Read this section at
-the start of every session.
+contributors' independent Claude Code sessions. **This section, and the
+Samwise skill itself, only apply when you're doing multi-agent/
+collaboration work on the task board (claiming/working a `TASKS.md`
+task, running a Director/Integrate pass) or when the user explicitly
+asks for Samwise to be applied or for the project to be set up for
+collaboration.** For an ordinary solo dev request (e.g. "keep going
+on X", a bug fix, a one-off feature) — even in this same repo — skip
+this section and the Samwise skill entirely; just use git status/log/
+diff and the relevant plan/spec docs directly.
 
 ### Team roles
 

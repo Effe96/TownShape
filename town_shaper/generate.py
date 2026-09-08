@@ -1,5 +1,5 @@
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 from shapely.ops import unary_union
 
@@ -7,9 +7,10 @@ from town_shaper.anchors import place_anchors
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION, assign_residents
 from town_shaper.blocks import (
     DEFAULT_HARD_CAP_AREA, HARD_CAP_AREA_MULTIPLIER, LOT_DEPTH_BY_ZONE, LOT_FRONTAGE_BY_ZONE, RESIDENTIAL_SLACK,
-    Polygon, compute_district_blocks, generate_blocks_and_buildings,
+    compute_district_blocks, generate_blocks_and_buildings, generate_organic_residential_buildings,
 )
-from town_shaper.buildings import BUILDING_HOME_CAPACITY, fill_district_buildings
+from town_shaper.buildings import BUILDING_HOME_CAPACITY
+from town_shaper.countryside import generate_countryside_buildings, remove_buildings_in_water
 from town_shaper.districts import build_districts
 from town_shaper.geometry import polygon_area
 from town_shaper.households import AVERAGE_HOUSEHOLD_SIZE, estimate_household_counts, generate_households
@@ -55,21 +56,15 @@ def generate_town(
     # (cached, not recomputed in pass 2) -- lets the leaf target area be
     # derived from real household demand instead of a fixed lot constant.
     residential_zone_types = (ZoneType.POOR_RESIDENTIAL, ZoneType.RICH_RESIDENTIAL)
-    blocks_by_district_id: Dict[int, List[Polygon]] = {}
     block_area_by_zone: Dict[ZoneType, float] = {zt: 0.0 for zt in residential_zone_types}
     for district in districts:
         if district.zone_type in residential_zone_types:
-            # skip_block_subdivision=True: residential blocks are already
-            # smaller than the demand-driven leaf target_area computed below,
-            # so subdividing into blocks here first would leave
-            # organic_subdivide nothing to do -- each block would become
-            # exactly one leaf/building, and count would collapse to block
-            # count, disconnected from household demand. One "block" per
-            # polygon part (inset+jaggified only) instead, and let
-            # organic_subdivide (with the real target_area) do the real
-            # subdivision work.
+            # skip_block_subdivision=True: just the district's (largest
+            # part's) inset+jaggified area, no further cutting -- this
+            # pass only needs the total area to derive a demand-driven
+            # leaf target_area below. The real cutting happens in
+            # generate_organic_residential_buildings, further down.
             district_blocks = compute_district_blocks(district, seed, skip_block_subdivision=True)
-            blocks_by_district_id[district.id] = district_blocks
             block_area_by_zone[district.zone_type] += sum(polygon_area(b) for b in district_blocks)
 
     poor_household_count, rich_household_count = estimate_household_counts(target_population, rich_proportion)
@@ -94,30 +89,28 @@ def generate_town(
         ZoneType.RICH_RESIDENTIAL: max(rich_min_leaf_area, block_area_by_zone[ZoneType.RICH_RESIDENTIAL] / rich_target_count),
     }
 
+    farmland_districts = [d for d in districts if d.zone_type == ZoneType.FARMLAND_EDGE]
+
     for district in districts:
         next_building_id = district.id * BUILDING_ID_STRIDE
         if district.zone_type == ZoneType.FARMLAND_EDGE:
-            buildings = fill_district_buildings(
-                district, seed, next_building_id,
-                target_population=target_population, density_multiplier=density_multiplier,
-                magic_prevalence=magic_prevalence,
-            )
+            # Filled in below, after every other district's buildings
+            # exist -- see generate_countryside_buildings.
+            buildings = []
         elif district.zone_type in residential_zone_types:
-            buildings = generate_blocks_and_buildings(
+            buildings = generate_organic_residential_buildings(
                 district, seed, next_building_id,
-                target_population=target_population, density_multiplier=density_multiplier,
-                magic_prevalence=magic_prevalence, notable_building_counts=notable_building_counts,
-                blocks=blocks_by_district_id[district.id],
+                target_population=target_population, magic_prevalence=magic_prevalence,
+                notable_building_counts=notable_building_counts,
                 target_area=residential_target_area[district.zone_type],
                 # DEFAULT_HARD_CAP_AREA (sized off POOR_RESIDENTIAL's fixed lot
                 # constant) can be smaller than the demand-driven target_area
                 # above once a zone's real household count is low relative to
                 # its block area -- a fixed hard cap below the soft target
-                # forces organic_subdivide's hard-cap branch to dominate on
-                # every leaf, silently discarding the household-driven sizing
-                # this whole pass exists to compute. Scale the cap off the
-                # actual target instead, at the same ratio DEFAULT_HARD_CAP_AREA
-                # itself uses.
+                # forces the hard-cap branch to dominate on every leaf,
+                # silently discarding the household-driven sizing this whole
+                # pass exists to compute. Scale the cap off the actual target
+                # instead, at the same ratio DEFAULT_HARD_CAP_AREA itself uses.
                 hard_cap_area=max(
                     DEFAULT_HARD_CAP_AREA, residential_target_area[district.zone_type] * HARD_CAP_AREA_MULTIPLIER,
                 ),
@@ -129,6 +122,26 @@ def generate_town(
                 magic_prevalence=magic_prevalence, notable_building_counts=notable_building_counts,
             )
         district.buildings = buildings
+
+    # Farmland is no longer zone-filled at a uniform density -- see
+    # town_shaper/countryside.py. Runs last, since it needs to know where
+    # every other district's buildings already are. All countryside
+    # buildings are attributed to one farmland district (arbitrarily, the
+    # first) purely for bookkeeping -- they aren't confined to its
+    # polygon, or any district's.
+    if farmland_districts:
+        owner = farmland_districts[0]
+        owner.buildings = generate_countryside_buildings(
+            districts, water_features, bounds, seed, owner.id * BUILDING_ID_STRIDE, owner.id,
+        )
+
+    # Belt-and-suspenders: residential/merchant/countryside generation each
+    # have their own water checks, but coastal edge cases still slipped
+    # past each of them independently during validation. One shared filter
+    # here catches all sources at once. Must run before assign_residents --
+    # residents are assigned to specific building IDs, so removing a
+    # building afterward would leave a resident pointing at nothing.
+    remove_buildings_in_water(districts, water_features)
 
     households = generate_households(seed, target_population)
     residents = assign_residents(seed, households, districts, rich_proportion=rich_proportion)

@@ -1,9 +1,18 @@
 from collections import deque
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
+from shapely.geometry import LineString
+
 from town_shaper.districts import compute_voronoi
-from town_shaper.geometry import distance
+from town_shaper.geometry import chaikin_smooth, distance
 from town_shaper.models import Anchor, RoadEdge, RoadNetwork, RoadNode, ZoneType
+
+# Above this length, a farmland-touching ridge reads as an arbitrary line
+# across empty fields rather than a plausible lane -- picked comfortably
+# above the longest edges observed near a real settlement/farmland
+# interface (roughly 130 map units) and below the shortest of the clearly
+# spurious long ones (roughly 150+) on real generated towns.
+FARMLAND_BOUNDARY_LENGTH_CAP = 140.0
 
 
 def _choose_hub_anchor(anchors: List[Anchor], bounds: Tuple[float, float, float, float]) -> Anchor:
@@ -37,21 +46,6 @@ def _bfs_path(adjacency: Dict[int, List[int]], start: int, goal: int) -> Optiona
     return None
 
 
-def _chaikin_smooth(points: List[Tuple[float, float]], iterations: int = 2) -> List[Tuple[float, float]]:
-    """Corner-cutting smoothing that keeps the first and last point fixed
-    (an anchor's own position shouldn't move), same spirit as the
-    reference generator's post-routing street smoothing."""
-    for _ in range(iterations):
-        if len(points) < 3:
-            return points
-        smoothed = [points[0]]
-        for i in range(len(points) - 1):
-            p0, p1 = points[i], points[i + 1]
-            smoothed.append((0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1]))
-            smoothed.append((0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1]))
-        smoothed.append(points[-1])
-        points = smoothed
-    return points
 
 
 def generate_road_network(
@@ -108,13 +102,36 @@ def generate_road_network(
             continue
         node1 = _junction_node(v1)
         node2 = _junction_node(v2)
-        edges.append(RoadEdge(
-            id=next_edge_id, from_node_id=node1.id, to_node_id=node2.id, road_type="boundary",
-        ))
-        next_edge_id += 1
         touches_farmland = (
             anchors[p1].zone_type == ZoneType.FARMLAND_EDGE or anchors[p2].zone_type == ZoneType.FARMLAND_EDGE
         )
+        # A ridge touching a farmland cell isn't necessarily a street --
+        # farmland anchors sit far apart in open countryside (see
+        # ZONE_RADIUS_BANDS), so long ridges out there render as long,
+        # straight, arbitrary lines cutting across empty fields, whether
+        # the far side is another farmland cell or a distant urban one.
+        # Short ridges near the settlement edge still look like a
+        # plausible lane, so only length -- not zone pairing alone --
+        # decides whether one gets drawn. Still added to `adjacency`
+        # below regardless (needed for artery-tail BFS routing to reach
+        # farmland anchors past other farmland cells) -- only the literal
+        # rendered edge is skipped.
+        ridge_too_long = touches_farmland and distance(vor.vertices[v1], vor.vertices[v2]) > FARMLAND_BOUNDARY_LENGTH_CAP
+        crosses_water = water_polygon is not None and water_polygon.intersects(
+            LineString([tuple(vor.vertices[v1]), tuple(vor.vertices[v2])])
+        )
+        if crosses_water:
+            # Excluded from `adjacency` entirely, not just from the
+            # rendered edge -- leaving it in the routing graph let artery
+            # BFS routing path through it anyway, drawing a smoothed
+            # artery straight across the water even though the raw
+            # boundary/spur edge itself was suppressed.
+            continue
+        if not ridge_too_long:
+            edges.append(RoadEdge(
+                id=next_edge_id, from_node_id=node1.id, to_node_id=node2.id, road_type="boundary",
+            ))
+            next_edge_id += 1
         _add_adjacency(node1.id, node2.id, touches_farmland)
 
     qualifying_junction_vertices_by_anchor_id: Dict[int, List[int]] = {a.id: [] for a in anchors}
@@ -136,6 +153,13 @@ def generate_road_network(
         )
         anchor_node = anchor_node_by_id[anchor.id]
         junction_node = junction_node_by_vertex[nearest_vertex]
+        crosses_water = water_polygon is not None and water_polygon.intersects(
+            LineString([(anchor_node.x, anchor_node.y), (junction_node.x, junction_node.y)])
+        )
+        if crosses_water:
+            # Excluded from `adjacency` too -- same reasoning as the
+            # boundary-ridge loop above.
+            continue
         edges.append(RoadEdge(
             id=next_edge_id, from_node_id=anchor_node.id,
             to_node_id=junction_node.id, road_type="spur",
@@ -178,7 +202,7 @@ def generate_road_network(
 
         tail_node_ids = path[tail_start_index:]
         tail_points = [(node_by_id[nid].x, node_by_id[nid].y) for nid in tail_node_ids]
-        smoothed_points = _chaikin_smooth(tail_points, iterations=2)
+        smoothed_points = chaikin_smooth(tail_points, iterations=2)
 
         artery_node_ids = [tail_node_ids[0]]
         for point in smoothed_points[1:-1]:

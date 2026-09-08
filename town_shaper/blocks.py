@@ -1,6 +1,7 @@
 import math
 from typing import Dict, List, Optional, Tuple
 
+from shapely.affinity import rotate as shapely_rotate
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from town_shaper.buildings import (
@@ -100,6 +101,37 @@ def subdivide_into_blocks(polygon_part: Polygon, zone_type: ZoneType, rng) -> Li
     (via _split_polygon's offset cut) -- that gap is the street; no
     RoadNode/RoadEdge rows are produced for it."""
     return _subdivide(polygon_part, TARGET_BLOCK_AREA_BY_ZONE[zone_type], rng, depth=0)
+
+
+def subdivide_residential_into_blocks(polygon_part: Polygon, per_lot_target_area: float, rng) -> List[Polygon]:
+    """Residential zones can't use subdivide_into_blocks' fixed
+    TARGET_BLOCK_AREA_BY_ZONE (see compute_district_blocks's
+    skip_block_subdivision docstring: it's often smaller than the
+    household-driven per-lot target area, which collapses block count and
+    lot count together). But skipping block-level streets entirely leaves a
+    whole residential district -- easily far bigger than a single civic or
+    merchant block -- reading as one undifferentiated field of buildings
+    with no through streets, just lot-to-lot gaps.
+
+    Scales the block target area off the real per-lot target instead of a
+    fixed constant, so every block always has LOTS_PER_MAJOR_BLOCK real
+    lots' worth of subdividing left for organic_subdivide to do, and reuses
+    the same LOCAL_STREET_WIDTH gap civic/merchant/port already use for
+    their block grid rather than inventing a separate width."""
+    return _subdivide(polygon_part, per_lot_target_area * LOTS_PER_MAJOR_BLOCK, rng, depth=0)
+
+
+def compute_residential_major_blocks(
+    district: District, town_seed, blocks: List[Polygon], per_lot_target_area: float,
+) -> List[Polygon]:
+    """Apply subdivide_residential_into_blocks across every pass-1 block
+    (one per district polygon part, already inset+jaggified -- see
+    compute_district_blocks) of a residential district."""
+    rng = rng_for(town_seed, "blocks", district.id, "major_blocks")
+    major_blocks: List[Polygon] = []
+    for block in blocks:
+        major_blocks.extend(subdivide_residential_into_blocks(block, per_lot_target_area, rng))
+    return major_blocks
 
 
 def _subdivide(polygon_part: Polygon, target_area: float, rng, depth: int) -> List[Polygon]:
@@ -211,41 +243,51 @@ def place_buildings_in_block(
 
 
 def compute_district_blocks(district: District, town_seed, skip_block_subdivision: bool = False) -> List[Polygon]:
-    """Inset each of the district's polygon parts, jaggify the inset
-    boundary (fixes the straight Voronoi-cell-edge look), then subdivide
-    into blocks. Split out from generate_blocks_and_buildings so the
-    two-pass residential flow (town_shaper/generate.py) can compute every
-    residential district's block geometry and total area before deriving
-    a demand-driven leaf target area -- see the design spec's two-pass
-    description.
+    """Inset the district's LARGEST polygon part (see below), jaggify the
+    inset boundary (fixes the straight Voronoi-cell-edge look), then
+    subdivide into blocks. Split out from generate_blocks_and_buildings so
+    the two-pass residential flow (town_shaper/generate.py) can compute
+    every residential district's block geometry and total area before
+    deriving a demand-driven leaf target area -- see the design spec's
+    two-pass description.
+
+    Only the largest polygon part is ever used, never every part: a river
+    or coastline can split a district's Voronoi cell into several
+    disconnected parts, and a secondary part can be a few thousand sq
+    units -- not a sliver, big enough to earn a full block-cut treatment
+    of its own under the old "process every part" behaviour. That
+    produced a real, reproducible bug: a legitimate-looking phantom
+    mini-neighbourhood, complete with its own internal street grid,
+    stranded on the wrong side of the water with nothing connecting it to
+    the district's real body. Any other part is left alone; it's picked
+    up like any other patch of open land by whatever fills the space
+    between districts (see town_shaper/generate.py).
 
     skip_block_subdivision=True skips the TARGET_BLOCK_AREA_BY_ZONE-driven
-    subdivide_into_blocks step, returning one "block" per polygon part
-    (just inset+jaggified) instead. Used for residential zones: their
-    blocks are already smaller than the demand-driven leaf target_area,
-    so subdividing into blocks here first leaves organic_subdivide nothing
-    to do -- each block becomes exactly one leaf/building, and building
-    count collapses to block count, disconnected from household demand.
-    Skipping this step lets organic_subdivide (with the real target_area)
-    be the only thing that subdivides residential zones."""
+    subdivide_into_blocks step, returning the inset+jaggified part as one
+    "block" instead. Used for residential zones' pass-1 area estimate
+    (their real per-lot cutting happens elsewhere, in
+    generate_organic_residential_buildings, which independently applies
+    this same largest-part-only rule)."""
+    parts = [p for p in district.polygon_parts if polygon_area(p) >= 1.0]
+    if not parts:
+        return []
+    main_part = max(parts, key=polygon_area)
+
     # Distinct path segment from generate_blocks_and_buildings' own
     # rng_for(town_seed, "blocks", district.id) -- both used to share this
     # exact path, so calling them both replayed the identical sequence
     # instead of continuing one stream.
     rng = rng_for(town_seed, "blocks", district.id, "geometry")
-    blocks: List[Polygon] = []
-    for part in district.polygon_parts:
-        inset_part = inset_polygon(part, DISTRICT_INSET_DISTANCE)
-        if len(inset_part) < 3:
-            continue
-        # Absolute cap so the perturbation can never push a vertex back out
-        # past most of its own inset margin into a neighbouring district.
-        jagged = jaggify_polygon(inset_part, rng, max_absolute_offset=DISTRICT_INSET_DISTANCE * 0.8)
-        if skip_block_subdivision:
-            blocks.append(jagged)
-        else:
-            blocks.extend(subdivide_into_blocks(jagged, district.zone_type, rng))
-    return blocks
+    inset_part = inset_polygon(main_part, DISTRICT_INSET_DISTANCE)
+    if len(inset_part) < 3:
+        return []
+    # Absolute cap so the perturbation can never push a vertex back out
+    # past most of its own inset margin into a neighbouring district.
+    jagged = jaggify_polygon(inset_part, rng, max_absolute_offset=DISTRICT_INSET_DISTANCE * 0.8)
+    if skip_block_subdivision:
+        return [jagged]
+    return subdivide_into_blocks(jagged, district.zone_type, rng)
 
 
 def generate_blocks_and_buildings(
@@ -287,6 +329,7 @@ def generate_blocks_and_buildings(
 HARD_CAP_AREA_MULTIPLIER = 4.0
 RESIDENTIAL_SLACK = 1.25
 GARDEN_CULL_FRACTION = 0.12
+LOTS_PER_MAJOR_BLOCK = 8
 RESIDENTIAL_ZONE_TYPES = (ZoneType.POOR_RESIDENTIAL, ZoneType.RICH_RESIDENTIAL)
 RESIDENTIAL_SPLIT_GAP_RANGE = (LOCAL_STREET_WIDTH * 0.5, LOCAL_STREET_WIDTH)
 DEFAULT_HARD_CAP_AREA = (
@@ -411,6 +454,301 @@ def add_appendage(polygon: Polygon, rng) -> Polygon:
     except Exception:
         pass
     return polygon
+
+
+# ---------------------------------------------------------------------
+# Residential-only organic cutting. civic/merchant/port keep using
+# _split_polygon/organic_subdivide/subdivide_into_blocks above, entirely
+# unchanged -- these are separate functions rather than added flags on
+# the originals so that zero behaviour or regression risk touches those
+# zones. Validated through many rounds of mockup iteration (see project
+# history): a straight port of watabou's TownGeneratorOS-inspired
+# vertex-anchored bisection, reimplemented independently (see LICENSE --
+# TownGeneratorOS is GPLv3; only the *technique* was learned from reading
+# it, no code copied), plus a chaos/rotation/courtyard layer refined
+# against real user feedback on generated towns.
+# ---------------------------------------------------------------------
+
+RESIDENTIAL_CHAOS: Dict[ZoneType, Dict[str, float]] = {
+    ZoneType.POOR_RESIDENTIAL: dict(
+        grid_chaos=0.85, size_chaos=0.8, gap_range=(1.0, 2.2), wide_inset=2.2, narrow_inset=0.5,
+        block_rotation=0.40, house_rotation=0.10, courtyard_multiple=1.5, courtyard_probability=0.3,
+    ),
+    ZoneType.RICH_RESIDENTIAL: dict(
+        grid_chaos=0.55, size_chaos=0.7, gap_range=(2.5, 4.0), wide_inset=3.5, narrow_inset=1.5,
+        block_rotation=0.25, house_rotation=0.06, courtyard_multiple=0.7, courtyard_probability=0.6,
+    ),
+}
+MAJOR_BLOCK_GAP_RANGE = (LOCAL_STREET_WIDTH * 0.6, LOCAL_STREET_WIDTH * 1.3)
+COURTYARD_RING_THICKNESS_FRACTION = 0.18
+
+
+def _longest_edge_index(polygon: Polygon) -> int:
+    n = len(polygon)
+    return max(range(n), key=lambda i: distance(polygon[i], polygon[(i + 1) % n]))
+
+
+def variable_inset(polygon: Polygon, wide: float, narrow: float) -> Polygon:
+    """Per-edge inset: the single longest edge (proxy for "faces a real
+    street") gets the wide setback, every other edge gets the narrow one.
+
+    Gets its base margin from inset_polygon (shapely buffer -- correct
+    for non-convex shapes, which a jaggified district boundary always
+    is) and applies exactly one extra half-plane clip for the wide edge.
+    An earlier version ran N sequential half-plane clips against the
+    polygon's own raw edges directly -- correct only for a convex
+    polygon, and it silently produced a too-thin margin at concave
+    points on a real (non-convex) district boundary, causing
+    cross-district building overlaps that survived two unrelated fix
+    attempts before this was found."""
+    base = inset_polygon(polygon, narrow)
+    if len(base) < 3 or wide <= narrow:
+        return base
+
+    main_edge = _longest_edge_index(polygon)
+    n = len(polygon)
+    p1, p2 = polygon[main_edge], polygon[(main_edge + 1) % n]
+    dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / length, dx / length
+    a = (p1[0] + nx * wide, p1[1] + ny * wide)
+    b = (p2[0] + nx * wide, p2[1] + ny * wide)
+    result = clip_polygon_by_line(base, a, b)
+    return result if len(result) >= 3 else base
+
+
+def _split_polygon_organic(polygon: Polygon, rng, gap: float, grid_chaos: float, angle_bias: float) -> Tuple[Polygon, Polygon]:
+    """Vertex-anchored bisection: cuts through a point on the polygon's
+    OWN longest edge, instead of _split_polygon's freshly recomputed
+    OBB-axis cut. Irregularity compounds across recursive splits instead
+    of resetting toward a clean rectangle every time -- this (not more
+    jitter on the OBB-axis cut) is what actually reads as organic rather
+    than "boxy blocks with noisy edges"."""
+    i = _longest_edge_index(polygon)
+    n = len(polygon)
+    p1, p2 = polygon[i], polygon[(i + 1) % n]
+    edge_len = distance(p1, p2)
+    if edge_len == 0:
+        return polygon, []
+    ex, ey = (p2[0] - p1[0]) / edge_len, (p2[1] - p1[1]) / edge_len
+
+    ratio_spread = 0.8 * grid_chaos
+    ratio = (1 - ratio_spread) / 2 + rng.uniform(0.0, ratio_spread)
+    anchor = (p1[0] + ex * edge_len * ratio, p1[1] + ey * edge_len * ratio)
+
+    angle_spread = (math.pi / 6) * grid_chaos
+    base_angle = math.atan2(ey, ex) + math.pi / 2 + angle_bias
+    angle = base_angle + rng.uniform(-angle_spread / 2, angle_spread / 2)
+    axis_dir = (math.cos(angle), math.sin(angle))
+    perp = (-axis_dir[1], axis_dir[0])
+
+    span = max((distance(p, q) for p in polygon for q in polygon), default=0.0) + 1.0
+    line_start = (anchor[0] - axis_dir[0] * span, anchor[1] - axis_dir[1] * span)
+    line_end = (anchor[0] + axis_dir[0] * span, anchor[1] + axis_dir[1] * span)
+
+    # Sign verified against a plain square: the naive derivation shrinks
+    # the two sides TOWARD each other (overlap, total leaf area greater
+    # than the original) instead of apart (a gap).
+    half_gap = -gap / 2.0
+    offset_a = (perp[0] * half_gap, perp[1] * half_gap)
+    offset_b = (-offset_a[0], -offset_a[1])
+
+    side_a = clip_polygon_by_line(
+        polygon, (line_start[0] + offset_b[0], line_start[1] + offset_b[1]), (line_end[0] + offset_b[0], line_end[1] + offset_b[1]),
+    )
+    side_b = clip_polygon_by_line(
+        polygon, (line_end[0] + offset_a[0], line_end[1] + offset_a[1]), (line_start[0] + offset_a[0], line_start[1] + offset_a[1]),
+    )
+    return side_a, side_b
+
+
+def organic_subdivide_residential(
+    polygon: Polygon, target_area: float, hard_cap_area: float, rng,
+    grid_chaos: float, size_chaos: float, gap_range: Tuple[float, float], angle_bias: float,
+    depth: int = 0, max_depth: int = 9,
+) -> List[Polygon]:
+    """Same soft-stop/hard-cap recursion shape as organic_subdivide, but
+    cutting with _split_polygon_organic instead of _split_polygon."""
+    area = polygon_area(polygon)
+    stop_area = target_area * (2 ** (size_chaos * rng.uniform(-1, 1)))
+    must_split = area > hard_cap_area
+    if len(polygon) < 3 or (depth >= max_depth and not must_split) or (area <= stop_area and not must_split):
+        return [polygon]
+
+    side_a, side_b = _split_polygon_organic(polygon, rng, gap=rng.uniform(*gap_range), grid_chaos=grid_chaos, angle_bias=angle_bias)
+    if len(side_a) < 3 or len(side_b) < 3:
+        return [polygon]
+
+    return (
+        organic_subdivide_residential(side_a, target_area, hard_cap_area, rng, grid_chaos, size_chaos, gap_range, angle_bias, depth + 1, max_depth)
+        + organic_subdivide_residential(side_b, target_area, hard_cap_area, rng, grid_chaos, size_chaos, gap_range, angle_bias, depth + 1, max_depth)
+    )
+
+
+def ring_peel(polygon: Polygon, thickness: float) -> List[Polygon]:
+    """Peel a ring of building strips around `polygon`'s perimeter (short
+    edges first), leaving the middle empty -- a courtyard, not a solid
+    block. Verified against a plain square: strip areas + leftover
+    courtyard area == original area exactly (a clean partition, no
+    overlap). Ported from watabou's Cutter.ring technique, independently
+    reimplemented (see the module docstring above)."""
+    n = len(polygon)
+    edges = []
+    for i in range(n):
+        v1, v2 = polygon[i], polygon[(i + 1) % n]
+        vx, vy = v2[0] - v1[0], v2[1] - v1[1]
+        length = math.hypot(vx, vy)
+        if length == 0:
+            continue
+        nx, ny = -vy / length, vx / length
+        edges.append((v1, v2, nx, ny, length))
+    edges.sort(key=lambda e: e[4])
+
+    strips: List[Polygon] = []
+    current = list(polygon)
+    for v1, v2, nx, ny, length in edges:
+        if len(current) < 3:
+            break
+        p1_off = (v1[0] + nx * thickness, v1[1] + ny * thickness)
+        p2_off = (v2[0] + nx * thickness, v2[1] + ny * thickness)
+        remainder = clip_polygon_by_line(current, p1_off, p2_off)
+        strip = clip_polygon_by_line(current, p2_off, p1_off)
+        if len(strip) >= 3:
+            strips.append(strip)
+        current = remainder if len(remainder) >= 3 else []
+    return strips
+
+
+def _residential_leaves_for_part(
+    part: Polygon, zone_type: ZoneType, town_seed, district_id: int, target_area: float, hard_cap_area: float,
+) -> List:
+    """Everything from a district's (main) polygon part down to finished
+    leaf footprints -- a flat ring for an ordinary building, or a list of
+    rings for a courtyard building's several wall pieces (ring_peel
+    output). One building is still one Building row either way; see
+    generate_organic_residential_buildings."""
+    params = RESIDENTIAL_CHAOS[zone_type]
+    rng = rng_for(town_seed, "blocks", district_id, "organic-geometry")
+    inset = variable_inset(part, params["wide_inset"], params["narrow_inset"])
+    jagged = jaggify_polygon(inset, rng, max_absolute_offset=params["narrow_inset"] * 0.8)
+    district_shape = ShapelyPolygon(jagged).buffer(0)
+
+    major_rng = rng_for(town_seed, "blocks", district_id, "organic-major-blocks")
+    major_blocks = organic_subdivide_residential(
+        jagged, target_area * LOTS_PER_MAJOR_BLOCK, target_area * LOTS_PER_MAJOR_BLOCK * 4, major_rng,
+        params["grid_chaos"], params["size_chaos"], gap_range=MAJOR_BLOCK_GAP_RANGE, angle_bias=0.0,
+    )
+
+    courtyard_threshold = target_area * params["courtyard_multiple"]
+    leaf_rng = rng_for(town_seed, "blocks", district_id, "organic-leaves")
+    leaves = []
+    for block in major_blocks:
+        # Each block's internal cut grid points a different way from its
+        # neighbours' -- sampled once per block, not per cut, or the
+        # whole district still reads as one uniform grid.
+        block_angle_bias = leaf_rng.uniform(-params["block_rotation"], params["block_rotation"])
+        raw = organic_subdivide_residential(
+            block, target_area, hard_cap_area, leaf_rng, params["grid_chaos"], params["size_chaos"],
+            gap_range=params["gap_range"], angle_bias=block_angle_bias,
+        )
+        for leaf in finish_leaves(raw, leaf_rng):
+            if polygon_area(leaf) < 1.0:
+                continue
+
+            if polygon_area(leaf) > courtyard_threshold and leaf_rng.random() < params["courtyard_probability"]:
+                thickness = math.sqrt(polygon_area(leaf)) * COURTYARD_RING_THICKNESS_FRACTION
+                strips = ring_peel(leaf, thickness)
+                leaves.append(strips if strips else leaf)
+                continue
+
+            # Small independent rotation around the leaf's own centroid --
+            # individual houses sit slightly off their block's shared
+            # grid. Rejected (falls back to the unrotated leaf) if it
+            # would poke outside this district's own (inset) polygon --
+            # a leaf already fit snugly against the district boundary can
+            # rotate right through it into a neighbouring district's
+            # buildings otherwise. Checking against the INSET shape, not
+            # the raw polygon, matters: the raw polygon touches its
+            # neighbour's raw polygon with zero gap, so "stays inside the
+            # raw polygon" doesn't stop a rotated house from eating into
+            # the inset safety margin that's the only thing actually
+            # separating it from that neighbour.
+            house_angle = math.degrees(leaf_rng.uniform(-params["house_rotation"], params["house_rotation"]))
+            rotated = shapely_rotate(ShapelyPolygon(leaf), house_angle, origin="centroid")
+            if rotated.difference(district_shape).area > 0.05:
+                leaves.append(leaf)
+            else:
+                leaves.append(list(rotated.exterior.coords)[:-1])
+    return leaves
+
+
+def generate_organic_residential_buildings(
+    district: District, town_seed, next_building_id: int,
+    target_population: int, magic_prevalence: float,
+    notable_building_counts: Dict[str, int],
+    target_area: float, hard_cap_area: float,
+) -> List[Building]:
+    """Residential entry point, parallel to generate_blocks_and_buildings
+    but organic-cutting-specific. Only the district's LARGEST polygon
+    part is ever cut -- a river or coastline can split a district's
+    Voronoi cell into several disconnected parts, and giving every part
+    (including a stranded fragment a few thousand sq units, not a
+    sliver) the same full treatment produces a legitimate-looking phantom
+    mini-neighbourhood stranded on the wrong side of the water, with its
+    own internal street grid and nothing connecting it to the real town.
+    Any other part is left alone; town_shaper/generate.py's farmland/
+    countryside pass picks it up like any other patch of open land."""
+    parts = [p for p in district.polygon_parts if polygon_area(p) >= 1.0]
+    if not parts:
+        return []
+    main_part = max(parts, key=polygon_area)
+
+    leaves = _residential_leaves_for_part(main_part, district.zone_type, town_seed, district.id, target_area, hard_cap_area)
+    rng = rng_for(town_seed, "blocks", district.id, "organic-buildings")
+
+    buildings: List[Building] = []
+    building_id = next_building_id
+    for footprint in leaves:
+        rings = footprint if isinstance(footprint[0][0], (list, tuple)) else [footprint]
+        total_area = sum(polygon_area(r) for r in rings)
+        if total_area < 1.0:
+            continue
+
+        building_type = pick_building_type_with_cap(
+            district.zone_type, target_population, magic_prevalence, rng, notable_building_counts,
+        )
+        capacity = BUILDING_HOME_CAPACITY.get(building_type, 0)
+        vacancies = [
+            JobVacancy(building_id=building_id, occupation=occupation)
+            for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[building_type]
+            for _ in range(count)
+        ]
+        name_pool = BUILDING_NAME_POOLS.get(building_type)
+        name = rng.choice(name_pool) if name_pool else None
+
+        biggest_ring = max(rings, key=polygon_area)
+        if len(rings) == 1:
+            cx, cy, width, height, rotation = _leaf_footprint(biggest_ring)
+        else:
+            cx = sum(p[0] for p in biggest_ring) / len(biggest_ring)
+            cy = sum(p[1] for p in biggest_ring) / len(biggest_ring)
+            width = height = rotation = 0.0
+
+        buildings.append(Building(
+            id=building_id,
+            district_id=district.id,
+            district_zone_type=district.zone_type,
+            x=cx, y=cy,
+            building_type=building_type,
+            capacity=capacity,
+            vacancies=vacancies,
+            name=name,
+            width=width, height=height, rotation=rotation,
+            footprint=footprint,
+        ))
+        building_id += 1
+
+    return buildings
 
 
 def finish_leaves(leaves: List[Polygon], rng, seed_shapes: Optional[List[ShapelyPolygon]] = None) -> List[Polygon]:

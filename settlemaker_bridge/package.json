@@ -1,0 +1,12 @@
+{
+  "name": "settlemaker-bridge",
+  "private": true,
+  "type": "module",
+  "description": "Thin Node bridge exposing settlemaker's generateSettlement to TownShape's Python pipeline. See docs/superpowers/specs/2026-09-08-settlemaker-integration-design.md.",
+  "dependencies": {
+    "settlemaker": "github:barrulus/settlemaker#af6741127086762fc0d73bdec374dcfcd373d5be"
+  },
+  "scripts": {
+    "postinstall": "npm --prefix node_modules/settlemaker install && npm --prefix node_modules/settlemaker run build"
+  }
+}

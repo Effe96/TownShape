@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 from shapely.geometry import LineString, Polygon
 
+from town_shaper.geometry import chaikin_smooth
 from town_shaper.models import WaterFeature
 from town_shaper.seeding import rng_for
 
@@ -78,7 +79,11 @@ def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, wid
         points.append((base_x + perp[0] * sign * magnitude, base_y + perp[1] * sign * magnitude))
     points.append(end)
 
-    return LineString(points).buffer(width / 2.0)
+    # A raw polyline through 3-5 points has a sharp angular kink at every
+    # waypoint -- a river zigzags between straight segments instead of
+    # curving. Chaikin-smoothed the same way artery roads are.
+    smoothed = chaikin_smooth(points, iterations=3)
+    return LineString(smoothed).buffer(width / 2.0)
 
 
 def _generate_coastline(seed, bounds: Tuple[float, float, float, float]) -> Polygon:
