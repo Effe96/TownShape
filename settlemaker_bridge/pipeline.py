@@ -23,6 +23,8 @@ per-call subprocess overhead on the same grounds).
 """
 from typing import Any, List, Tuple
 
+from shapely.geometry import Polygon as ShapelyPolygon
+
 from town_db.generate import _water_feature_rings
 from town_shaper.generate import compute_town_bounds
 from town_shaper.models import Building, District, WaterFeature
@@ -55,29 +57,34 @@ def _local_radius_from_bounds(local_bounds: dict) -> float:
 
 def _scale_water_features(
     water_features: List[WaterFeature], town_bounds_half: float, local_radius: float,
-) -> List[Tuple[str, List[List[Tuple[float, float]]]]]:
-    """Rescale every water feature's rings into settlemaker's own local
-    frame. Used for BOTH the `coastlineGeometry` input (so settlemaker
-    classifies patches against the right shape) and this script's own
-    water_features table (so the rendered water lines up with the
-    buildings/districts settlemaker just emitted, which are already in that
-    frame -- inserting town_shaper's original, unscaled water polygons
-    alongside settlemaker's local-unit buildings would draw two features
-    at wildly different scales on the same axes)."""
+) -> List[WaterFeature]:
+    """Rescale every water feature into settlemaker's own local frame,
+    returning real WaterFeature objects (not a bespoke tuple shape) so
+    town_db.generate's existing _water_feature_rings(feature) call -- which
+    expects a WaterFeature with a real shapely .polygon -- keeps working
+    completely unmodified. Used for BOTH the coastlineGeometry input (so
+    settlemaker classifies patches against the right shape) and
+    Town.water_features (so the persisted water lines up with the
+    buildings/districts settlemaker just emitted, which are already in
+    that frame -- inserting town_shaper's original, unscaled water
+    polygons alongside settlemaker's local-unit buildings would draw two
+    features at wildly different scales on the same axes)."""
     scale = local_radius / town_bounds_half
-    scaled: List[Tuple[str, List[List[Tuple[float, float]]]]] = []
+    scaled: List[WaterFeature] = []
     for feature in water_features:
-        rings = [
-            # Y flip: settlemaker's coordinate system is Y-down (SVG
-            # convention, per geojson-builder.ts's own doc comment);
-            # town_shaper's is plain Cartesian Y-up. Orientation is
-            # otherwise arbitrary here (no compass tie-in on either side),
-            # so this only needs to be a *consistent* convention, not a
-            # geographically meaningful one.
-            [(x * scale, -y * scale) for x, y in ring]
-            for ring in _water_feature_rings(feature)
-        ]
-        scaled.append((feature.kind, rings))
+        rings = _water_feature_rings(feature)
+        # Y flip: settlemaker's coordinate system is Y-down (SVG
+        # convention, per geojson-builder.ts's own doc comment);
+        # town_shaper's is plain Cartesian Y-up. Orientation is otherwise
+        # arbitrary here (no compass tie-in on either side), so this only
+        # needs to be a *consistent* convention, not a geographically
+        # meaningful one.
+        exterior = [(x * scale, -y * scale) for x, y in rings[0]]
+        holes = [[(x * scale, -y * scale) for x, y in ring] for ring in rings[1:]]
+        scaled.append(WaterFeature(
+            id=feature.id, kind=feature.kind,
+            polygon=ShapelyPolygon(exterior, holes=holes),
+        ))
     return scaled
 
 
@@ -88,7 +95,7 @@ def generate_via_settlemaker(
     num_rivers: int = 0,
     has_coastline: bool = False,
     has_port: bool = False,
-) -> Tuple[List[District], List[Building], List[Tuple[str, List[List[Tuple[float, float]]]]], str]:
+) -> Tuple[List[District], List[Building], List[WaterFeature], str]:
     """Returns (districts, buildings, scaled_water_features, svg). `svg` is
     settlemaker's own themed output for this exact town -- see the design
     spec's Rendering section: this project's real rendering path persists
@@ -106,13 +113,15 @@ def generate_via_settlemaker(
     burg = build_azgaar_burg_input(seed, target_population, has_port=has_port)
     settlemaker_seed = _settlemaker_seed(seed)
 
-    scaled_water_features: List[Tuple[str, List[List[Tuple[float, float]]]]] = []
+    scaled_water_features: List[WaterFeature] = []
     if water_features:
         dry_result = call_settlemaker(burg, settlemaker_seed)
         local_radius = _local_radius_from_bounds(dry_result["geojson"]["metadata"]["local_bounds"])
         scaled_water_features = _scale_water_features(water_features, town_bounds_half, local_radius)
         burg = dict(burg, coastlineGeometry=[
-            [{"x": x, "y": y} for x, y in ring] for _kind, rings in scaled_water_features for ring in rings
+            [{"x": x, "y": y} for x, y in ring]
+            for feature in scaled_water_features
+            for ring in _water_feature_rings(feature)
         ])
 
     result = call_settlemaker(burg, settlemaker_seed)

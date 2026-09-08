@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from shapely.geometry import Polygon as ShapelyPolygon
 
-from town_shaper.buildings import BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS
+from town_shaper.buildings import BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS, JOB_VACANCIES_BY_BUILDING_TYPE
 from town_shaper.generate import BUILDING_ID_STRIDE
-from town_shaper.models import Anchor, Building, District, ZoneType
+from town_shaper.models import Anchor, Building, District, JobVacancy, ZoneType
 from town_shaper.seeding import rng_for
 
 # First pass, per the spec's Data Model table -- validated visually, not
@@ -142,7 +142,7 @@ def parse_settlemaker_geojson(
                     "known-deferred; anything else showing up here is new)."
                 )
             zone_type = WARD_TYPE_TO_ZONE_TYPE[ward_type]
-            ring = [tuple(p) for p in feature["geometry"]["coordinates"][0]]
+            ring = [tuple(p) for p in feature["geometry"]["coordinates"][0][:-1]]
             cx, cy = _centroid(ring)
             district = District(
                 id=next_district_id,
@@ -160,7 +160,7 @@ def parse_settlemaker_geojson(
                 # Building belongs to a skipped (water/empty) ward -- not
                 # buildable area, so the building itself is dropped too.
                 continue
-            ring = [tuple(p) for p in feature["geometry"]["coordinates"][0]]
+            ring = [tuple(p) for p in feature["geometry"]["coordinates"][0][:-1]]
             cx, cy = _centroid(ring)
             building_id = current_district.id * BUILDING_ID_STRIDE + len(current_district.buildings)
 
@@ -171,6 +171,12 @@ def parse_settlemaker_geojson(
             if building_type is None:
                 building_type = INFILL_BUILDING_TYPE_BY_ZONE[current_district.zone_type]
 
+            vacancies = [
+                JobVacancy(building_id=building_id, occupation=occupation)
+                for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[building_type]
+                for _ in range(count)
+            ]
+
             building = Building(
                 id=building_id,
                 district_id=current_district.id,
@@ -180,6 +186,7 @@ def parse_settlemaker_geojson(
                 capacity=BUILDING_HOME_CAPACITY.get(building_type, 0),
                 name=_building_name(seed, building_type, building_id),
                 footprint=ring,
+                vacancies=vacancies,
             )
             current_district.buildings.append(building)
             buildings.append(building)
