@@ -71,8 +71,15 @@ landmarks called out).
 ## Requirements
 
 - Python 3.10+
-- `pip install -r requirements.txt` (numpy, scipy, shapely, matplotlib,
-  pytest)
+- `pip install -r requirements.txt` (numpy, scipy, shapely, pytest)
+- Node.js (any recent LTS) and `npm install` run once inside
+  `settlemaker_bridge/` — town generation shells out to
+  [settlemaker](https://github.com/barrulus/settlemaker) (pinned to a
+  specific commit in `settlemaker_bridge/package.json`) for all
+  district/building/wall geometry and the rendered SVG. See
+  `docs/superpowers/specs/2026-09-08-settlemaker-integration-design.md`
+  for the full integration design, including a known npm caveat under
+  some sandboxed CI environments.
 
 ## Quick start
 
@@ -80,15 +87,14 @@ Generate a town and inspect it:
 
 ```bash
 python scripts/generate_town.py    # edit the constants at the top of the file first
-python scripts/render_town.py my_town.db
 ```
 
 `scripts/generate_town.py` is a plain editable-variables script (not a
 CLI with flags) — open it and change `SEED`, `TARGET_POPULATION`, and
-the other `TownParameters` fields at the top, then run it. It builds
-the town, derives relationships, and prints a resident count and
-stress readout. `scripts/render_town.py <db_path> [output_path]` then
-renders that database to a PNG.
+the other `TownParameters` fields at the top, then run it. It builds the
+town, derives relationships, prints a resident count and stress readout,
+and writes both a `.db` file and a `.svg` file (settlemaker's own themed
+render of the generated town) next to each other.
 
 To drive generation programmatically:
 
@@ -122,13 +128,16 @@ python -m pytest
 
 - `town_shaper/` — spatial layout and population placement
 - `town_db/` — SQLite database generation (residents, history, goods,
-  purchases, stats, rendering)
+  purchases, stats)
+- `settlemaker_bridge/` — the Node bridge to
+  [settlemaker](https://github.com/barrulus/settlemaker) (district/
+  building/wall geometry and SVG rendering) and the Python-side parser
+  that maps its output onto `town_shaper`'s `District`/`Building` models
 - `town_relationships/` — relationship-graph derivation from an
   existing `town_db` database
 - `town_narrative/` — top-level `TownParameters` + orchestration across
   the three packages above
-- `scripts/` — small runnable entry points (`generate_town.py`,
-  `render_town.py`)
+- `scripts/` — small runnable entry points (`generate_town.py`)
 - `docs/narrative-town-parameters.md` — narrative-language → parameter
   mapping reference
 - `docs/narrative-gaps.md` — ongoing log of known realism/data-quality

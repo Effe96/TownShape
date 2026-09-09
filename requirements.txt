@@ -2,5 +2,4 @@ numpy>=1.26
 scipy>=1.11
 pytest>=8.0
 shapely>=2.0
-matplotlib>=3.8
 flask>=3.0
