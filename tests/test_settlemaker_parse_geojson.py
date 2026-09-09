@@ -1,8 +1,8 @@
 import pytest
 
-from settlemaker_bridge.parse_geojson import parse_settlemaker_geojson
+from settlemaker_bridge.parse_geojson import _curate_village_economy, parse_settlemaker_geojson
 from town_shaper.buildings import BUILDING_HOME_CAPACITY, JOB_VACANCIES_BY_BUILDING_TYPE
-from town_shaper.models import ZoneType
+from town_shaper.models import Building, ZoneType
 
 # Closed rings (first point repeated), matching settlemaker's own
 # polygonToGeoJson convention -- the parser is expected to drop the
@@ -239,10 +239,6 @@ def test_village_with_no_buildings_returns_empty_not_a_phantom_district():
     assert buildings == []
 
 
-from settlemaker_bridge.parse_geojson import _curate_village_economy
-from town_shaper.models import Building, ZoneType
-
-
 def _make_houses(n):
     return [
         Building(
@@ -312,3 +308,26 @@ def test_curate_village_economy_is_deterministic_for_same_seed():
     _curate_village_economy(houses2, population=300, seed="fixed-seed")
     assert [(b.id, b.building_type, b.reserved_vacant) for b in houses1] == \
            [(b.id, b.building_type, b.reserved_vacant) for b in houses2]
+
+
+def test_curate_village_economy_at_exactly_the_business_floor_gets_a_tavern():
+    houses = _make_houses(20)
+    _curate_village_economy(houses, population=75, seed="s")
+    types = [b.building_type for b in houses]
+    assert types.count("tavern") == 1
+    assert types.count("shop") == 0
+
+
+def test_curate_village_economy_just_below_shop_tier_has_no_shop():
+    houses = _make_houses(75)
+    _curate_village_economy(houses, population=299, seed="s")
+    types = [b.building_type for b in houses]
+    assert types.count("tavern") == 1
+    assert types.count("shop") == 0
+
+
+def test_curate_village_economy_reserved_count_floor_clamps_when_population_under_100():
+    houses = _make_houses(20)
+    _curate_village_economy(houses, population=80, seed="s")
+    # 80 // 100 == 0 -- without the max(1, ...) floor this would reserve nothing.
+    assert sum(1 for b in houses if b.reserved_vacant) == 1
