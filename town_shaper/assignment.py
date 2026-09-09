@@ -68,7 +68,7 @@ def assign_residents(
     rng = rng_for(town_seed, "assignment")
 
     residential_buildings = sorted(
-        (b for d in districts for b in d.buildings if b.capacity > 0),
+        (b for d in districts for b in d.buildings if b.capacity > 0 and not b.reserved_vacant),
         key=lambda b: b.id,
     )
     vacancy_pool = _build_vacancy_pool(districts, rng)

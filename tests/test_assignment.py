@@ -178,3 +178,19 @@ def test_assign_residents_zero_rich_proportion_produces_no_rich_residents():
     districts, households = _build_town_pieces(seed, target_population=3000)
     residents = assign_residents(seed, households, districts, rich_proportion=0.0)
     assert all(r.ses == SES.POOR for r in residents)
+
+
+def test_assign_residents_never_fills_a_reserved_vacant_building():
+    seed = ("town", 1)
+    districts, households = _build_town_pieces(seed, target_population=200)
+    # Reserve every building in the poor district but one -- if the reserved
+    # ones ever got filled, this would force overflow into the rich district
+    # in a way the next assertion catches.
+    poor_district = next(d for d in districts if d.zone_type == ZoneType.POOR_RESIDENTIAL)
+    for building in poor_district.buildings[1:]:
+        building.reserved_vacant = True
+
+    assign_residents(seed, households, districts)
+
+    for building in poor_district.buildings[1:]:
+        assert building.resident_ids == []
