@@ -1,27 +1,44 @@
-from town_shaper.anchors import place_anchors
 from town_shaper.assignment import ZONE_TYPE_BY_SES, assign_residents
 from town_shaper.buildings import fill_district_buildings
-from town_shaper.districts import build_districts
 from town_shaper.generate import compute_town_bounds, generate_town
 from town_shaper.households import generate_households
 from town_shaper.models import Anchor, Building, District, Household, SES, ZoneType
 
 
 def _build_town_pieces(seed, target_population=3000):
-    # Scale bounds with target_population the same way generate_town does,
-    # so building density calibration (BUILDING_DENSITY_PER_AREA) — tuned
-    # against real town-scale bounds — isn't starved by an undersized fixed
-    # test area.
+    # town_shaper.anchors/districts are gone (settlemaker owns ward layout
+    # now -- see docs/superpowers/specs/2026-09-08-settlemaker-integration-
+    # design.md). assign_residents doesn't care how a District's polygon or
+    # buildings came to exist, so this hand-builds two big rectangular
+    # residential districts directly (one poor, one rich) instead of
+    # running the deleted anchors/districts Voronoi pipeline. Sized off
+    # compute_town_bounds, same as the old fixture, so
+    # fill_district_buildings' BUILDING_DENSITY_PER_AREA calibration still
+    # produces enough capacity to house target_population.
     bounds = compute_town_bounds(target_population)
-    anchors = place_anchors(seed, target_population, bounds)
-    districts = build_districts(anchors, bounds)
+    half_width = (bounds[2] - bounds[0]) / 2.0
+
+    poor_polygon = [(-half_width, -half_width), (0.0, -half_width), (0.0, half_width), (-half_width, half_width)]
+    rich_polygon = [(0.0, -half_width), (half_width, -half_width), (half_width, half_width), (0.0, half_width)]
+
+    poor_district = District(
+        id=1, zone_type=ZoneType.POOR_RESIDENTIAL,
+        anchor=Anchor(id=1, zone_type=ZoneType.POOR_RESIDENTIAL, x=-half_width / 2, y=0.0),
+        polygon_parts=[poor_polygon],
+    )
+    rich_district = District(
+        id=2, zone_type=ZoneType.RICH_RESIDENTIAL,
+        anchor=Anchor(id=2, zone_type=ZoneType.RICH_RESIDENTIAL, x=half_width / 2, y=0.0),
+        polygon_parts=[rich_polygon],
+    )
 
     next_id = 0
-    for district in districts:
-        buildings = fill_district_buildings(district, seed, next_id)
+    for district in (poor_district, rich_district):
+        buildings = fill_district_buildings(district, seed, next_id, target_population=target_population)
         district.buildings = buildings
         next_id += len(buildings)
 
+    districts = [poor_district, rich_district]
     households = generate_households(seed, target_population)
     return districts, households
 
