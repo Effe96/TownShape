@@ -101,8 +101,9 @@ def test_household_formation_produces_spouse_not_household_member_relationship(t
     # settlemaker_bridge.parse_geojson._curate_village_economy and this file's own
     # test_village_scale_town_produces_purchases_and_grows_a_new_household, both added later
     # 2026-09-09) -- this test is kept at burg-mode population regardless, since it doesn't
-    # depend on village-specific behavior and burg-mode's larger, uncapped vacancy pool
-    # (measured: 10 vacant buildings at pop=1500) makes formation events reliably likely.
+    # depend on village-specific behavior and burg-mode's larger absolute vacancy pool
+    # (measured: 10 vacant buildings at pop=1500, vs. 5 at a village-scale pop=500) makes
+    # formation events reliably likely.
     db_path = str(tmp_path / "town.db")
     generate_town_database(("town", 3), target_population=1500, db_path=db_path)
     conn = sqlite3.connect(db_path)
