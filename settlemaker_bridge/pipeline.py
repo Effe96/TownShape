@@ -125,5 +125,5 @@ def generate_via_settlemaker(
         ])
 
     result = call_settlemaker(burg, settlemaker_seed)
-    districts, buildings = parse_settlemaker_geojson(result["geojson"], seed)
+    districts, buildings = parse_settlemaker_geojson(result["geojson"], seed, target_population)
     return districts, buildings, scaled_water_features, result["svg"]

@@ -331,3 +331,19 @@ def test_curate_village_economy_reserved_count_floor_clamps_when_population_unde
     _curate_village_economy(houses, population=80, seed="s")
     # 80 // 100 == 0 -- without the max(1, ...) floor this would reserve nothing.
     assert sum(1 for b in houses if b.reserved_vacant) == 1
+
+
+def test_parse_village_geojson_wires_target_population_into_curation():
+    features = [_village_building(SQUARE, 6)] + [
+        _village_building([[x, 0.0], [x + 10, 0.0], [x + 10, 10.0], [x, 10.0], [x, 0.0]], 6)
+        for x in range(20, 20 * 20, 20)  # 19 more houses, 20 total
+    ]
+    geojson = _village_geojson(features)
+    _districts, buildings = parse_settlemaker_geojson(geojson, seed="s", target_population=150)
+    assert sum(1 for b in buildings if b.building_type == "tavern") == 1
+
+
+def test_parse_village_geojson_default_target_population_curates_nothing():
+    geojson = _village_geojson([_village_building(SQUARE, 6)])
+    _districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert buildings[0].building_type == "residence"

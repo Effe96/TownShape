@@ -144,7 +144,7 @@ def _building_name(seed: Any, building_type: str, building_id: int) -> Any:
 
 
 def _parse_village_geojson(
-    geojson: Dict[str, Any], seed: Any,
+    geojson: Dict[str, Any], seed: Any, target_population: int = 0,
 ) -> Tuple[List[District], List[Building]]:
     """Village-engine output (see VILLAGE_BUILDING_TYPE's comment above):
     no ward layer, so there's no per-building zone to key off of -- every
@@ -203,11 +203,12 @@ def _parse_village_geojson(
         district.buildings.append(building)
         buildings.append(building)
 
+    _curate_village_economy(buildings, target_population, seed)
     return [district], buildings
 
 
 def parse_settlemaker_geojson(
-    geojson: Dict[str, Any], seed: Any,
+    geojson: Dict[str, Any], seed: Any, target_population: int = 0,
 ) -> Tuple[List[District], List[Building]]:
     """Group settlemaker's flat feature list by properties.layer, and map
     ward/building/poi features onto District/Building rows.
@@ -226,7 +227,7 @@ def parse_settlemaker_geojson(
     Pinning section) and re-verified if that pin ever moves.
     """
     if geojson.get("metadata", {}).get("settlement_generation_version") == "village":
-        return _parse_village_geojson(geojson, seed)
+        return _parse_village_geojson(geojson, seed, target_population)
 
     districts: List[District] = []
     buildings: List[Building] = []
