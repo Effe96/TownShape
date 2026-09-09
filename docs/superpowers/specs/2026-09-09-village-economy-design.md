@@ -211,3 +211,17 @@ parallel "village business" concept.
   By design, per this session's own steer ("a small floor... too tiny
   to support even a tavern") — not a gap this document leaves
   accidentally open.
+- **Reserving village housing costs some population coverage — measured,
+  not just theoretical.** A village has zero natural vacancy slack
+  (settlemaker sizes total house capacity to match `target_population`
+  almost exactly), so every bed this document's mechanism removes —
+  a reclassified business loses its residential capacity entirely, a
+  reserved house is withheld from initial placement — comes directly out
+  of how much of `target_population` actually gets housed. Measured at
+  population 500: 502 raw capacity → 474 residents actually placed, a
+  ~5.6% loss (smaller villages lose proportionally more, since the fixed
+  1-tavern-minimum removes a larger fraction of a smaller house count).
+  Accepted as an inherent, reasonable cost of the mechanism — burg-mode
+  towns already house well under 100% of `target_population` too — but
+  worth knowing before retuning `VILLAGE_RESERVED_VACANCY_DIVISOR` much
+  smaller, which would silently make the loss worse.

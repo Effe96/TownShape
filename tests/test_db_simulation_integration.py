@@ -93,12 +93,16 @@ def test_household_formation_produces_spouse_not_household_member_relationship(t
     # beyond the original generation range) is reflected as 'spouse' by the re-derived
     # relationships, not 'household_member'.
     # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): bumped from 800 to stay above
-    # settlemaker's VILLAGE_POP_CEILING (1000). Verified directly (not guessed): the village
-    # engine sizes total housing capacity to almost exactly match target_population (measured:
-    # 802 capacity for 802 residents at pop=800, zero vacant buildings), so
-    # household_formation.py's _vacant_home_building() never finds anywhere for a newly-formed
-    # household to move into, at any village-range population. Burg-mode towns (>1000) do carry
-    # real vacancy slack (measured: 10 vacant buildings at pop=1500).
+    # settlemaker's VILLAGE_POP_CEILING (1000). At the time, this was structural: raw village
+    # housing capacity sizes to almost exactly match target_population (measured: 802 capacity
+    # for 802 residents at pop=800, zero vacant buildings), so household_formation.py's
+    # _vacant_home_building() never found anywhere for a new household to move into at any
+    # village-range population. That's since been fixed for villages too (see
+    # settlemaker_bridge.parse_geojson._curate_village_economy and this file's own
+    # test_village_scale_town_produces_purchases_and_grows_a_new_household, both added later
+    # 2026-09-09) -- this test is kept at burg-mode population regardless, since it doesn't
+    # depend on village-specific behavior and burg-mode's larger, uncapped vacancy pool
+    # (measured: 10 vacant buildings at pop=1500) makes formation events reliably likely.
     db_path = str(tmp_path / "town.db")
     generate_town_database(("town", 3), target_population=1500, db_path=db_path)
     conn = sqlite3.connect(db_path)
@@ -141,9 +145,12 @@ def test_rich_households_out_spend_poor_households_over_time(tmp_path):
     # individual spender for the year was poor, out-spending every rich resident. This asserts
     # the opposite now holds, at the household level, across a seed sweep and multiple years.
     # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): bumped from 600 to stay above
-    # settlemaker's VILLAGE_POP_CEILING (1000) -- a village-engine town has no shops at all
-    # (village/types.d.ts's PoiKind union has no commercial kind), so there would never be any
-    # purchase, rich or poor, to compare.
+    # settlemaker's VILLAGE_POP_CEILING (1000) -- raw village-engine output has no shops at all
+    # (village/types.d.ts's PoiKind union has no commercial kind). Villages can now get a
+    # tavern/shop too (settlemaker_bridge.parse_geojson._curate_village_economy, added later
+    # 2026-09-09), but a village's business count is capped at 2 regardless of population, too
+    # thin a sample for a rich-vs-poor spending comparison swept across 10 seeds -- kept at
+    # burg-mode population here for a real commercial mix.
     rich_medians = []
     poor_medians = []
     for seed in SEEDS:
@@ -216,13 +223,25 @@ def test_village_scale_town_produces_purchases_and_grows_a_new_household(tmp_pat
     assert "tavern" in building_types
     assert "shop" in building_types
     max_original_household_id = conn.execute("SELECT MAX(id) FROM households").fetchone()[0]
+    resident_count = conn.execute("SELECT COUNT(*) FROM residents").fetchone()[0]
+    # Reserving housing for growth (see settlemaker_bridge.parse_geojson._curate_village_economy)
+    # necessarily costs some population coverage in a village, which has zero natural vacancy
+    # slack -- measured ~5.6% loss at this population (502 -> 474 residents). 90% is a safety
+    # margin below that measured value, loose enough to absorb incidental seed variation while
+    # still catching a real regression (e.g. the reserved-vacancy divisor being retuned much
+    # smaller without anyone noticing it was eating a third of the town).
+    assert resident_count >= 0.9 * 500, f"expected village housing to still cover >=90% of target_population, got {resident_count}"
     conn.close()
 
     advance_town(db_path, seed=("village-economy-test", 1), years=5)
 
     conn = sqlite3.connect(db_path)
     purchase_count = conn.execute("SELECT COUNT(*) FROM purchases").fetchone()[0]
-    assert purchase_count > 0, "expected at least one purchase in a village with a tavern and a shop"
+    # >0 alone would still pass if the economy had degraded to one buyer at one shop --
+    # 5 simulated years of ~100+ households drawing weekly purchases (town_db/purchases.py)
+    # should produce thousands, not a handful; 1000 is a safety margin below the ~45,700
+    # measured for this exact seed.
+    assert purchase_count > 1000, f"expected substantial purchase volume in a village with a tavern and a shop, got {purchase_count}"
 
     new_households = conn.execute(
         "SELECT id FROM households WHERE id > ?", (max_original_household_id,)

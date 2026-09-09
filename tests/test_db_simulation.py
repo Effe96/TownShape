@@ -60,9 +60,13 @@ def test_advance_town_passes_foreign_key_check(tmp_path):
 
 def test_advance_town_updates_household_wealth_deterministically(tmp_path):
     # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): population must stay
-    # above settlemaker's own VILLAGE_POP_CEILING (1000) -- below it, settlemaker
-    # switches to its village engine, which never generates a shop/tavern/etc., so
-    # there's structurally no purchase to spend wealth on and it would never change.
+    # above settlemaker's own VILLAGE_POP_CEILING (1000) at generation time. Raw
+    # village-engine output has no shop/tavern/etc. -- settlemaker_bridge.parse_geojson's
+    # _curate_village_economy (added 2026-09-09, see docs/superpowers/plans/2026-09-09-
+    # village-economy-implementation.md) now reclassifies a couple of houses into
+    # businesses for villages, but only at population >= 75, and even then a
+    # 2-business village's purchase volume is much lower/noisier than a real town's --
+    # kept at burg-mode population here for a reliable, high-volume signal.
     db_path_1 = str(tmp_path / "town1.db")
     db_path_2 = str(tmp_path / "town2.db")
     generate_town_database(("town", 9), target_population=1500, db_path=db_path_1)
@@ -91,9 +95,11 @@ def test_advance_town_updates_household_wealth_deterministically(tmp_path):
 
 
 def test_advance_town_produces_new_purchases_and_relationships(tmp_path):
-    # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): same VILLAGE_POP_CEILING
-    # reasoning as the wealth test above -- a village-engine town has no shops, so
-    # purchases would never appear regardless of years advanced.
+    # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): same reasoning as the
+    # wealth test above -- raw village-engine output has no shops, and even with
+    # _curate_village_economy's reclassification (see that test's own comment), a
+    # village's business count is capped at 2 regardless of population, so this
+    # stays at burg-mode population for a reliable, high-volume purchase signal.
     db_path = str(tmp_path / "town.db")
     generate_town_database(("town", 1), target_population=1500, db_path=db_path)
     conn = sqlite3.connect(db_path)
