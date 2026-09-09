@@ -1,6 +1,7 @@
 import json
+import os
 from datetime import date, timedelta
-from typing import Dict
+from typing import Dict, Optional
 
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION
 from town_shaper.generate import generate_town
@@ -62,6 +63,7 @@ def generate_town_database(
     has_port: bool = False,
     magic_prevalence: float = 0.0,
     aggression: float = 0.0,
+    svg_path: Optional[str] = None,
 ) -> None:
     town = generate_town(
         seed, target_population,
@@ -73,6 +75,11 @@ def generate_town_database(
         has_port=has_port,
         magic_prevalence=magic_prevalence,
     )
+
+    if svg_path is None:
+        svg_path = os.path.splitext(db_path)[0] + ".svg"
+    with open(svg_path, "w", encoding="utf-8") as f:
+        f.write(town.svg)
 
     conn = connect(db_path)
     create_schema(conn)

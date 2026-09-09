@@ -1,25 +1,12 @@
 import math
-from typing import Dict, Tuple
+from typing import Tuple
 
-from shapely.ops import unary_union
-
-from town_shaper.anchors import place_anchors
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION, assign_residents
-from town_shaper.blocks import (
-    DEFAULT_HARD_CAP_AREA, HARD_CAP_AREA_MULTIPLIER, LOT_DEPTH_BY_ZONE, LOT_FRONTAGE_BY_ZONE, RESIDENTIAL_SLACK,
-    compute_district_blocks, generate_blocks_and_buildings, generate_organic_residential_buildings,
-)
-from town_shaper.buildings import BUILDING_HOME_CAPACITY
-from town_shaper.countryside import generate_countryside_buildings, remove_buildings_in_water
-from town_shaper.districts import build_districts
-from town_shaper.geometry import polygon_area
-from town_shaper.households import AVERAGE_HOUSEHOLD_SIZE, estimate_household_counts, generate_households
-from town_shaper.models import Town, ZoneType
-from town_shaper.roads import generate_road_network
-from town_shaper.water import generate_water_features
+from town_shaper.households import generate_households
+from town_shaper.models import RoadNetwork, Town
 
 AREA_PER_RESIDENT = 150.0  # square map-units of town area assumed per resident
-BUILDING_ID_STRIDE = 100_000
+BUILDING_ID_STRIDE = 100_000  # still read by settlemaker_bridge.parse_geojson for building id derivation
 
 
 def compute_town_bounds(
@@ -41,107 +28,23 @@ def generate_town(
     has_port: bool = False,
     magic_prevalence: float = 0.0,
 ) -> Town:
+    # Lazy import: settlemaker_bridge.pipeline imports compute_town_bounds
+    # from this module, so a top-level import here would be circular.
+    from settlemaker_bridge.pipeline import generate_via_settlemaker
+
     bounds = compute_town_bounds(target_population, area_per_resident_multiplier)
 
-    water_features = generate_water_features(seed, bounds, num_rivers=num_rivers, has_coastline=has_coastline)
-    water_polygon = unary_union([f.polygon for f in water_features]) if water_features else None
-
-    anchors = place_anchors(seed, target_population, bounds, water_polygon=water_polygon, has_port=has_port)
-    districts = build_districts(anchors, bounds, water_polygon=water_polygon)
-    road_network = generate_road_network(anchors, bounds, water_polygon=water_polygon)
-
-    notable_building_counts: Dict[str, int] = {}
-
-    # Pass 1: block geometry + total area for every residential district
-    # (cached, not recomputed in pass 2) -- lets the leaf target area be
-    # derived from real household demand instead of a fixed lot constant.
-    residential_zone_types = (ZoneType.POOR_RESIDENTIAL, ZoneType.RICH_RESIDENTIAL)
-    block_area_by_zone: Dict[ZoneType, float] = {zt: 0.0 for zt in residential_zone_types}
-    for district in districts:
-        if district.zone_type in residential_zone_types:
-            # skip_block_subdivision=True: just the district's (largest
-            # part's) inset+jaggified area, no further cutting -- this
-            # pass only needs the total area to derive a demand-driven
-            # leaf target_area below. The real cutting happens in
-            # generate_organic_residential_buildings, further down.
-            district_blocks = compute_district_blocks(district, seed, skip_block_subdivision=True)
-            block_area_by_zone[district.zone_type] += sum(polygon_area(b) for b in district_blocks)
-
-    poor_household_count, rich_household_count = estimate_household_counts(target_population, rich_proportion)
-    # Higher density_multiplier means more, smaller buildings (matches the
-    # non-residential path's LOT_FRONTAGE_BY_ZONE[zone]/density_multiplier,
-    # which shrinks target_area -- and so raises count -- as density rises).
-    # Multiplying (not dividing) here raises poor/rich_target_count as
-    # density rises, which lowers residential_target_area below -- consistent.
-    effective_slack = RESIDENTIAL_SLACK * density_multiplier
-    # household counts are households, but BUILDING_HOME_CAPACITY is a
-    # resident-slot (person) count -- convert households to residents first,
-    # or capacity is under-provisioned by ~AVERAGE_HOUSEHOLD_SIZE.
-    poor_target_count = max(1, math.ceil(
-        poor_household_count * AVERAGE_HOUSEHOLD_SIZE * effective_slack / BUILDING_HOME_CAPACITY["residence"]))
-    rich_target_count = max(1, math.ceil(
-        rich_household_count * AVERAGE_HOUSEHOLD_SIZE * effective_slack / BUILDING_HOME_CAPACITY["manor"]))
-
-    poor_min_leaf_area = LOT_FRONTAGE_BY_ZONE[ZoneType.POOR_RESIDENTIAL] * LOT_DEPTH_BY_ZONE[ZoneType.POOR_RESIDENTIAL]
-    rich_min_leaf_area = LOT_FRONTAGE_BY_ZONE[ZoneType.RICH_RESIDENTIAL] * LOT_DEPTH_BY_ZONE[ZoneType.RICH_RESIDENTIAL]
-    residential_target_area = {
-        ZoneType.POOR_RESIDENTIAL: max(poor_min_leaf_area, block_area_by_zone[ZoneType.POOR_RESIDENTIAL] / poor_target_count),
-        ZoneType.RICH_RESIDENTIAL: max(rich_min_leaf_area, block_area_by_zone[ZoneType.RICH_RESIDENTIAL] / rich_target_count),
-    }
-
-    farmland_districts = [d for d in districts if d.zone_type == ZoneType.FARMLAND_EDGE]
-
-    for district in districts:
-        next_building_id = district.id * BUILDING_ID_STRIDE
-        if district.zone_type == ZoneType.FARMLAND_EDGE:
-            # Filled in below, after every other district's buildings
-            # exist -- see generate_countryside_buildings.
-            buildings = []
-        elif district.zone_type in residential_zone_types:
-            buildings = generate_organic_residential_buildings(
-                district, seed, next_building_id,
-                target_population=target_population, magic_prevalence=magic_prevalence,
-                notable_building_counts=notable_building_counts,
-                target_area=residential_target_area[district.zone_type],
-                # DEFAULT_HARD_CAP_AREA (sized off POOR_RESIDENTIAL's fixed lot
-                # constant) can be smaller than the demand-driven target_area
-                # above once a zone's real household count is low relative to
-                # its block area -- a fixed hard cap below the soft target
-                # forces the hard-cap branch to dominate on every leaf,
-                # silently discarding the household-driven sizing this whole
-                # pass exists to compute. Scale the cap off the actual target
-                # instead, at the same ratio DEFAULT_HARD_CAP_AREA itself uses.
-                hard_cap_area=max(
-                    DEFAULT_HARD_CAP_AREA, residential_target_area[district.zone_type] * HARD_CAP_AREA_MULTIPLIER,
-                ),
-            )
-        else:
-            buildings = generate_blocks_and_buildings(
-                district, seed, next_building_id,
-                target_population=target_population, density_multiplier=density_multiplier,
-                magic_prevalence=magic_prevalence, notable_building_counts=notable_building_counts,
-            )
-        district.buildings = buildings
-
-    # Farmland is no longer zone-filled at a uniform density -- see
-    # town_shaper/countryside.py. Runs last, since it needs to know where
-    # every other district's buildings already are. All countryside
-    # buildings are attributed to one farmland district (arbitrarily, the
-    # first) purely for bookkeeping -- they aren't confined to its
-    # polygon, or any district's.
-    if farmland_districts:
-        owner = farmland_districts[0]
-        owner.buildings = generate_countryside_buildings(
-            districts, water_features, bounds, seed, owner.id * BUILDING_ID_STRIDE, owner.id,
-        )
-
-    # Belt-and-suspenders: residential/merchant/countryside generation each
-    # have their own water checks, but coastal edge cases still slipped
-    # past each of them independently during validation. One shared filter
-    # here catches all sources at once. Must run before assign_residents --
-    # residents are assigned to specific building IDs, so removing a
-    # building afterward would leave a resident pointing at nothing.
-    remove_buildings_in_water(districts, water_features)
+    # density_multiplier and magic_prevalence have no settlemaker equivalent
+    # (Owner decision 2026-09-08, Phase 2 kickoff -- see this plan's Global
+    # Constraints): settlemaker now owns ward/building layout entirely, so
+    # neither parameter influences generated geometry any more. Both stay
+    # accepted here (and in generate_town_database/TownParameters) purely
+    # for API compatibility.
+    districts, buildings, water_features, svg = generate_via_settlemaker(
+        seed, target_population,
+        area_per_resident_multiplier=area_per_resident_multiplier,
+        num_rivers=num_rivers, has_coastline=has_coastline, has_port=has_port,
+    )
 
     households = generate_households(seed, target_population)
     residents = assign_residents(seed, households, districts, rich_proportion=rich_proportion)
@@ -150,5 +53,10 @@ def generate_town(
     town.districts = districts
     town.residents = residents
     town.water_features = water_features
-    town.road_network = road_network
+    # settlemaker's `street` layer isn't mapped onto RoadNode/RoadEdge (see
+    # the design spec's "What this deletes" section) -- an empty network,
+    # not None, so town_db.generate's road_nodes/road_edges insert loops
+    # (which iterate .nodes/.edges) don't need a None-guard.
+    town.road_network = RoadNetwork()
+    town.svg = svg
     return town

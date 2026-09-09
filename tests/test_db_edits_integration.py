@@ -15,9 +15,23 @@ def test_kill_resident_against_a_real_town_keeps_fk_integrity_and_touches_only_e
 
     conn = connect(db_path)
     resident_id = conn.execute("SELECT id FROM residents WHERE death_date IS NULL ORDER BY id LIMIT 1").fetchone()[0]
+    # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): if the killed resident held a
+    # "primary" shop role (town_db.succession._primary_occupation_info), kill_resident's
+    # _apply_shop_reputation_ramp intentionally reassigns/deletes future purchases at their own
+    # workplace -- verified directly for seed_index=1/pop=2000 (resident 1, sole blacksmith, zero
+    # sister blacksmiths: exactly 520 purchases deleted, matching this test's prior failure).
+    # Settlemaker's building density makes a shop being the only one of its type in town more
+    # common than the old pipeline did. That's real, pre-existing, intended behavior, not a bug --
+    # exclude the killed resident's own workplace from the "untouched" set below, while still
+    # requiring every OTHER shop's purchases to be completely unaffected.
+    workplace_id = conn.execute(
+        "SELECT workplace_building_id FROM residents WHERE id = ?", (resident_id,)
+    ).fetchone()[0]
     other_resident_purchases_before = {
         row[0]: row[1] for row in conn.execute(
-            "SELECT id, resident_id FROM purchases WHERE resident_id != ?", (resident_id,)
+            "SELECT id, resident_id FROM purchases WHERE resident_id != ? "
+            "AND (shop_building_id != ? OR ? IS NULL)",
+            (resident_id, workplace_id, workplace_id),
         ).fetchall()
     }
     conn.close()

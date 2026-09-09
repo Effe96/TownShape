@@ -256,25 +256,46 @@ def test_households_wealth_accepts_an_explicit_value(tmp_path):
     assert row == (250.5,)
 
 
-def test_generate_town_database_persists_road_network(tmp_path):
+def test_generate_town_database_road_tables_are_empty(tmp_path):
+    # road_nodes/road_edges stay in the schema (design spec's Data Model
+    # section: no schema changes) but town.road_network is now always an
+    # empty RoadNetwork() -- see town_shaper/generate.py's generate_town.
     from town_db.generate import generate_town_database
 
     db_path = str(tmp_path / "town.db")
     generate_town_database(("town", 1), target_population=3000, db_path=db_path)
 
     conn = connect(db_path)
-    node_rows = conn.execute("SELECT id, kind, anchor_id, is_hub, x, y FROM road_nodes").fetchall()
-    edge_rows = conn.execute("SELECT id, from_node_id, to_node_id, road_type FROM road_edges").fetchall()
+    node_count = conn.execute("SELECT COUNT(*) FROM road_nodes").fetchone()[0]
+    edge_count = conn.execute("SELECT COUNT(*) FROM road_edges").fetchone()[0]
     conn.close()
 
-    assert len(node_rows) > 0
-    assert len(edge_rows) > 0
-    assert sum(1 for row in node_rows if row[3] == 1) == 1  # exactly one is_hub row
-    node_ids = {row[0] for row in node_rows}
-    for edge in edge_rows:
-        assert edge[1] in node_ids
-        assert edge[2] in node_ids
-        assert edge[3] in ("artery", "boundary", "spur")
+    assert node_count == 0
+    assert edge_count == 0
+
+
+def test_generate_town_database_writes_svg_file(tmp_path):
+    from town_db.generate import generate_town_database
+
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+
+    svg_path = str(tmp_path / "town.svg")
+    with open(svg_path, encoding="utf-8") as f:
+        content = f.read()
+    assert "<svg" in content
+
+
+def test_generate_town_database_honors_explicit_svg_path(tmp_path):
+    from town_db.generate import generate_town_database
+
+    db_path = str(tmp_path / "town.db")
+    svg_path = str(tmp_path / "custom_name.svg")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path, svg_path=svg_path)
+
+    with open(svg_path, encoding="utf-8") as f:
+        content = f.read()
+    assert "<svg" in content
 
 
 def test_generate_town_database_persists_building_footprints(tmp_path):

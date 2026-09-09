@@ -59,10 +59,14 @@ def test_advance_town_passes_foreign_key_check(tmp_path):
 
 
 def test_advance_town_updates_household_wealth_deterministically(tmp_path):
+    # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): population must stay
+    # above settlemaker's own VILLAGE_POP_CEILING (1000) -- below it, settlemaker
+    # switches to its village engine, which never generates a shop/tavern/etc., so
+    # there's structurally no purchase to spend wealth on and it would never change.
     db_path_1 = str(tmp_path / "town1.db")
     db_path_2 = str(tmp_path / "town2.db")
-    generate_town_database(("town", 9), target_population=500, db_path=db_path_1)
-    generate_town_database(("town", 9), target_population=500, db_path=db_path_2)
+    generate_town_database(("town", 9), target_population=1500, db_path=db_path_1)
+    generate_town_database(("town", 9), target_population=1500, db_path=db_path_2)
 
     advance_town(db_path_1, seed=("town", 9), years=2)
     advance_town(db_path_2, seed=("town", 9), years=2)
@@ -79,7 +83,7 @@ def test_advance_town_updates_household_wealth_deterministically(tmp_path):
     # (Re-derive year-1-only wealth by generating a fresh comparison town and advancing it 1 year,
     # to confirm wealth actually changes between year 1 and year 2 -- not just staying frozen.)
     db_path_1yr = str(tmp_path / "town1_1yr.db")
-    generate_town_database(("town", 9), target_population=500, db_path=db_path_1yr)
+    generate_town_database(("town", 9), target_population=1500, db_path=db_path_1yr)
     advance_town(db_path_1yr, seed=("town", 9), years=1)
     conn_1yr = sqlite3.connect(db_path_1yr)
     total_wealth_1yr = sum(w for (w,) in conn_1yr.execute("SELECT wealth FROM households").fetchall())
@@ -87,8 +91,11 @@ def test_advance_town_updates_household_wealth_deterministically(tmp_path):
 
 
 def test_advance_town_produces_new_purchases_and_relationships(tmp_path):
+    # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): same VILLAGE_POP_CEILING
+    # reasoning as the wealth test above -- a village-engine town has no shops, so
+    # purchases would never appear regardless of years advanced.
     db_path = str(tmp_path / "town.db")
-    generate_town_database(("town", 1), target_population=300, db_path=db_path)
+    generate_town_database(("town", 1), target_population=1500, db_path=db_path)
     conn = sqlite3.connect(db_path)
     purchases_before = conn.execute("SELECT COUNT(*) FROM purchases").fetchone()[0]
 

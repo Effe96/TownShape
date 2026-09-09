@@ -41,7 +41,11 @@ def test_generate_town_from_parameters_passes_foreign_key_check(tmp_path):
     assert violations == []
 
 
-def test_generate_town_from_parameters_threads_density_multiplier_into_building_count(tmp_path):
+def test_generate_town_from_parameters_density_multiplier_no_longer_affects_building_count(tmp_path):
+    # RENAMED 2026-09-09 (settlemaker rewiring, Task 2): density_multiplier has no settlemaker
+    # equivalent (Owner decision 2026-09-08, see docs/superpowers/plans/2026-09-08-settlemaker-
+    # integration-phase2.md's Global Constraints) -- accepted gap, same treatment already applied
+    # to this test's sibling in tests/test_generate.py.
     db_path_sparse = str(tmp_path / "sparse.db")
     db_path_dense = str(tmp_path / "dense.db")
     generate_town_from_parameters(
@@ -55,7 +59,7 @@ def test_generate_town_from_parameters_threads_density_multiplier_into_building_
     conn_dense = sqlite3.connect(db_path_dense)
     sparse_count = conn_sparse.execute("SELECT COUNT(*) FROM buildings").fetchone()[0]
     dense_count = conn_dense.execute("SELECT COUNT(*) FROM buildings").fetchone()[0]
-    assert dense_count > sparse_count
+    assert dense_count == sparse_count
 
 
 def test_generate_town_from_parameters_threads_rich_proportion_into_resident_ses(tmp_path):

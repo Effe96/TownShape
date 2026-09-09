@@ -92,8 +92,15 @@ def test_household_formation_produces_spouse_not_household_member_relationship(t
     # checks that any newly-formed household (more than 2 members starting at a household id
     # beyond the original generation range) is reflected as 'spouse' by the re-derived
     # relationships, not 'household_member'.
+    # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): bumped from 800 to stay above
+    # settlemaker's VILLAGE_POP_CEILING (1000). Verified directly (not guessed): the village
+    # engine sizes total housing capacity to almost exactly match target_population (measured:
+    # 802 capacity for 802 residents at pop=800, zero vacant buildings), so
+    # household_formation.py's _vacant_home_building() never finds anywhere for a newly-formed
+    # household to move into, at any village-range population. Burg-mode towns (>1000) do carry
+    # real vacancy slack (measured: 10 vacant buildings at pop=1500).
     db_path = str(tmp_path / "town.db")
-    generate_town_database(("town", 3), target_population=800, db_path=db_path)
+    generate_town_database(("town", 3), target_population=1500, db_path=db_path)
     conn = sqlite3.connect(db_path)
     max_original_household_id = conn.execute("SELECT MAX(id) FROM households").fetchone()[0]
 
@@ -133,11 +140,15 @@ def test_rich_households_out_spend_poor_households_over_time(tmp_path):
     # The regression this plan exists to fix: a test town previously showed its single highest
     # individual spender for the year was poor, out-spending every rich resident. This asserts
     # the opposite now holds, at the household level, across a seed sweep and multiple years.
+    # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): bumped from 600 to stay above
+    # settlemaker's VILLAGE_POP_CEILING (1000) -- a village-engine town has no shops at all
+    # (village/types.d.ts's PoiKind union has no commercial kind), so there would never be any
+    # purchase, rich or poor, to compare.
     rich_medians = []
     poor_medians = []
     for seed in SEEDS:
         db_path = str(tmp_path / f"wealth_{seed[1]}.db")
-        generate_town_database(seed, target_population=600, db_path=db_path)
+        generate_town_database(seed, target_population=1500, db_path=db_path)
         advance_town(db_path, seed=seed, years=3)
 
         conn = sqlite3.connect(db_path)

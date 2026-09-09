@@ -1,6 +1,8 @@
 import json
 import sqlite3
 
+import pytest
+
 from town_shaper.generate import generate_town
 
 from town_db.generate import generate_town_database
@@ -164,7 +166,12 @@ def test_generate_town_database_default_new_parameters_match_previous_behavior(t
         assert rows_a == rows_b
 
 
-def test_generate_town_database_threads_area_multiplier_into_building_placement(tmp_path):
+def test_generate_town_database_area_multiplier_no_longer_affects_building_placement(tmp_path):
+    # area_per_resident_multiplier has no settlemaker equivalent (Owner
+    # decision 2026-09-08, see docs/superpowers/plans/2026-09-08-
+    # settlemaker-integration-phase2.md's Global Constraints) -- building
+    # coordinates now live entirely in settlemaker's own local coordinate
+    # frame, unrelated to this multiplier.
     db_path_small = str(tmp_path / "small.db")
     db_path_large = str(tmp_path / "large.db")
     generate_town_database(
@@ -178,7 +185,7 @@ def test_generate_town_database_threads_area_multiplier_into_building_placement(
     conn_large = sqlite3.connect(db_path_large)
     small_max_x = conn_small.execute("SELECT MAX(x) FROM buildings").fetchone()[0]
     large_max_x = conn_large.execute("SELECT MAX(x) FROM buildings").fetchone()[0]
-    assert large_max_x > small_max_x
+    assert small_max_x == pytest.approx(large_max_x)
 
 
 def test_generate_town_database_default_water_params_match_previous_behavior(tmp_path):
@@ -263,8 +270,16 @@ def test_generate_town_database_default_magic_prevalence_matches_previous_behavi
         assert rows_a == rows_b
 
 
-def test_generate_town_database_high_magic_prevalence_produces_talented_residents_and_arcane_purchases(tmp_path):
-    found_arcane_purchase = False
+def test_generate_town_database_high_magic_prevalence_produces_talented_residents_but_no_arcane_purchases(tmp_path):
+    # RENAMED 2026-09-09 (settlemaker rewiring, Task 2): magic_prevalence
+    # has no settlemaker equivalent (Owner decision 2026-09-08, see this
+    # plan's Global Constraints). Resident magical talent is unaffected
+    # (assigned independently of buildings, in town_db.households), but
+    # magic purchases require an actual arcane_shop building to buy from
+    # (town_db/purchases.py's magic_available check), and
+    # settlemaker_bridge.parse_geojson.POI_KIND_TO_BUILDING_TYPE has no
+    # arcane_shop mapping -- that building type can never appear, so
+    # magic purchases can never occur either, regardless of seed.
     for seed_index in range(5):
         db_path = str(tmp_path / f"town_{seed_index}.db")
         generate_town_database(
@@ -277,10 +292,7 @@ def test_generate_town_database_high_magic_prevalence_produces_talented_resident
         magic_purchase_count = conn.execute(
             "SELECT COUNT(*) FROM purchases p JOIN goods g ON g.id = p.good_id WHERE g.category = 'magic'"
         ).fetchone()[0]
-        if magic_purchase_count > 0:
-            found_arcane_purchase = True
-
-    assert found_arcane_purchase
+        assert magic_purchase_count == 0
 
 
 def test_generate_town_database_with_magic_passes_foreign_key_check(tmp_path):
@@ -406,7 +418,19 @@ def test_generate_town_database_unchanged_by_persistence_refactor(tmp_path):
         count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         assert count >= 0  # table exists and is queryable
     resident_count = conn.execute("SELECT COUNT(*) FROM residents").fetchone()[0]
-    assert resident_count > 1000  # sanity floor matching the existing plausibility-bounds test
+    # RECALIBRATED 2026-09-09 (settlemaker rewiring, Task 2): settlemaker
+    # now owns residential building layout entirely, sized off its own
+    # internal city-size heuristic rather than TownShape's household-demand
+    # model, so it houses a smaller fraction of target_population than the
+    # old pipeline did -- see test_generate_town_houses_nearly_all_target_
+    # population's comment in test_generate.py for the measured numbers.
+    # Measured directly for this exact seed/population: 762 residents (plus
+    # a year of simulated births) for target_population=1500. 700 is a
+    # safety margin below that measured value -- close enough to catch a
+    # regression, loose enough to absorb incidental changes elsewhere in
+    # the pipeline (e.g. birth/death rates) that shift the count slightly
+    # without indicating a real housing-capacity regression.
+    assert resident_count > 700
 
 
 def test_generate_town_database_seeds_and_updates_household_wealth(tmp_path):

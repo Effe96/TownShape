@@ -77,6 +77,15 @@ INFILL_BUILDING_TYPE_BY_ZONE: Dict[ZoneType, str] = {
     ZoneType.PORT: "workshop",
 }
 
+# Below settlemaker's own VILLAGE_POP_CEILING (1000, settlemaker/dist/village/
+# village-model.js) it runs an entirely different generator with no ward layer
+# at all -- every building is a generic house (no wardType/poi-kind pairing),
+# and the only POI kinds it can ever emit are well/stone-circle/boathouse
+# (village/types.d.ts's PoiKind union) -- never shop/tavern/temple/etc. So a
+# village town structurally has no commercial or job-bearing building, ever;
+# it's modeled as a single POOR_RESIDENTIAL district of "residence" buildings.
+VILLAGE_BUILDING_TYPE = "residence"
+
 
 def _centroid(ring: List[List[float]]) -> Tuple[float, float]:
     if len(ring) < 3:
@@ -93,6 +102,69 @@ def _building_name(seed: Any, building_type: str, building_id: int) -> Any:
         return None
     rng = rng_for(seed, "settlemaker_building_name", building_id)
     return rng.choice(pool)
+
+
+def _parse_village_geojson(
+    geojson: Dict[str, Any], seed: Any,
+) -> Tuple[List[District], List[Building]]:
+    """Village-engine output (see VILLAGE_BUILDING_TYPE's comment above):
+    no ward layer, so there's no per-building zone to key off of -- every
+    building becomes a "residence" in one synthesized POOR_RESIDENTIAL
+    district covering the whole settlement (anchored at metadata.local_bounds'
+    centroid, since there's no ward polygon to derive one from either).
+    Capacity comes from the feature's own `occupancy` field -- settlemaker
+    already varies this per house glyph (a large house sleeps more than a
+    small one), more faithful than the fixed BUILDING_HOME_CAPACITY constant
+    every other (ward-driven) path falls back to. poi/street/green/field
+    layers have no TownShape equivalent and are silently skipped, same
+    treatment the ward path gives street/wall/tower/entrance/pier."""
+    building_features = [f for f in geojson["features"] if f["properties"]["layer"] == "building"]
+    if not building_features:
+        return [], []
+
+    bounds = geojson["metadata"]["local_bounds"]
+    rect = [
+        (bounds["min_x"], bounds["min_y"]), (bounds["max_x"], bounds["min_y"]),
+        (bounds["max_x"], bounds["max_y"]), (bounds["min_x"], bounds["max_y"]),
+    ]
+    zone_type = ZoneType.POOR_RESIDENTIAL
+    district = District(
+        id=0,
+        zone_type=zone_type,
+        anchor=Anchor(
+            id=0, zone_type=zone_type,
+            x=(bounds["min_x"] + bounds["max_x"]) / 2.0,
+            y=(bounds["min_y"] + bounds["max_y"]) / 2.0,
+        ),
+        polygon_parts=[rect],
+    )
+
+    buildings: List[Building] = []
+    for feature in building_features:
+        props = feature["properties"]
+        ring = [tuple(p) for p in feature["geometry"]["coordinates"][0][:-1]]
+        bx, by = _centroid(ring)
+        building_id = district.id * BUILDING_ID_STRIDE + len(district.buildings)
+        vacancies = [
+            JobVacancy(building_id=building_id, occupation=occupation)
+            for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[VILLAGE_BUILDING_TYPE]
+            for _ in range(count)
+        ]
+        building = Building(
+            id=building_id,
+            district_id=district.id,
+            district_zone_type=zone_type,
+            x=bx, y=by,
+            building_type=VILLAGE_BUILDING_TYPE,
+            capacity=int(props["occupancy"]),
+            name=_building_name(seed, VILLAGE_BUILDING_TYPE, building_id),
+            footprint=ring,
+            vacancies=vacancies,
+        )
+        district.buildings.append(building)
+        buildings.append(building)
+
+    return [district], buildings
 
 
 def parse_settlemaker_geojson(
@@ -114,6 +186,9 @@ def parse_settlemaker_geojson(
     the dependency is pinned to an exact SHA (see the spec's Version
     Pinning section) and re-verified if that pin ever moves.
     """
+    if geojson.get("metadata", {}).get("settlement_generation_version") == "village":
+        return _parse_village_geojson(geojson, seed)
+
     districts: List[District] = []
     buildings: List[Building] = []
 

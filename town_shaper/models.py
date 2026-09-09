@@ -119,3 +119,4 @@ class Town:
     residents: List[ResidentSlot] = field(default_factory=list)
     water_features: List[WaterFeature] = field(default_factory=list)
     road_network: Optional[RoadNetwork] = None
+    svg: str = ""

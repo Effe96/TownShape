@@ -158,3 +158,82 @@ def test_parse_is_deterministic_for_same_seed():
     _d1, b1 = parse_settlemaker_geojson(geojson, seed="fixed-seed")
     _d2, b2 = parse_settlemaker_geojson(geojson, seed="fixed-seed")
     assert b1[0].name == b2[0].name
+
+
+# Village-engine fixtures (settlement_generation_version == "village", settlemaker's
+# own VILLAGE_POP_CEILING == 1000 -- see settlemaker/dist/village/village-model.js).
+# No ward layer at all; buildings carry `occupancy` instead of a `wardType`/poi-kind
+# pair, and poi.kind is drawn from a disjoint, non-economic set (well/stone-circle/
+# boathouse -- village/types.d.ts) with no building_id linkage to any building.
+def _village_building(ring, occupancy):
+    return {
+        "type": "Feature",
+        "properties": {"layer": "building", "building_id": "bld:x", "occupancy": occupancy},
+        "geometry": {"type": "Polygon", "coordinates": [ring]},
+    }
+
+
+def _village_poi(kind):
+    return {
+        "type": "Feature",
+        "properties": {"layer": "poi", "poi_id": f"poi:{kind}", "kind": kind},
+        "geometry": {"type": "Point", "coordinates": [5.0, 5.0]},
+    }
+
+
+def _village_geojson(features):
+    return {
+        "features": features,
+        "metadata": {
+            "settlement_generation_version": "village",
+            "local_bounds": {"min_x": 0.0, "min_y": 0.0, "max_x": 30.0, "max_y": 10.0},
+        },
+    }
+
+
+def test_village_buildings_become_a_single_poor_residential_district():
+    geojson = _village_geojson([_village_building(SQUARE, 6), _village_building(SQUARE_2, 4)])
+    districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert len(districts) == 1
+    assert districts[0].zone_type == ZoneType.POOR_RESIDENTIAL
+    assert len(buildings) == 2
+    assert all(b.building_type == "residence" for b in buildings)
+    assert all(b.district_id == districts[0].id for b in buildings)
+
+
+def test_village_building_capacity_comes_from_occupancy_not_the_fixed_constant():
+    geojson = _village_geojson([_village_building(SQUARE, 6), _village_building(SQUARE_2, 4)])
+    _districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    capacities = sorted(b.capacity for b in buildings)
+    assert capacities == [4, 6]
+    assert BUILDING_HOME_CAPACITY["residence"] != 4  # proves occupancy, not the shared constant, was used
+
+
+def test_village_buildings_have_no_job_vacancies():
+    geojson = _village_geojson([_village_building(SQUARE, 6)])
+    _districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert JOB_VACANCIES_BY_BUILDING_TYPE["residence"] == []
+    assert buildings[0].vacancies == []
+
+
+def test_village_pois_are_ignored_not_crashed_on():
+    geojson = _village_geojson([
+        _village_building(SQUARE, 6), _village_poi("well"), _village_poi("stone-circle"), _village_poi("boathouse"),
+    ])
+    districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert len(districts) == 1
+    assert len(buildings) == 1
+
+
+def test_village_district_anchor_is_local_bounds_centroid():
+    geojson = _village_geojson([_village_building(SQUARE, 6)])
+    districts, _buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert districts[0].anchor.x == pytest.approx(15.0)  # (0 + 30) / 2
+    assert districts[0].anchor.y == pytest.approx(5.0)   # (0 + 10) / 2
+
+
+def test_village_with_no_buildings_returns_empty_not_a_phantom_district():
+    geojson = _village_geojson([_village_poi("well")])
+    districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert districts == []
+    assert buildings == []
