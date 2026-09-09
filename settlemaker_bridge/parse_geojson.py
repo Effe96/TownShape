@@ -86,6 +86,45 @@ INFILL_BUILDING_TYPE_BY_ZONE: Dict[ZoneType, str] = {
 # it's modeled as a single POOR_RESIDENTIAL district of "residence" buildings.
 VILLAGE_BUILDING_TYPE = "residence"
 
+# Population tiers a village's business/vacancy curation activates over --
+# see docs/superpowers/specs/2026-09-09-village-economy-design.md. Starting
+# points, not calibrated against real feedback yet -- easy to retune later,
+# nothing else depends on their exact values.
+VILLAGE_BUSINESS_MIN_POPULATION = 75   # below this, a village is houses only
+VILLAGE_SHOP_MIN_POPULATION = 300      # below this, at most a tavern
+VILLAGE_RESERVED_VACANCY_DIVISOR = 100 # ~1 reserved house per this many residents
+
+
+def _curate_village_economy(buildings: List[Building], population: int, seed: Any) -> None:
+    """Mutates a subset of `buildings` in place: reclassifies a few houses
+    into businesses, reserves a few more as initially-vacant (so
+    town_shaper.assignment.assign_residents' reserved_vacant filter leaves
+    them empty for household_formation to grow into later). No-op below
+    VILLAGE_BUSINESS_MIN_POPULATION -- a small enough village is just
+    houses, no businesses and no reserved slack either."""
+    if population < VILLAGE_BUSINESS_MIN_POPULATION or not buildings:
+        return
+
+    business_types = ["tavern"] if population < VILLAGE_SHOP_MIN_POPULATION else ["tavern", "shop"]
+    reserved_count = max(1, population // VILLAGE_RESERVED_VACANCY_DIVISOR)
+
+    rng = rng_for(seed, "village_economy")
+    pool = sorted(buildings, key=lambda b: b.id)
+    rng.shuffle(pool)
+
+    for building, new_type in zip(pool, business_types):
+        building.building_type = new_type
+        building.capacity = BUILDING_HOME_CAPACITY.get(new_type, 0)
+        building.vacancies = [
+            JobVacancy(building_id=building.id, occupation=occupation)
+            for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[new_type]
+            for _ in range(count)
+        ]
+        building.name = _building_name(seed, new_type, building.id)
+
+    for building in pool[len(business_types):len(business_types) + reserved_count]:
+        building.reserved_vacant = True
+
 
 def _centroid(ring: List[List[float]]) -> Tuple[float, float]:
     if len(ring) < 3:

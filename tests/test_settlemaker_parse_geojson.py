@@ -237,3 +237,78 @@ def test_village_with_no_buildings_returns_empty_not_a_phantom_district():
     districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
     assert districts == []
     assert buildings == []
+
+
+from settlemaker_bridge.parse_geojson import _curate_village_economy
+from town_shaper.models import Building, ZoneType
+
+
+def _make_houses(n):
+    return [
+        Building(
+            id=i, district_id=0, district_zone_type=ZoneType.POOR_RESIDENTIAL,
+            x=0.0, y=0.0, building_type="residence", capacity=6,
+        )
+        for i in range(n)
+    ]
+
+
+def test_curate_village_economy_below_floor_reclassifies_nothing():
+    houses = _make_houses(20)
+    _curate_village_economy(houses, population=74, seed="s")
+    assert all(b.building_type == "residence" for b in houses)
+    assert all(not b.reserved_vacant for b in houses)
+
+
+def test_curate_village_economy_tavern_tier_reclassifies_exactly_one_tavern():
+    houses = _make_houses(20)
+    _curate_village_economy(houses, population=150, seed="s")
+    types = [b.building_type for b in houses]
+    assert types.count("tavern") == 1
+    assert types.count("shop") == 0
+    assert types.count("residence") == 19
+
+
+def test_curate_village_economy_shop_tier_reclassifies_tavern_and_shop():
+    houses = _make_houses(75)
+    _curate_village_economy(houses, population=300, seed="s")
+    types = [b.building_type for b in houses]
+    assert types.count("tavern") == 1
+    assert types.count("shop") == 1
+    assert types.count("residence") == 73
+
+
+def test_curate_village_economy_reclassified_building_has_zero_capacity_and_real_vacancies():
+    houses = _make_houses(20)
+    _curate_village_economy(houses, population=150, seed="s")
+    tavern = next(b for b in houses if b.building_type == "tavern")
+    assert tavern.capacity == 0
+    assert sorted(v.occupation for v in tavern.vacancies) == ["barkeep", "tavern_staff", "tavern_staff"]
+    assert tavern.name is not None
+
+
+def test_curate_village_economy_reserved_count_matches_population_over_100_floor_1():
+    houses = _make_houses(20)
+    _curate_village_economy(houses, population=150, seed="s")
+    assert sum(1 for b in houses if b.reserved_vacant) == 1
+
+    houses = _make_houses(250)
+    _curate_village_economy(houses, population=800, seed="s")
+    assert sum(1 for b in houses if b.reserved_vacant) == 8
+
+
+def test_curate_village_economy_reserved_buildings_are_not_also_reclassified():
+    houses = _make_houses(20)
+    _curate_village_economy(houses, population=150, seed="s")
+    reserved = [b for b in houses if b.reserved_vacant]
+    assert all(b.building_type == "residence" for b in reserved)
+    assert all(b.capacity == 6 for b in reserved)
+
+
+def test_curate_village_economy_is_deterministic_for_same_seed():
+    houses1 = _make_houses(75)
+    houses2 = _make_houses(75)
+    _curate_village_economy(houses1, population=300, seed="fixed-seed")
+    _curate_village_economy(houses2, population=300, seed="fixed-seed")
+    assert [(b.id, b.building_type, b.reserved_vacant) for b in houses1] == \
+           [(b.id, b.building_type, b.reserved_vacant) for b in houses2]

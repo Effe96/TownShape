@@ -50,6 +50,7 @@ class Building:
     height: float = 0.0
     rotation: float = 0.0
     footprint: Optional[List[Tuple[float, float]]] = None
+    reserved_vacant: bool = False
 
 
 @dataclass
