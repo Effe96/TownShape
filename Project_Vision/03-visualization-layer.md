@@ -103,3 +103,36 @@ what specifically looked wrong. If it still matters, revisit fresh
 against a settlemaker-generated small town (the new village engine —
 see `01-generation-layer.md`) rather than trying to reconstruct what the
 original complaint was about.
+
+### The interactive viewer never got settlemaker's visual treatment
+
+**Status:** Open — flagged by the user 2026-09-09, comparing a
+`town_viewer` screenshot against the settlemaker SVG shown earlier the
+same session ("this looks much, much poorer quality than what you
+showed me previously")
+
+The two rendering paths have never been connected. Settlemaker's own
+SVG (what a user sees via the persisted `.svg` file, or the Pipeline
+Specimens-style demo) has a real parchment palette, walls, streets,
+farmland texture, and per-building glyphs. `town_viewer/static/app.js`
+draws its own flat canvas rectangles instead, with only a handful of
+hardcoded colors (`LANDMARK_COLORS`, `COMMON_BUILDING_COLORS` — e.g.
+`tavern: "#b5651d"`, `shop: "#daa520"`) and everything else —
+`GENERIC_BUILDING_COLOR = "#555555"`, i.e. every ordinary house —
+falling back to flat dark gray. This isn't a regression from any recent
+work; the viewer was always built for *interactivity* (click a building
+or resident, search, see detail) rather than visual fidelity, and
+nobody has connected the two since settlemaker replaced the static
+renderer.
+
+Real options, not decided here: (a) give `app.js`'s canvas renderer a
+richer, settlemaker-inspired palette (more building-type colors, zone
+tinting) without changing its interaction model; (b) render
+settlemaker's actual persisted SVG as the map layer and lay the
+existing click/search interactivity on top of it (bigger lift — needs
+click-to-building hit-testing against the SVG's real shapes, not the
+canvas's own draw calls); (c) leave it as-is, since its job is
+information density and click-through, not prettiness, and the two
+tools can keep serving different purposes. Whoever picks this up should
+weigh effort against how much the interactive viewer actually gets used
+day to day.
