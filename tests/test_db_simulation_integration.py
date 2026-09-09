@@ -200,3 +200,31 @@ def test_household_wealth_never_goes_negative_across_seeds_and_years(tmp_path):
         conn = sqlite3.connect(db_path)
         negative = conn.execute("SELECT COUNT(*) FROM households WHERE wealth < 0").fetchone()[0]
         assert negative == 0, f"seed {seed}"
+
+
+def test_village_scale_town_produces_purchases_and_grows_a_new_household(tmp_path):
+    # The regression this plan exists to fix: before it, a village-scale town
+    # (population <= settlemaker's VILLAGE_POP_CEILING of 1000) had zero
+    # purchases forever (no shops exist in raw village output) and could
+    # never form a new household (housing had zero vacancy slack). Population
+    # 500 clears both curation floors (75 for a tavern, 300 for a shop too).
+    db_path = str(tmp_path / "village.db")
+    generate_town_database(("village-economy-test", 1), target_population=500, db_path=db_path)
+
+    conn = sqlite3.connect(db_path)
+    building_types = {row[0] for row in conn.execute("SELECT DISTINCT building_type FROM buildings")}
+    assert "tavern" in building_types
+    assert "shop" in building_types
+    max_original_household_id = conn.execute("SELECT MAX(id) FROM households").fetchone()[0]
+    conn.close()
+
+    advance_town(db_path, seed=("village-economy-test", 1), years=5)
+
+    conn = sqlite3.connect(db_path)
+    purchase_count = conn.execute("SELECT COUNT(*) FROM purchases").fetchone()[0]
+    assert purchase_count > 0, "expected at least one purchase in a village with a tavern and a shop"
+
+    new_households = conn.execute(
+        "SELECT id FROM households WHERE id > ?", (max_original_household_id,)
+    ).fetchall()
+    assert new_households, "expected at least one new household to have formed over 5 years"
