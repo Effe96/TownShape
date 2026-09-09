@@ -1,88 +1,86 @@
 # Visualization Layer
 
-### How a generated town is actually shown to the user: the static ink-on-parchment map export and the interactive pan/zoom web viewer. Lives in `town_db/render.py` and `town_viewer/`.
+### How a generated town is actually shown to the user: the exported map (now an SVG) and the interactive pan/zoom web viewer. `town_db/render.py` is gone; the export path lives in `town_db/generate.py` (the sidecar-file write) and, upstream, [`settlemaker`](https://github.com/barrulus/settlemaker) itself. The interactive viewer lives in `town_viewer/`.
 
 **Process note that still applies:** before writing any nontrivial new
 visualization code, mock up a few directions first (even a rough
 sketch) and check in before implementing — this is exactly how the
-current static-map style was arrived at, over several rejected mockup
-rounds (see `Project-Memory/` for the session that did this).
+old static-map style was arrived at, over several rejected mockup
+rounds (see `Project-Memory/` for the session that did this). It's also
+exactly what made the case for replacing that renderer entirely: no
+amount of further mockup iteration on TownShape's own matplotlib output
+closed the gap to what an existing, purpose-built tool already drew.
 
 ## Current State
 
-### Static PNG (`town_db/render.py`)
+### The map export (settlemaker's own SVG)
 
-An ink-on-parchment style deliberately modeled after hand-drawn fantasy
-city maps (Watabou's generator was the reference point, technique-only —
-see `01-generation-layer.md`), not a GIS zoning overlay:
+**2026-09-09 — replaced, not iterated on.** `town_db/render.py` (the
+matplotlib ink-on-parchment renderer this section used to describe in
+detail) is deleted. `town_shaper.generate.generate_town()` now persists
+`Town.svg` — settlemaker's own themed SVG for that exact generated town,
+produced as a side effect of the same subprocess call that produces the
+district/building geometry (see `01-generation-layer.md`) — verbatim,
+next to the `.db` file, via `generate_town_database`'s `svg_path`
+argument (defaults to the `.db` path with its extension swapped).
+`scripts/generate_town.py` writes both files by default.
 
-- One muted building color for the whole town — no per-zone color
-  tinting anywhere, farmland included. A hard-edged tinted polygon reads
-  as "a zone boundary" regardless of how continuous the underlying
-  building density actually is.
-- Every non-landmark building is drawn as its real generated footprint
-  polygon (single ring, or several rings for a courtyard building — see
-  `01-generation-layer.md`), not a placeholder rectangle or a dot.
-- A walled ring (with towers) around the "inner city" zone types
-  (civic, merchant, rich_residential, port), computed from each
-  district's largest polygon part only.
-- **No road lines are drawn at all.** Four rounds of increasingly
-  specific filtering (zone check, length cap, endpoint-proximity check,
-  proximity sampled along a line's entire length) each still left some
-  real generated town with a visible stray line — the decisive case was
-  a spur whose every sampled point was within 0-6 units of some
-  building, yet still rendered as a plainly visible mark, because "a
-  building is nearby" isn't "a building's footprint visually covers
-  this exact line." Street texture on the map now comes entirely from
-  the block-cutting algorithm's own building gaps.
-- Water features render as real polygons-with-holes (an island inside a
-  bay or lake shows as land, not water) via a matplotlib `PathPatch`
-  with one exterior-then-holes `Path` per feature — fixed this session
-  after a real generated coastline exposed the bug (every ring was
-  previously drawn as its own separately-filled solid shape, painting
-  the island as water).
-- Landmark building types (temple, town_hall, school, garrison,
-  tavern, shop, ...) still render as a marker/icon at their center
-  point, not their real footprint — see the queued idea below.
+This resolves several things the old renderer's Feedback section used
+to track as open gaps, for free: settlemaker draws real streets (the old
+renderer gave up on this entirely after four failed filtering attempts —
+see git history), farmland with furrow-texture fill, a proper walled
+core with towers and gates, and every building — landmarks included —
+as its own real footprint with a type-appropriate glyph, not a marker at
+a point. None of that is TownShape's own rendering code to maintain
+anymore.
+
+**Attribution / license note:** settlemaker's SVG symbol library (the
+glyphs actually drawn) is licensed CC-BY-4.0 *separately* from
+settlemaker's own GPL-3.0 code, with a "Rendered Output Exception" —
+maps drawn with the symbols carry no attribution obligation, because
+attribution can't survive compositing into a larger map (see
+`settlemaker_bridge/node_modules/settlemaker/NOTICE` for the exact
+terms once `npm install` has run). So persisting settlemaker's SVG
+output as-is, as TownShape does, needs no per-generated-map credit. The
+tool itself is still credited once, in the README's Acknowledgments
+section.
 
 ### Interactive web viewer (`town_viewer/`)
 
-Flask + vanilla JS canvas: pan/zoom map, click a building for its detail
+Unaffected by the migration except upstream data provenance: still
+Flask + vanilla JS canvas, pan/zoom, click a building for its detail
 (who works/lives there), a searchable resident list, click-through
 between a resident and their home/workplace. Draws real building
-footprints (not icons), added separately from the static renderer.
+footprints from the `buildings.footprint` column — that column is now
+populated from settlemaker's polygons instead of the old hand-cut ones,
+same schema, same viewer code, no changes needed. `town_viewer/queries.py`
+still reads and returns `road_nodes`/`road_edges` for the canvas to
+draw — those tables are now always empty (see `01-generation-layer.md`'s
+Road network note), so this silently draws nothing rather than
+anything wrong. Harmless, but dead weight worth deleting next time
+`town_viewer/` gets real attention.
 
 ## Feedback & Future Ideas
 
 ### Landmark buildings should get real footprints too
 
-**Status:** Proposed (queued by the user during this session's mockup
-work — "queue it please")
+**Status:** Addressed, by the settlemaker migration (2026-09-09) — not
+by the fix originally proposed here
 
-Every other building already gets a real footprint polygon on the
-static map; landmarks are the one remaining exception, still a marker
-placed at a point. The underlying footprint data exists (landmarks go
-through the same block-cutting/lot pipeline as any other building in
-their zone) — `render_town`'s drawing loop just special-cases landmark
-building types out before ever looking at `footprint`. Proposed
-direction: draw the real footprint with a per-type fill color instead
-of (or as well as) the current marker, so landmarks read as an actual
-building on the map rather than a pin.
+The original ask was for `render_town`'s drawing loop to stop
+special-casing landmark building types out before checking `footprint`.
+That code is gone along with the rest of `render.py`; settlemaker draws
+every building, landmarks included, with its own real footprint and a
+type-appropriate glyph in the SVG TownShape now just persists.
 
-### Static renderer and interactive viewer have diverged on roads
+### Static renderer and interactive viewer had diverged on roads
 
-**Status:** Open (found while writing this document, not yet raised
-with the user)
+**Status:** Addressed, incidentally — nothing left to diverge over
 
-`town_viewer/queries.py` still reads and presumably still draws
-`road_nodes`/`road_edges` on the interactive canvas. The static renderer
-used to do the same thing, and categorically stopped after repeated
-attempts to filter out visually-stray lines all failed (see Current
-State above) — the same underlying road graph (straight ridge/spur/
-arterial edges) is very likely still producing the same "random thick
-lines" look in the interactive viewer, just unnoticed because attention
-was on the static map this session. Worth a look before it's the next
-"the map looks bad" report.
+The static renderer that stopped drawing roads is gone. The interactive
+viewer's road-drawing path still exists but reads permanently-empty
+tables (see Current State above) — not a visible bug, since it draws
+nothing rather than something wrong, but see the cleanup note above.
 
 ### An older, since-resolved item, kept for history
 
@@ -90,15 +88,18 @@ was on the static map this session. Worth a look before it's the next
 
 Arterial roads used to render as straight, uniformly thick black lines
 radiating from a single hub point, cutting hard diagonals across
-district polygons and rooftops. Resolved by routing arterial roads
-along the real district-boundary graph instead of straight radials, and
-implicit inset-gap streets for the urban core — later superseded
-entirely by this session's decision to stop drawing roads at all.
+district polygons and rooftops. Resolved that session by routing along
+the real district-boundary graph instead of straight radials — later
+superseded entirely, first by the decision to stop drawing roads at
+all, then by the settlemaker migration replacing the renderer outright.
 
 ### Open, undiscussed: a distinct issue in one small-town mockup
 
-**Status:** Open — flagged by the user as "we can discuss later," never
-returned to before the pipeline-port work took priority. No detail was
-captured about what the issue actually was; revisit by generating a
-fresh small town and asking what specifically still looks wrong, rather
-than guessing.
+**Status:** Open, but likely moot — flagged by the user as "we can
+discuss later" against the *old* renderer, never returned to before the
+pipeline-port work took priority, and the entire rendering approach it
+was flagged against no longer exists. No detail was ever captured about
+what specifically looked wrong. If it still matters, revisit fresh
+against a settlemaker-generated small town (the new village engine —
+see `01-generation-layer.md`) rather than trying to reconstruct what the
+original complaint was about.

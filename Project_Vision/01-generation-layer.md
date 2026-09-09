@@ -1,127 +1,146 @@
 # Generation Layer
 
-### Procedural spatial layout — districts, water, roads, blocks, lots, and building footprints. Lives in `town_shaper/`. The part of the codebase responsible for *where everything is*, before any resident or history exists.
+### Procedural spatial layout — districts, water, and building footprints. Lives in `town_shaper/` (orchestration, water, households, name/job tables, resident assignment) and `settlemaker_bridge/` (the actual geometry engine). The part of the codebase responsible for *where everything is*, before any resident or history exists.
 
-Stylistic reference point: Watabou's `TownGeneratorOS` (a copy lives in a
-sibling directory, GPLv3) was studied for *technique* — vertex-anchored
-polygon bisection, per-zone "chaos" parameters, courtyard peeling — never
-for code, which was independently reimplemented. A Florence map photo was
-also used as organic-irregularity reference during mockup iteration.
+**2026-09-09 — replaced, not just refactored.** Everything below used to be
+a hand-built Voronoi/block-cutting pipeline (`town_shaper/anchors.py`,
+`districts.py`, `blocks.py`, `roads.py`, `countryside.py` — all now
+deleted, ~2,800 lines). It's now a thin Python parser
+(`settlemaker_bridge/parse_geojson.py`) over the real output of
+[`settlemaker`](https://github.com/barrulus/settlemaker), an external
+Node library invoked as a subprocess. See `docs/superpowers/specs/`
+and `docs/superpowers/plans/`'s `2026-09-08-settlemaker-integration*`
+files for the full design/rollout history (P001 in `00-proposals.md`
+is the proposal that started this). **License note:** `settlemaker` is
+GPL-3.0-only, itself a TypeScript reimplementation of watabou (Oleg
+Dolya)'s `TownGeneratorOS`/Medieval Fantasy City Generator — the same
+GPL-3.0 project this file used to cite as a *technique-only* reference
+before the port. TownShape invokes it as a separate subprocess (JSON
+over stdin/stdout, pinned to an exact commit SHA in
+`settlemaker_bridge/package.json`) rather than linking or copying its
+source, so TownShape's own license is unaffected — see the README's
+Acknowledgments section for the full chain of credit.
 
 ## Current State
 
-### Districts
+### The bridge
 
-Organic Voronoi diagram around per-zone anchor points, zoned by type
-(civic, merchant, rich/poor residential, port, farmland_edge...). A
-river or coastline can split one district's Voronoi cell into several
-disconnected `polygon_parts` — every downstream consumer (block-cutting,
-wall rendering) uses **only the largest part**, never all of them.
-Treating every part as buildable used to produce a phantom, disconnected
-mini-neighbourhood (with its own street grid) stranded on a secondary
-fragment on the wrong side of the water — found and fixed twice
-(residential, then separately for civic/merchant/port) before becoming
-this one shared rule.
+`town_shaper.generate.generate_town()` builds `TownParameters`-derived
+water features locally (unchanged — see Water below), then calls
+`settlemaker_bridge.pipeline.generate_via_settlemaker(seed,
+target_population, ...)`, which shells out to settlemaker's
+`generateSettlement` via a small Node wrapper (`settlemaker_bridge/
+generate.mjs`) and gets back GeoJSON + settlemaker's own themed SVG.
+`settlemaker_bridge/parse_geojson.py` turns that GeoJSON into the same
+`District`/`Building` dataclasses (`town_shaper/models.py`) every
+downstream package (`town_db`, `town_relationships`, `town_narrative`)
+already consumed before the migration — no schema or downstream-API
+change. `Town.svg` is new: settlemaker's SVG is persisted verbatim
+alongside the SQLite database (see the visualization layer doc).
 
-### Water features
+Two real engines exist behind that one call, chosen by settlemaker
+itself off `target_population` against its own hardcoded
+`VILLAGE_POP_CEILING` (1000) — TownShape doesn't choose:
 
-Optional rivers and coastline, carving real unbuildable space out of the
-town when requested. River/coastline centerlines are Chaikin-smoothed
-before being buffered into a strip, so they curve instead of zigzagging.
-A water feature's polygon can have interior holes (an island in a bay,
-for instance) — anything that touches water anywhere in the pipeline
-must treat the shape as a real `shapely` polygon-with-holes, not just
-its list of rings, or an island silently gets treated as open water (see
-`03-visualization-layer.md`'s equivalent rendering gap, found and fixed
-in the same session).
+- **≥1000 — the "burg" engine.** Ward-subdivided (`ward` GeoJSON layer,
+  mapped to `ZoneType` via `WARD_TYPE_TO_ZONE_TYPE` — administration/
+  cathedral/military/park → civic, merchant/market → merchant, slum/
+  craftsmen → poor_residential, patriciate → rich_residential, harbour/
+  gate → port, farm → farmland_edge; `castle` has never appeared in a
+  real run and still raises loudly rather than silently defaulting).
+  Buildings carry a `poi.kind` (inn, smithy, shop, guardhouse, ...)
+  mapped to TownShape's own `building_type` vocabulary
+  (`POI_KIND_TO_BUILDING_TYPE`) when one exists, falling back to a
+  plain zone-appropriate infill type (`residence`, `manor`, `workshop`,
+  `farmstead`) otherwise.
+- **<1000 — the "village" engine.** A structurally different generator
+  with no ward layer at all — added to the parser 2026-09-09, after an
+  earlier gap where calls in this range silently returned an empty
+  town. Every building is a generic house (capacity from the feature's
+  own `occupancy`, not a fixed constant); the only POI kinds it can
+  ever emit are `well`/`stone-circle`/`boathouse` (verified against
+  settlemaker's own `village/types.d.ts`) — **a village can never
+  contain a shop, tavern, temple, or any job-bearing building.**
+  Parsed into one synthesized `POOR_RESIDENTIAL` district covering the
+  whole settlement.
 
-**Invariant, enforced centrally:** no building anywhere may intersect
-water. `town_shaper/countryside.py`'s `remove_buildings_in_water` runs
-once, after every generation path has placed its buildings, and is the
-single source of truth for this — several generation paths (residential
-cutting near a coastal edge, countryside placement, occasionally
-merchant/civic) each had their own narrower water check that still let
-edge cases through independently; the shared final filter is what
-actually guarantees zero.
+### Water
 
-### Road network
+Unchanged in spirit, still `town_shaper/water.py` (`generate_water_features`,
+Chaikin-smoothed centerlines buffered into strips, real polygons-with-holes).
+What changed: these polygons are computed in TownShape's own coordinate
+frame first, then rescaled into settlemaker's local frame (a per-town,
+non-constant meters-per-unit ratio settlemaker only reports *after* one
+throwaway call — see `pipeline.py`'s module docstring for why this costs
+two subprocess calls per watered town) before being handed to settlemaker
+as `coastlineGeometry`, so settlemaker's own patch classifier keeps
+buildings off the same water TownShape persists.
 
-A real, persisted graph of nodes/edges laid over district geometry
-(boundary ridges, spur edges, arterial routes along the boundary graph
-toward `farmland_edge`) still exists and is still computed/persisted —
-`town_shaper/roads.py`, `road_nodes`/`road_edges` tables. It is **no
-longer drawn on the static map** (see visualization layer) after
-repeated attempts to filter out visually-stray lines all failed; the
-graph itself is kept for whatever still consumes it (routing logic, the
-interactive viewer — see the cross-layer gap noted in
-`03-visualization-layer.md`). Urban streets on the static map are purely
-implicit: each district and each block is inset, so the gap between
-neighbouring inset polygons *is* the street, with no edge object behind
-it.
+### Districts, blocks, roads, countryside
 
-### Blocks, lots, and buildings
-
-Two independent pipelines, chosen by zone type:
-
-- **Civic / merchant / port** (`generate_blocks_and_buildings`,
-  `compute_district_blocks`): district → inset + jaggified → recursively
-  subdivided into blocks by `subdivide_into_blocks`/`organic_subdivide`,
-  then tiled down to lot-sized leaves, one building per leaf. A
-  population-scaled cap bounds how many named/business building types
-  (taverns, shops, temples...) get generated so counts stay usable for a
-  DM rather than realistic-but-unmanageable.
-- **Residential (poor/rich)** (`generate_organic_residential_buildings`,
-  `town_shaper/blocks.py`): a separate, more organic pipeline —
-  per-edge `variable_inset` (wide setback on a block's longest edge, a
-  proxy for "faces a street"; narrow on the rest), vertex-anchored
-  recursive bisection (`organic_subdivide_residential`) with per-zone
-  "chaos" parameters (`RESIDENTIAL_CHAOS`: poor is chaotic/dense-ish,
-  rich is calmer/roomier), independent block-level and house-level
-  rotation, and a per-leaf choice between an ordinary rotated house or
-  peeling the leaf into a **courtyard building** (`ring_peel`) — one
-  `Building` with a multi-ring footprint (a hollow ring of wall-strip
-  polygons), the same convention `District.polygon` already uses for
-  multi-part polygons.
-- **Farmland** (`town_shaper/countryside.py`) is no longer a zone fill
-  at a uniform density at all. A countryside building (single house or a
-  2-4-building farm cluster: main house + outbuildings) can appear
-  anywhere it has enough clearance from the *nearest actually-placed
-  building* in any direction; required clearance grows smoothly
-  (smoothstep, not a hard cutoff) with distance to that nearest
-  building, so density fades continuously from town into open
-  countryside with no zone-boundary seam to see. Attempt counts scale
-  with map area, not a fixed constant, so bigger towns don't undersample
-  into patchy gaps.
+Gone as TownShape concepts. Settlemaker owns ward layout, block/lot
+subdivision, building placement, and wall/tower/gate geometry entirely.
+`town_shaper/roads.py` is deleted; `Town.road_network` is always an
+empty `RoadNetwork()` now (never `None`, never populated) — settlemaker's
+own `street` GeoJSON layer isn't mapped onto TownShape's `RoadNode`/
+`RoadEdge` models, so the `road_nodes`/`road_edges` tables are always
+empty. (`town_viewer/`'s road-drawing code still reads those tables —
+harmless, since they're empty, but it's dead weight now; see the
+visualization layer doc.)
 
 ### Determinism
 
-All randomness flows through a single `rng_for(seed, *path_parts)`
-helper; no global `random` state anywhere in the pipeline.
+Still holds, on both sides of the boundary: TownShape's own water-feature
+generation still flows through `rng_for(seed, *path_parts)`; settlemaker
+gets a plain numeric seed derived via `town_shaper.seeding.derive_seed`,
+and the bridge's own integration test
+(`tests/test_settlemaker_bridge_integration.py`) asserts byte-identical
+output (buildings and SVG both) for two calls with the same seed.
+
+### Generation speed
+
+Roughly **100x faster** than the deleted pipeline — settlemaker resolves
+in ~150ms per call versus the old pipeline's 13-16s at population 3000
+(measured during the original spike, P001 in `00-proposals.md`).
+Resolves the "Generation time is growing with visual quality" item that
+used to live in Feedback below.
 
 ## Feedback & Future Ideas
 
 ### Duplicate tavern (and other) building names within one town
 
-**Status:** Open
+**Status:** Open (still applies — the mechanism moved, not the gap)
 
-`BUILDING_NAME_POOLS["tavern"]` (`town_shaper/buildings.py`) has only 4
-names, and every tavern independently draws `rng.choice(name_pool)` with
-replacement. A town with more than a handful of taverns will produce
-duplicates ("The Weary Traveler" twice) as a structural certainty, not a
-fluke. Not fixed yet — candidates: a bigger name pool, sampling without
-replacement until a pool is exhausted then falling back to a
-disambiguating suffix ("The Weary Traveler (Docks)"), or folding it into
-whatever future population-scaled-cap work touches this table next.
+`BUILDING_NAME_POOLS["tavern"]` (`town_shaper/buildings.py`) still has
+only 4 names, still drawn via `rng.choice(name_pool)` with replacement —
+now from `settlemaker_bridge/parse_geojson.py`'s `_building_name` instead
+of the deleted `blocks.py`. A town with more than a handful of taverns
+still produces duplicates as a structural certainty. Candidates
+unchanged: a bigger name pool, sampling without replacement with a
+disambiguating-suffix fallback, or folding it into whatever future
+population-scaled-cap work touches this table next.
 
-### Generation time is growing with visual quality
+### Village-scale towns have no economy and can't grow
 
-**Status:** Open (informational, not a regression)
+**Status:** Open — a real product question, not decided here
 
-The organic residential cutting (vertex-anchored recursive bisection per
-lot) and the area-scaled countryside sampling pass are both real,
-deliberate trade-offs of generation time for the visual quality they
-buy. A population-3000 town now takes roughly 14-16s to generate
-end-to-end (was under 10s before this session's port), and the
-regression test's budget was raised to 20s to match. Worth a look if
-target populations grow much past the low thousands, or if generation
-time ever needs to be interactive rather than a batch step.
+Confirmed structural, not a bug: the village engine can never emit a
+job-bearing building (see Current State above), so a village-scale town
+has zero purchases, zero wealth change, and zero workplace assignment,
+ever. Separately, its housing capacity is sized by settlemaker to almost
+exactly match `target_population` (measured: 802 capacity for 802
+residents, zero vacant buildings) — `household_formation.py`'s
+`_vacant_home_building()` can never find anywhere to move a new
+household into, at any village-range population. Whether/how village
+residents should get jobs, relationships, and narrative treatment the
+way town residents do is an open design question, not an engineering
+one.
+
+### `castle` ward type remains unresolved
+
+**Status:** Open, by design — still raises loudly
+
+Never seen in a real run across either the Phase 1 checkpoint or the
+migration's own test sweeps. `WARD_TYPE_TO_ZONE_TYPE` still has no entry
+for it and `parse_settlemaker_geojson` still raises rather than silently
+guessing, per the original design decision.

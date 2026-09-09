@@ -23,11 +23,14 @@ regenerates the exact same town.
 
 Generation happens in layers, each depending on the one before it:
 
-1. **`town_shaper`** — spatial layout. Organic Voronoi districts zoned
-   by type (residential, merchant, civic, port, ...), buildings placed
-   within them, and residents assigned to a home and workplace. Also
-   handles optional water features (rivers, coastline) that carve real
-   unbuildable space out of the town.
+1. **`town_shaper`** — spatial layout. District and building geometry
+   (zoned by type — residential, merchant, civic, port, ...) comes from
+   [settlemaker](https://github.com/barrulus/settlemaker), an external
+   generator invoked as a subprocess via `settlemaker_bridge/` — see
+   Acknowledgments below. `town_shaper` handles water features (rivers,
+   coastline, carving real unbuildable space out of the town),
+   households, and assigning residents to a home and workplace within
+   settlemaker's generated buildings.
 2. **`town_db`** — a SQLite database built on top of a `town_shaper`
    layout: demographically-enriched residents (age, sex, race,
    socioeconomic status) plus a year of historical registry records —
@@ -64,9 +67,11 @@ Two more `town_db` capabilities operate on an already-generated database:
   into vacated positions), then re-derives relationships. Deterministic
   per year, same as one-shot generation.
 
-Rendering (`town_db/render.py`) produces a top-down matplotlib map of a
-generated town: districts by zone type, water, and buildings (with
-landmarks called out).
+Every generated town also gets a rendered map for free: settlemaker
+produces its own themed SVG as part of the same call that generates the
+geometry, and `town_db.generate.generate_town_database` persists it
+verbatim next to the `.db` file (see Quick start below) — TownShape
+does no rendering of its own.
 
 ## Requirements
 
@@ -122,7 +127,8 @@ directly with any SQLite client, or via `sqlite3` in Python.
 python -m pytest
 ```
 
-349 tests as of the last update, covering all four packages.
+422 tests as of the last update, covering all four packages plus the
+settlemaker bridge.
 
 ## Repo layout
 
@@ -155,3 +161,40 @@ All randomness flows through a single `rng_for(seed, *path_parts)`
 helper (`town_shaper.seeding`) — there is no use of global `random`
 state anywhere in the generation pipeline. The same seed and parameters
 always produce byte-identical output.
+
+## Acknowledgments
+
+TownShape's own code is written from scratch, but district/building
+geometry and map rendering are not — they come from real work by other
+people, credited here in the manner each project's license calls for:
+
+- **[`settlemaker`](https://github.com/barrulus/settlemaker)** by Barry
+  Gill, **GPL-3.0-only**. TownShape depends on it directly: every
+  district, building, wall, and the rendered SVG for a generated town
+  all come from this library, invoked as a separate subprocess (JSON
+  over stdin/stdout via `settlemaker_bridge/`, pinned to an exact commit
+  SHA — see `settlemaker_bridge/package.json`), not linked into or
+  copied from TownShape's own code. That subprocess boundary is why
+  TownShape's own license is unaffected by settlemaker's GPL-3.0 — see
+  `docs/superpowers/specs/2026-09-08-settlemaker-integration-design.md`
+  for the full reasoning. settlemaker's SVG output uses its own symbol
+  library, licensed CC-BY-4.0 with a Rendered Output Exception (no
+  per-map attribution needed for rendered/composited maps like the ones
+  TownShape persists) — see `settlemaker_bridge/node_modules/settlemaker/NOTICE`
+  once installed.
+- **[`TownGeneratorOS`](https://github.com/watabou/TownGeneratorOS)**
+  (the Medieval Fantasy City Generator) by Oleg Dolya ("watabou"),
+  **GPL-3.0**. settlemaker is itself a TypeScript reimplementation of
+  this project's technique — so it's the origin, two steps removed, of
+  every town TownShape now generates. It was also this project's own
+  direct stylistic and technique reference (vertex-anchored polygon
+  bisection, per-zone "chaos" parameters, courtyard peeling) during the
+  hand-built `town_shaper` pipeline that settlemaker has since replaced
+  — studied for approach only, never for code, which was independently
+  written and has since been deleted.
+- **[Fantasy Map Generator](https://github.com/Azgaar/Fantasy-Map-Generator)**
+  by Max Haniyeu ("Azgaar"), **MIT**. Researched as prior art (not
+  integrated — no code or assets used) while evaluating options for
+  TownShape's longer-term, not-yet-scheduled multi-town/world-scale
+  vision; see `Project_Vision/00-proposals.md`'s P001 for the research
+  notes.

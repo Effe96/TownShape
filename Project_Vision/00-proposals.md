@@ -26,7 +26,7 @@ detail. Keep it in sync whenever an entry's status changes.
 
 | ID | Title | Layer | Status |
 |---|---|---|---|
-| [P001](#p001--integrate-existing-open-source-watabou-style-generators-instead-of-building-bespoke) | Integrate existing open-source watabou-style generators instead of building bespoke | generation (cross-cutting) | Proposed |
+| [P001](#p001--integrate-existing-open-source-watabou-style-generators-instead-of-building-bespoke) | Integrate existing open-source watabou-style generators instead of building bespoke | generation (cross-cutting) | Addressed (Phases 1-2); Phase 3 deferred |
 
 ## Status values
 
@@ -65,7 +65,7 @@ the last one used).
 
 ## P001 — Integrate existing open-source watabou-style generators instead of building bespoke
 
-**Status:** Proposed
+**Status:** Addressed (Phases 1-2); Phase 3 deferred
 **Layer:** generation (cross-cutting — see Notes)
 **Date:** 2026-09-08
 
@@ -102,6 +102,30 @@ Cloned `barrulus/settlemaker` (`git clone --depth 1`, `npm install`, `npx tsc`) 
 
 - `docs/superpowers/specs/2026-09-08-settlemaker-integration-design.md` — full design: integration boundary (Node bridge subprocess, JSON over stdin/stdout, no schema changes needed), the `ZoneType`↔`WardType` and `building_type`↔`PoiKind` mapping tables, exactly what gets deleted from `town_shaper` (`anchors.py`, `districts.py`, `blocks.py`, `roads.py`, `countryside.py` — including this same session's brand-new organic-residential/courtyard/countryside code) versus kept (`water.py`, `models.py`, `buildings.py`'s name/job tables, `seeding.py`), a verified determinism finding (identical seed -> byte-identical output except a harmless `generated_at` timestamp), and open risks (Node becomes a hard runtime dependency; settlemaker is young and must be pinned to a commit SHA, never a floating branch).
 - `docs/superpowers/plans/2026-09-08-settlemaker-integration.md` — phased rollout: **Phase 1** builds the bridge + parser and produces one real side-by-side town for the user to visually approve (and confirm the ward mapping actually looks right) *before anything existing is touched or deleted*; **Phase 2** (only after that checkpoint) replaces the real pipeline and carries the bulk of the test-suite rewrite; **Phase 3** (retiring `town_db/render.py` for settlemaker's native SVG, and the long-term multi-town vision) stays deliberately deferred, not scheduled.
-- **Status unchanged at Proposed** — the spec is ready for review, but Phase 1 (the first line of actual code) hasn't started; this needs the user's go-ahead on the design itself first.
+— **Phase 1 shipped (2026-09-08):** the Node bridge (`settlemaker_bridge/`), pinned to
+`barrulus/settlemaker` commit `af6741127086762fc0d73bdec374dcfcd373d5be`, plus the
+GeoJSON parser onto `District`/`Building`. Checkpoint town approved by the user
+(rendering moved in-scope, ward-mapping confirmed) before Phase 2 started.
 
-**Resolution:** <left blank until resolved>
+— **Phase 2 shipped (2026-09-09):** `town_shaper.generate.generate_town()` now calls
+the bridge for real, replacing the `anchors → districts → blocks/countryside → roads`
+pipeline outright (~2,800 lines deleted: `anchors.py`, `districts.py`, `blocks.py`,
+`roads.py`, `countryside.py`, plus `town_db/render.py`'s matplotlib renderer,
+superseded by persisting settlemaker's own SVG). Along the way, found and fixed a
+real gap the original spike didn't cover: settlemaker silently routes
+`target_population <= 1000` through an entirely different "village" engine with no
+ward layer, which the parser didn't understand — full write-up in
+`01-generation-layer.md`'s Current State and Feedback sections, including the
+resulting real gap (villages can never have an economy or grow via household
+formation) now tracked there as its own open item.
+
+**Resolution:** Addressed — see `01-generation-layer.md` and
+`03-visualization-layer.md` for the current state of the generation and
+visualization layers post-migration, and this file's own License/Acknowledgments
+notes on `settlemaker` (GPL-3.0) and its own upstream, watabou's `TownGeneratorOS`
+(GPL-3.0), also credited in the README. Azgaar's Fantasy Map Generator (MIT) was
+researched as prior art for the multi-town/world-scale step of this proposal's
+original vision but never integrated — that step is exactly Phase 3, still
+deliberately deferred per `docs/superpowers/plans/2026-09-08-settlemaker-integration.md`
+("revisit only as its own proposal once Phase 2 has shipped and been lived with for
+a while") — not started, not scheduled.
