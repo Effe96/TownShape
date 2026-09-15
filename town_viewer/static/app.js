@@ -290,8 +290,28 @@ loadMap();
 
 let highlightedBuildingIds = [];
 
+function pointInPolygon(x, y, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    const intersect = ((yi > y) !== (yj > y))
+      && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 function findBuildingAt(worldX, worldY) {
   for (const building of mapData.buildings) {
+    // Same footprint-vs-width/height branch draw()'s fill and highlight
+    // loops already use -- settlemaker-sourced buildings carry a real
+    // footprint with width/height left at 0, so a bounding-box-only test
+    // never matches them.
+    if (building.footprint) {
+      if (pointInPolygon(worldX, worldY, building.footprint)) return building;
+      continue;
+    }
     const dx = worldX - building.x;
     const dy = worldY - building.y;
     const cosR = Math.cos(-building.rotation);
