@@ -42,6 +42,38 @@ const view = { scale: 1, offsetX: 0, offsetY: 0 };
 const svgLayer = document.getElementById("svg-layer");
 let svgViewBox = null;  // { minX, minY, width, height }, parsed once per town load
 
+const renderModeToggle = document.getElementById("render-mode-toggle");
+let flatMode = false;
+try {
+  flatMode = localStorage.getItem("townViewerFlatMode") === "1";
+} catch (e) {
+  // private browsing / storage disabled -- flatMode just stays the default
+}
+
+function updateRenderModeUI() {
+  if (!mapData.local_bounds) {
+    // No settlemaker SVG for this town at all (old .db, or the SVG file
+    // couldn't be found) -- already flat-only, nothing to toggle.
+    renderModeToggle.style.display = "none";
+    svgLayer.style.display = "";
+    return;
+  }
+  renderModeToggle.style.display = "";
+  renderModeToggle.textContent = flatMode ? "Show settlemaker map" : "Show legend colors";
+  svgLayer.style.display = flatMode ? "none" : "";
+}
+
+renderModeToggle.addEventListener("click", () => {
+  flatMode = !flatMode;
+  try {
+    localStorage.setItem("townViewerFlatMode", flatMode ? "1" : "0");
+  } catch (e) {
+    // ignore -- toggle still works for the rest of this session
+  }
+  updateRenderModeUI();
+  draw();
+});
+
 const canvas = document.getElementById("map");
 const ctx = canvas.getContext("2d");
 
@@ -136,7 +168,7 @@ function draw() {
   // For a .db generated before this feature (local_bounds is null, no SVG
   // overlay), fall back to the old flat-canvas rendering so the map isn't
   // blank.
-  if (!mapData.local_bounds) {
+  if (!mapData.local_bounds || flatMode) {
     ctx.globalAlpha = 0.6;
     for (const water of mapData.water_features) drawPolygon(water.polygon, WATER_COLOR, null);
     for (const district of mapData.districts) {
@@ -224,6 +256,7 @@ function loadMap() {
       fitViewToBounds();
       svgLayer.innerHTML = "";
       svgViewBox = null;
+      updateRenderModeUI();
       if (mapData.local_bounds) {
         fetch("/api/town.svg")
           .then((r) => (r.ok ? r.text() : ""))
