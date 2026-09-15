@@ -10,7 +10,12 @@ const ZONE_COLORS = {
 const DEFAULT_ZONE_COLOR = "#dddddd";
 const WATER_COLOR = "#4a90d9";
 
-const LANDMARK_COLORS = {
+// Every building_type this project's generators can ever produce (the full
+// key set of town_shaper.buildings.JOB_VACANCIES_BY_BUILDING_TYPE) gets its
+// own color here -- "buildings" render mode is a full palette, not just a
+// handful of landmarks, so GENERIC_BUILDING_COLOR below is a true fallback
+// for an unrecognized type, not the common case it used to be.
+const BUILDING_TYPE_COLORS = {
   temple: "#8b008b",
   town_hall: "#000080",
   school: "#008080",
@@ -19,13 +24,19 @@ const LANDMARK_COLORS = {
   guard_post: "#cd5c5c",
   arcane_shop: "#9400d3",
   harbormaster_office: "#00008b",
-};
-const COMMON_BUILDING_COLORS = {
+  healer: "#e07a9e",
   tavern: "#b5651d",
   shop: "#daa520",
+  blacksmith: "#b34700",
+  market_stall: "#ff8c42",
+  manor: "#ffd700",
+  residence: "#a9a9a9",
+  farmstead: "#9acd32",
+  dock: "#3a6ea5",
+  warehouse: "#8b7355",
+  workshop: "#708090",
   garden: "#2e7d32",
 };
-const ALL_TYPED_COLORS = { ...LANDMARK_COLORS, ...COMMON_BUILDING_COLORS };
 const GENERIC_BUILDING_COLOR = "#555555";
 
 const ROAD_STYLE = {
@@ -35,7 +46,7 @@ const ROAD_STYLE = {
 };
 
 function buildingColor(buildingType) {
-  return ALL_TYPED_COLORS[buildingType] || GENERIC_BUILDING_COLOR;
+  return BUILDING_TYPE_COLORS[buildingType] || GENERIC_BUILDING_COLOR;
 }
 
 let mapData = { districts: [], buildings: [], water_features: [], roads: { nodes: [], edges: [] }, local_bounds: null };
@@ -44,36 +55,52 @@ const view = { scale: 1, offsetX: 0, offsetY: 0 };
 const svgLayer = document.getElementById("svg-layer");
 let svgViewBox = null;  // { minX, minY, width, height }, parsed once per town load
 
-const renderModeToggle = document.getElementById("render-mode-toggle");
-let flatMode = false;
+// Three render modes: "settlemaker" (the real themed SVG), "buildings"
+// (every building filled by its own type, full BUILDING_TYPE_COLORS
+// palette), "zones" (every district filled by its zone color). "settlemaker"
+// is only ever offered when mapData.local_bounds exists; effectiveRenderMode()
+// is what draw()/renderLegend() actually use, collapsing an unavailable
+// choice (a stale localStorage value from a different town, or the default,
+// against a town with no SVG at all) down to "buildings".
+const RENDER_MODE_LABELS = {
+  settlemaker: "Settlemaker map",
+  buildings: "Building colors",
+  zones: "Zone colors",
+};
+const renderModeSelect = document.getElementById("render-mode-select");
+let renderMode = "settlemaker";
 try {
-  flatMode = localStorage.getItem("townViewerFlatMode") === "1";
+  const stored = localStorage.getItem("townViewerRenderMode");
+  if (stored === "buildings" || stored === "zones" || stored === "settlemaker") renderMode = stored;
 } catch (e) {
-  // private browsing / storage disabled -- flatMode just stays the default
+  // private browsing / storage disabled -- renderMode just stays the default
+}
+
+function effectiveRenderMode() {
+  if (renderMode === "settlemaker" && !mapData.local_bounds) return "buildings";
+  return renderMode;
 }
 
 function updateRenderModeUI() {
-  if (!mapData.local_bounds) {
-    // No settlemaker SVG for this town at all (old .db, or the SVG file
-    // couldn't be found) -- already flat-only, nothing to toggle.
-    renderModeToggle.style.display = "none";
-    svgLayer.style.display = "";
-    return;
-  }
-  renderModeToggle.style.display = "";
-  renderModeToggle.textContent = flatMode ? "Show settlemaker map" : "Show legend colors";
-  svgLayer.style.display = flatMode ? "none" : "";
+  const svgAvailable = !!mapData.local_bounds;
+  const modes = svgAvailable ? ["settlemaker", "buildings", "zones"] : ["buildings", "zones"];
+  renderModeSelect.innerHTML = modes
+    .map((m) => `<option value="${m}">${RENDER_MODE_LABELS[m]}</option>`)
+    .join("");
+  renderModeSelect.value = effectiveRenderMode();
+  svgLayer.style.display = effectiveRenderMode() === "settlemaker" ? "" : "none";
 }
 
-renderModeToggle.addEventListener("click", () => {
-  flatMode = !flatMode;
+renderModeSelect.addEventListener("change", () => {
+  renderMode = renderModeSelect.value;
   try {
-    localStorage.setItem("townViewerFlatMode", flatMode ? "1" : "0");
+    localStorage.setItem("townViewerRenderMode", renderMode);
   } catch (e) {
     // ignore -- toggle still works for the rest of this session
   }
   updateRenderModeUI();
   draw();
+  renderLegend();
 });
 
 const canvas = document.getElementById("map");
@@ -162,19 +189,19 @@ function draw() {
   updateSvgTransform();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Water/farmland/building fills and road lines used to be drawn here
-  // unconditionally. Settlemaker's own SVG (rendered underneath via
-  // #svg-layer, positioned by updateSvgTransform above) now shows all of
-  // that for towns with local_bounds -- see
-  // docs/superpowers/specs/2026-09-09-town-viewer-svg-overlay-design.md.
-  // For a .db generated before this feature (local_bounds is null, no SVG
-  // overlay), fall back to the old flat-canvas rendering so the map isn't
-  // blank.
-  if (!mapData.local_bounds || flatMode) {
+  // Settlemaker's own SVG (rendered underneath via #svg-layer, positioned
+  // by updateSvgTransform above) covers the "settlemaker" mode entirely --
+  // see docs/superpowers/specs/2026-09-09-town-viewer-svg-overlay-design.md.
+  // The other two modes reuse the same flat-canvas primitives: "zones"
+  // fills every district by its zone color (a true area map); "buildings"
+  // fills only the farmland background (as settlemaker's own map does
+  // implicitly) and colors every individual building by its own type.
+  const mode = effectiveRenderMode();
+  if (mode !== "settlemaker") {
     ctx.globalAlpha = 0.6;
     for (const water of mapData.water_features) drawPolygon(water.polygon, WATER_COLOR, null);
     for (const district of mapData.districts) {
-      if (district.zone_type !== "farmland_edge") continue;
+      if (mode !== "zones" && district.zone_type !== "farmland_edge") continue;
       const color = ZONE_COLORS[district.zone_type] || DEFAULT_ZONE_COLOR;
       drawPolygon(district.polygon, color, "black");
     }
@@ -196,25 +223,27 @@ function draw() {
       ctx.stroke();
     }
 
-    for (const building of mapData.buildings) {
-      ctx.fillStyle = buildingColor(building.building_type);
-      if (building.footprint) {
-        ctx.beginPath();
-        building.footprint.forEach(([x, y], i) => {
-          const { sx, sy } = worldToScreen(x, y);
-          if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-        });
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        const { sx, sy } = worldToScreen(building.x, building.y);
-        ctx.save();
-        ctx.translate(sx, sy);
-        ctx.rotate(building.rotation);
-        const screenWidth = building.width * view.scale;
-        const screenHeight = building.height * view.scale;
-        ctx.fillRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
-        ctx.restore();
+    if (mode === "buildings") {
+      for (const building of mapData.buildings) {
+        ctx.fillStyle = buildingColor(building.building_type);
+        if (building.footprint) {
+          ctx.beginPath();
+          building.footprint.forEach(([x, y], i) => {
+            const { sx, sy } = worldToScreen(x, y);
+            if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+          });
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          const { sx, sy } = worldToScreen(building.x, building.y);
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(building.rotation);
+          const screenWidth = building.width * view.scale;
+          const screenHeight = building.height * view.scale;
+          ctx.fillRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
+          ctx.restore();
+        }
       }
     }
   }
@@ -484,21 +513,31 @@ function selectResident(residentId) {
     });
 }
 
+// The legend only ever shows the palette the current render mode actually
+// paints -- a "Zones" key while looking at settlemaker's own art (or a
+// "Buildings" key while looking at the zones fill) described colors that
+// were never on screen. One legend, one mode, always in sync.
 function renderLegend() {
-  const zoneTypes = [...new Set(mapData.districts.map((d) => d.zone_type))].sort();
-  const landmarkTypesPresent = [...new Set(mapData.buildings.map((b) => b.building_type))]
-    .filter((t) => t in ALL_TYPED_COLORS)
-    .sort();
+  const legend = document.getElementById("legend");
+  const mode = effectiveRenderMode();
 
-  const zoneRows = zoneTypes
-    .map((zt) => `<div class="row"><span class="swatch" style="background:${ZONE_COLORS[zt] || DEFAULT_ZONE_COLOR}"></span>${zt}</div>`)
-    .join("");
-  const landmarkRows = landmarkTypesPresent
-    .map((bt) => `<div class="row"><span class="swatch" style="background:${ALL_TYPED_COLORS[bt]}"></span>${bt}</div>`)
-    .join("");
+  if (mode === "settlemaker") {
+    legend.innerHTML = "";
+    return;
+  }
 
-  document.getElementById("legend").innerHTML = `
-    <div><strong>Zones</strong></div>${zoneRows}
-    <div><strong>Landmarks</strong></div>${landmarkRows || "<div class=\"row hint\">none</div>"}
-  `;
+  if (mode === "zones") {
+    const zoneTypes = [...new Set(mapData.districts.map((d) => d.zone_type))].sort();
+    const rows = zoneTypes
+      .map((zt) => `<div class="row"><span class="swatch" style="background:${ZONE_COLORS[zt] || DEFAULT_ZONE_COLOR}"></span>${zt}</div>`)
+      .join("");
+    legend.innerHTML = `<div><strong>Zones</strong></div>${rows || "<div class=\"row hint\">none</div>"}`;
+    return;
+  }
+
+  const buildingTypesPresent = [...new Set(mapData.buildings.map((b) => b.building_type))].sort();
+  const rows = buildingTypesPresent
+    .map((bt) => `<div class="row"><span class="swatch" style="background:${buildingColor(bt)}"></span>${bt}</div>`)
+    .join("");
+  legend.innerHTML = `<div><strong>Buildings</strong></div>${rows || "<div class=\"row hint\">none</div>"}`;
 }
