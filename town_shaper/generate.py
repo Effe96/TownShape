@@ -40,7 +40,7 @@ def generate_town(
     # neither parameter influences generated geometry any more. Both stay
     # accepted here (and in generate_town_database/TownParameters) purely
     # for API compatibility.
-    districts, buildings, water_features, svg = generate_via_settlemaker(
+    districts, buildings, water_features, svg, local_bounds = generate_via_settlemaker(
         seed, target_population,
         area_per_resident_multiplier=area_per_resident_multiplier,
         num_rivers=num_rivers, has_coastline=has_coastline, has_port=has_port,
@@ -59,4 +59,8 @@ def generate_town(
     # (which iterate .nodes/.edges) don't need a None-guard.
     town.road_network = RoadNetwork()
     town.svg = svg
+    town.svg_min_x = local_bounds["min_x"]
+    town.svg_min_y = local_bounds["min_y"]
+    town.svg_max_x = local_bounds["max_x"]
+    town.svg_max_y = local_bounds["max_y"]
     return town

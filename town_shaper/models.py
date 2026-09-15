@@ -121,3 +121,7 @@ class Town:
     water_features: List[WaterFeature] = field(default_factory=list)
     road_network: Optional[RoadNetwork] = None
     svg: str = ""
+    svg_min_x: Optional[float] = None
+    svg_min_y: Optional[float] = None
+    svg_max_x: Optional[float] = None
+    svg_max_y: Optional[float] = None

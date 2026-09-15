@@ -17,22 +17,25 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_bridge_round_trip_produces_districts_buildings_and_svg():
-    districts, buildings, water_features, svg = generate_via_settlemaker(
+    districts, buildings, water_features, svg, local_bounds = generate_via_settlemaker(
         "bridge-integration-test", 3000, num_rivers=1, has_coastline=True, has_port=True,
     )
     assert len(districts) > 0
     assert len(buildings) > 0
     assert len(water_features) == 2
     assert "<svg" in svg
+    assert "min_x" in local_bounds and "min_y" in local_bounds
+    assert "max_x" in local_bounds and "max_y" in local_bounds
 
 
 def test_bridge_round_trip_is_deterministic():
     result1 = generate_via_settlemaker("bridge-integration-test", 3000, num_rivers=1, has_coastline=True)
     result2 = generate_via_settlemaker("bridge-integration-test", 3000, num_rivers=1, has_coastline=True)
 
-    districts1, buildings1, _water1, svg1 = result1
-    districts2, buildings2, _water2, svg2 = result2
+    districts1, buildings1, _water1, svg1, bounds1 = result1
+    districts2, buildings2, _water2, svg2, bounds2 = result2
 
     key = lambda b: (b.id, b.district_id, b.building_type, b.x, b.y, b.footprint)
     assert sorted(map(key, buildings1)) == sorted(map(key, buildings2))
     assert svg1 == svg2
+    assert bounds1 == bounds2

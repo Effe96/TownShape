@@ -205,9 +205,12 @@ def generate_town_database(
 
     year_end = year_start + timedelta(days=YEAR_LENGTH_DAYS)
     conn.execute(
-        "INSERT INTO town_state (id, year_start, current_date, aggression, magic_prevalence) "
-        "VALUES (1, ?, ?, ?, ?)",
-        (year_start.isoformat(), year_end.isoformat(), aggression, magic_prevalence),
+        "INSERT INTO town_state (id, year_start, current_date, aggression, magic_prevalence, "
+        "svg_min_x, svg_min_y, svg_max_x, svg_max_y) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            year_start.isoformat(), year_end.isoformat(), aggression, magic_prevalence,
+            town.svg_min_x, town.svg_min_y, town.svg_max_x, town.svg_max_y,
+        ),
     )
 
     conn.commit()

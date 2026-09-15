@@ -298,6 +298,42 @@ def test_generate_town_database_honors_explicit_svg_path(tmp_path):
     assert "<svg" in content
 
 
+def test_generate_town_database_writes_svg_bounds_for_burg_mode(tmp_path):
+    from town_db.generate import generate_town_database
+
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 1), target_population=3000, db_path=db_path)
+
+    conn = connect(db_path)
+    row = conn.execute(
+        "SELECT svg_min_x, svg_min_y, svg_max_x, svg_max_y FROM town_state WHERE id = 1"
+    ).fetchone()
+    conn.close()
+
+    assert None not in row
+    min_x, min_y, max_x, max_y = row
+    assert max_x > min_x
+    assert max_y > min_y
+
+
+def test_generate_town_database_writes_svg_bounds_for_village_mode(tmp_path):
+    from town_db.generate import generate_town_database
+
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(("town", 9), target_population=500, db_path=db_path)
+
+    conn = connect(db_path)
+    row = conn.execute(
+        "SELECT svg_min_x, svg_min_y, svg_max_x, svg_max_y FROM town_state WHERE id = 1"
+    ).fetchone()
+    conn.close()
+
+    assert None not in row
+    min_x, min_y, max_x, max_y = row
+    assert max_x > min_x
+    assert max_y > min_y
+
+
 def test_generate_town_database_persists_building_footprints(tmp_path):
     from town_db.generate import generate_town_database
 

@@ -21,7 +21,7 @@ not one -- an acceptable cost at this project's generation volume (see the
 design spec's "why a subprocess" rationale, which already accepted
 per-call subprocess overhead on the same grounds).
 """
-from typing import Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from shapely.geometry import Polygon as ShapelyPolygon
 
@@ -95,8 +95,12 @@ def generate_via_settlemaker(
     num_rivers: int = 0,
     has_coastline: bool = False,
     has_port: bool = False,
-) -> Tuple[List[District], List[Building], List[WaterFeature], str]:
-    """Returns (districts, buildings, scaled_water_features, svg). `svg` is
+) -> Tuple[List[District], List[Building], List[WaterFeature], str, Dict[str, float]]:
+    """Returns (districts, buildings, scaled_water_features, svg, local_bounds).
+    `local_bounds` is settlemaker's own metadata.local_bounds for this call,
+    passed through unmodified (keys: min_x, min_y, max_x, max_y) -- see
+    docs/superpowers/specs/2026-09-09-town-viewer-svg-overlay-design.md for
+    what it's for. `svg` is
     settlemaker's own themed output for this exact town -- see the design
     spec's Rendering section: this project's real rendering path persists
     that SVG rather than reconstructing footprints in matplotlib, which
@@ -126,4 +130,5 @@ def generate_via_settlemaker(
 
     result = call_settlemaker(burg, settlemaker_seed)
     districts, buildings = parse_settlemaker_geojson(result["geojson"], seed, target_population)
-    return districts, buildings, scaled_water_features, result["svg"]
+    local_bounds = result["geojson"]["metadata"]["local_bounds"]
+    return districts, buildings, scaled_water_features, result["svg"], local_bounds

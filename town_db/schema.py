@@ -177,7 +177,11 @@ CREATE TABLE town_state (
     year_start TEXT NOT NULL,
     current_date TEXT NOT NULL,
     aggression REAL NOT NULL,
-    magic_prevalence REAL NOT NULL
+    magic_prevalence REAL NOT NULL,
+    svg_min_x REAL,
+    svg_min_y REAL,
+    svg_max_x REAL,
+    svg_max_y REAL
 );
 """
 
