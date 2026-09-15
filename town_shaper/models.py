@@ -12,6 +12,7 @@ class ZoneType(Enum):
     POOR_RESIDENTIAL = "poor_residential"
     FARMLAND_EDGE = "farmland_edge"
     PORT = "port"
+    PARK = "park"
 
 
 class SES(Enum):

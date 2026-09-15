@@ -32,10 +32,11 @@ WARD_TYPE_TO_ZONE_TYPE: Dict[str, ZoneType] = {
     "military": ZoneType.CIVIC,
     # `park` WAS named in the spec as a known-deferred ward type, with two
     # options offered ("fold into civic, or add [it] as new ZoneType
-    # values"). Provisionally taking the fold-into-civic option here, same
-    # caveat as `military` above -- needs real user sign-off, not just this
-    # placeholder, before Phase 2.
-    "park": ZoneType.CIVIC,
+    # values"). Decided 2026-09-15 (real user sign-off, prompted by a
+    # generated town's park buildings showing up mislabeled "workshop"):
+    # park gets its own ZoneType, infilled as "garden" below, not folded
+    # into civic.
+    "park": ZoneType.PARK,
 }
 # Not buildable area -- skipped, never raise. Everything else unmapped
 # (castle, park, and -- discovered while implementing this, not in the
@@ -75,6 +76,7 @@ INFILL_BUILDING_TYPE_BY_ZONE: Dict[ZoneType, str] = {
     ZoneType.RICH_RESIDENTIAL: "manor",
     ZoneType.FARMLAND_EDGE: "farmstead",
     ZoneType.PORT: "workshop",
+    ZoneType.PARK: "garden",
 }
 
 # Below settlemaker's own VILLAGE_POP_CEILING (1000, settlemaker/dist/village/

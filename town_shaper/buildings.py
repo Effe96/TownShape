@@ -56,6 +56,7 @@ JOB_VACANCIES_BY_BUILDING_TYPE: Dict[str, List[Tuple[str, int]]] = {
     "harbormaster_office": [("harbormaster", 1), ("customs_clerk", 2)],
     "arcane_shop": [("mage", 1), ("apprentice", 2)],
     "workshop": [],
+    "garden": [],
 }
 
 BUILDING_NAME_POOLS: Dict[str, List[str]] = {

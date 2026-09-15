@@ -5,6 +5,7 @@ const ZONE_COLORS = {
   poor_residential: "#a9a9a9",
   farmland_edge: "#9acd32",
   port: "#87ceeb",
+  park: "#2e7d32",
 };
 const DEFAULT_ZONE_COLOR = "#dddddd";
 const WATER_COLOR = "#4a90d9";
@@ -22,6 +23,7 @@ const LANDMARK_COLORS = {
 const COMMON_BUILDING_COLORS = {
   tavern: "#b5651d",
   shop: "#daa520",
+  garden: "#2e7d32",
 };
 const ALL_TYPED_COLORS = { ...LANDMARK_COLORS, ...COMMON_BUILDING_COLORS };
 const GENERIC_BUILDING_COLOR = "#555555";

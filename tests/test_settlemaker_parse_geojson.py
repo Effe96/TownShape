@@ -57,7 +57,7 @@ def test_ward_ring_drops_geojson_closing_duplicate():
 def test_confirmed_ward_mappings():
     for ward_type, expected in [
         ("administration", ZoneType.CIVIC), ("cathedral", ZoneType.CIVIC),
-        ("military", ZoneType.CIVIC), ("park", ZoneType.CIVIC),
+        ("military", ZoneType.CIVIC), ("park", ZoneType.PARK),
         ("merchant", ZoneType.MERCHANT), ("market", ZoneType.MERCHANT),
         ("slum", ZoneType.POOR_RESIDENTIAL), ("craftsmen", ZoneType.POOR_RESIDENTIAL),
         ("patriciate", ZoneType.RICH_RESIDENTIAL),
@@ -131,6 +131,19 @@ def test_building_without_poi_gets_zone_infill_type_and_capacity():
     assert buildings[0].capacity == BUILDING_HOME_CAPACITY["farmstead"]
     # JOB_VACANCIES_BY_BUILDING_TYPE["farmstead"] == [("farmer", 1), ("farmhand", 3)] -> 4 vacancy slots
     assert len(buildings[0].vacancies) == 4
+
+
+def test_park_ward_infills_buildings_as_garden():
+    # Previously folded into ZoneType.CIVIC ("workshop" infill) -- park now
+    # gets its own zone and its own infill type, decided 2026-09-15 after
+    # a real generated town showed park buildings mislabeled "workshop".
+    geojson = {"features": [_ward("park", SQUARE), _building("park", SQUARE, "b1")]}
+    districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert districts[0].zone_type == ZoneType.PARK
+    assert buildings[0].building_type == "garden"
+    # Gardens are decorative -- no residents, no jobs, same treatment "workshop" got.
+    assert buildings[0].capacity == 0
+    assert buildings[0].vacancies == []
 
 
 def test_building_footprint_and_centroid():
