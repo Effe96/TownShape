@@ -20,6 +20,21 @@ into that frame, then call settlemaker again for real. Two ~150ms calls,
 not one -- an acceptable cost at this project's generation volume (see the
 design spec's "why a subprocess" rationale, which already accepted
 per-call subprocess overhead on the same grounds).
+
+**Why the water also gets re-centered after the real call, not just scaled
+before it.** The dry call's frame isn't just a scale reference -- its
+*center* was silently assumed to carry over to the real call too, and it
+doesn't: handing settlemaker a real coastline measurably shifts where it
+lays out the burg's mesh (measured directly: a population-8000 coastal
+town shifted its frame's center by ~42 units between the dry and real
+calls, on a ~210-unit-tall town -- port buildings ended up tens of units
+from the water polygon they were supposed to be built next to). Fixed by
+translating the already-scaled water features, after the real call, by the
+delta between the dry and real calls' local_bounds centers -- corrects the
+position without another subprocess call. Not a scale correction (the real
+call's frame can also be a different aspect ratio than the dry call's, not
+just offset) -- a translation is the smallest fix that visibly closes the
+gap without a third settlemaker call.
 """
 from typing import Any, Dict, List, Tuple
 
@@ -55,6 +70,13 @@ def _local_radius_from_bounds(local_bounds: dict) -> float:
     return min(width, height) / 2.0
 
 
+def _center_of_bounds(local_bounds: dict) -> Tuple[float, float]:
+    return (
+        (local_bounds["min_x"] + local_bounds["max_x"]) / 2.0,
+        (local_bounds["min_y"] + local_bounds["max_y"]) / 2.0,
+    )
+
+
 def _scale_water_features(
     water_features: List[WaterFeature], town_bounds_half: float, local_radius: float,
 ) -> List[WaterFeature]:
@@ -88,6 +110,28 @@ def _scale_water_features(
     return scaled
 
 
+def _translate_water_features(
+    water_features: List[WaterFeature], dx: float, dy: float,
+) -> List[WaterFeature]:
+    """Shift already-scaled water features by (dx, dy) in the same frame
+    their coordinates already live in. Used to correct for the real
+    (with-coastline) settlemaker call landing its burg mesh at a different
+    center than the dry (no-water) call used to derive the scale in
+    _scale_water_features -- see generate_via_settlemaker's docstring."""
+    if dx == 0.0 and dy == 0.0:
+        return water_features
+    translated: List[WaterFeature] = []
+    for feature in water_features:
+        rings = _water_feature_rings(feature)
+        exterior = [(x + dx, y + dy) for x, y in rings[0]]
+        holes = [[(x + dx, y + dy) for x, y in ring] for ring in rings[1:]]
+        translated.append(WaterFeature(
+            id=feature.id, kind=feature.kind,
+            polygon=ShapelyPolygon(exterior, holes=holes),
+        ))
+    return translated
+
+
 def generate_via_settlemaker(
     seed: Any,
     target_population: int,
@@ -118,9 +162,11 @@ def generate_via_settlemaker(
     settlemaker_seed = _settlemaker_seed(seed)
 
     scaled_water_features: List[WaterFeature] = []
+    dry_bounds: dict = {}
     if water_features:
         dry_result = call_settlemaker(burg, settlemaker_seed)
-        local_radius = _local_radius_from_bounds(dry_result["geojson"]["metadata"]["local_bounds"])
+        dry_bounds = dry_result["geojson"]["metadata"]["local_bounds"]
+        local_radius = _local_radius_from_bounds(dry_bounds)
         scaled_water_features = _scale_water_features(water_features, town_bounds_half, local_radius)
         burg = dict(burg, coastlineGeometry=[
             [{"x": x, "y": y} for x, y in ring]
@@ -131,4 +177,12 @@ def generate_via_settlemaker(
     result = call_settlemaker(burg, settlemaker_seed)
     districts, buildings = parse_settlemaker_geojson(result["geojson"], seed, target_population)
     local_bounds = result["geojson"]["metadata"]["local_bounds"]
+
+    if water_features:
+        dry_center = _center_of_bounds(dry_bounds)
+        real_center = _center_of_bounds(local_bounds)
+        scaled_water_features = _translate_water_features(
+            scaled_water_features, real_center[0] - dry_center[0], real_center[1] - dry_center[1],
+        )
+
     return districts, buildings, scaled_water_features, result["svg"], local_bounds
