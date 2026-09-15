@@ -36,8 +36,11 @@ function buildingColor(buildingType) {
   return ALL_TYPED_COLORS[buildingType] || GENERIC_BUILDING_COLOR;
 }
 
-let mapData = { districts: [], buildings: [], water_features: [], roads: { nodes: [], edges: [] } };
+let mapData = { districts: [], buildings: [], water_features: [], roads: { nodes: [], edges: [] }, local_bounds: null };
 const view = { scale: 1, offsetX: 0, offsetY: 0 };
+
+const svgLayer = document.getElementById("svg-layer");
+let svgViewBox = null;  // { minX, minY, width, height }, parsed once per town load
 
 const canvas = document.getElementById("map");
 const ctx = canvas.getContext("2d");
@@ -59,6 +62,39 @@ function screenToWorld(sx, sy) {
     x: (sx - canvas.width / 2) / view.scale + view.offsetX,
     y: (sy - canvas.height / 2) / view.scale + view.offsetY,
   };
+}
+
+function updateSvgTransform() {
+  if (!mapData.local_bounds || !svgViewBox) return;
+  const svgEl = svgLayer.querySelector("svg");
+  if (!svgEl) return;
+
+  const lb = mapData.local_bounds;
+  const worldWidth = lb.max_x - lb.min_x;
+  const worldHeight = lb.max_y - lb.min_y;
+  if (worldWidth <= 0 || worldHeight <= 0) return;
+
+  // World units -> SVG units. Verified empirically (design spec): this is
+  // exactly 1 for burg-mode towns (SVG paths already use world coordinates
+  // directly) and a real, consistent per-town factor (~4 in one measured
+  // village) for village-mode towns -- one formula, no per-engine branch.
+  const svgUnitsPerWorldUnit = svgViewBox.width / worldWidth;
+  const pixelsPerSvgUnit = view.scale / svgUnitsPerWorldUnit;
+
+  // The SVG element's own local pixel (0, 0) already corresponds to its
+  // viewBox's (minX, minY) point -- the <svg width> attribute was set equal
+  // to the viewBox width in loadMap(), so that offset is handled entirely
+  // by the SVG's own internal rendering. Working through the algebra: local
+  // pixel (0, 0) is exactly the point at world (local_bounds.min_x,
+  // local_bounds.min_y), for BOTH engines, regardless of what the viewBox's
+  // own (minX, minY) numerically is -- that term cancels out. (An earlier
+  // draft of this function subtracted a `svgViewBox.minX/minY`-derived term
+  // here; that was wrong -- it happened to vanish for village-mode towns,
+  // whose viewBox origin is (0, 0), but would have visibly misaligned
+  // burg-mode towns, whose viewBox origin is not. Do not reintroduce it.)
+  const origin = worldToScreen(lb.min_x, lb.min_y);
+
+  svgEl.style.transform = `translate(${origin.sx}px, ${origin.sy}px) scale(${pixelsPerSvgUnit})`;
 }
 
 function fitViewToBounds() {
@@ -89,54 +125,16 @@ function drawPolygon(ringList, fillStyle, strokeStyle) {
 }
 
 function draw() {
+  updateSvgTransform();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  ctx.globalAlpha = 0.6;
-  for (const water of mapData.water_features) drawPolygon(water.polygon, WATER_COLOR, null);
-  for (const district of mapData.districts) {
-    if (district.zone_type !== "farmland_edge") continue;
-    const color = ZONE_COLORS[district.zone_type] || DEFAULT_ZONE_COLOR;
-    drawPolygon(district.polygon, color, "black");
-  }
-  ctx.globalAlpha = 1;
-
-  const roadNodeById = new Map((mapData.roads?.nodes || []).map((n) => [n.id, n]));
-  for (const edge of mapData.roads?.edges || []) {
-    const from = roadNodeById.get(edge.from_node_id);
-    const to = roadNodeById.get(edge.to_node_id);
-    if (!from || !to) continue;
-    const style = ROAD_STYLE[edge.road_type] || ROAD_STYLE.spur;
-    const a = worldToScreen(from.x, from.y);
-    const b = worldToScreen(to.x, to.y);
-    ctx.beginPath();
-    ctx.moveTo(a.sx, a.sy);
-    ctx.lineTo(b.sx, b.sy);
-    ctx.strokeStyle = style.color;
-    ctx.lineWidth = style.width;
-    ctx.stroke();
-  }
-
-  for (const building of mapData.buildings) {
-    ctx.fillStyle = buildingColor(building.building_type);
-    if (building.footprint) {
-      ctx.beginPath();
-      building.footprint.forEach(([x, y], i) => {
-        const { sx, sy } = worldToScreen(x, y);
-        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-      });
-      ctx.closePath();
-      ctx.fill();
-    } else {
-      const { sx, sy } = worldToScreen(building.x, building.y);
-      ctx.save();
-      ctx.translate(sx, sy);
-      ctx.rotate(building.rotation);
-      const screenWidth = building.width * view.scale;
-      const screenHeight = building.height * view.scale;
-      ctx.fillRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
-      ctx.restore();
-    }
-  }
+  // Water/farmland/building fills and road lines used to be drawn here.
+  // Settlemaker's own SVG (rendered underneath via #svg-layer, positioned
+  // by updateSvgTransform above) already shows all of that -- see
+  // docs/superpowers/specs/2026-09-09-town-viewer-svg-overlay-design.md.
+  // The canvas now exists only for interaction (click hit-testing, which
+  // reads mapData directly and was never part of this function) and the
+  // selection highlight below.
 
   for (const buildingId of highlightedBuildingIds) {
     const building = mapData.buildings.find((b) => b.id === buildingId);
@@ -175,6 +173,23 @@ function loadMap() {
       mapData = data;
       resizeCanvas();
       fitViewToBounds();
+      svgLayer.innerHTML = "";
+      svgViewBox = null;
+      if (mapData.local_bounds) {
+        fetch("/api/town.svg")
+          .then((r) => r.text())
+          .then((svgText) => {
+            svgLayer.innerHTML = svgText;
+            const svgEl = svgLayer.querySelector("svg");
+            const vb = (svgEl.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
+            if (vb.length === 4) {
+              svgViewBox = { minX: vb[0], minY: vb[1], width: vb[2], height: vb[3] };
+              svgEl.setAttribute("width", vb[2]);
+              svgEl.setAttribute("height", vb[3]);
+            }
+            draw();
+          });
+      }
       draw();
       renderLegend();
     });
