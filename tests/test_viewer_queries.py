@@ -341,3 +341,66 @@ def test_get_building_detail_includes_null_footprint_when_not_set(tmp_path):
     conn.close()
 
     assert building["footprint"] is None
+
+
+def test_get_map_data_returns_local_bounds_when_present(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    _build_minimal_map(db_path)
+    conn = connect(db_path)
+    conn.execute(
+        "INSERT INTO town_state (id, year_start, current_date, aggression, magic_prevalence, "
+        "svg_min_x, svg_min_y, svg_max_x, svg_max_y) VALUES (1, '1300-01-01', '1301-01-01', 0.0, 0.0, "
+        "-10.0, -20.0, 30.0, 40.0)"
+    )
+    conn.commit()
+
+    data = get_map_data(conn)
+    conn.close()
+
+    assert data["local_bounds"] == {"min_x": -10.0, "min_y": -20.0, "max_x": 30.0, "max_y": 40.0}
+
+
+def test_get_map_data_returns_none_local_bounds_when_town_state_row_is_missing(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    _build_minimal_map(db_path)
+    # _build_minimal_map never inserts a town_state row -- this is the real,
+    # already-existing shape every other test in this file exercises.
+    conn = connect(db_path)
+
+    data = get_map_data(conn)
+    conn.close()
+
+    assert data["local_bounds"] is None
+
+
+def test_get_map_data_returns_none_local_bounds_when_columns_predate_this_feature(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    conn = connect(db_path)
+    # A minimal stand-in for a `.db` generated before this feature existed --
+    # the four-column town_state schema this project used before Task 1.
+    conn.execute(
+        "CREATE TABLE town_state (id INTEGER PRIMARY KEY CHECK (id = 1), year_start TEXT NOT NULL, "
+        "current_date TEXT NOT NULL, aggression REAL NOT NULL, magic_prevalence REAL NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE districts (id INTEGER PRIMARY KEY, zone_type TEXT NOT NULL, polygon TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE buildings (id INTEGER PRIMARY KEY, district_id INTEGER NOT NULL, "
+        "zone_type TEXT NOT NULL, building_type TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL, "
+        "capacity INTEGER NOT NULL, name TEXT, width REAL NOT NULL DEFAULT 0, "
+        "height REAL NOT NULL DEFAULT 0, rotation REAL NOT NULL DEFAULT 0, footprint TEXT)"
+    )
+    conn.execute("CREATE TABLE water_features (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, polygon TEXT NOT NULL)")
+    conn.execute("CREATE TABLE road_nodes (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, anchor_id INTEGER, is_hub INTEGER NOT NULL, x REAL NOT NULL, y REAL NOT NULL)")
+    conn.execute("CREATE TABLE road_edges (id INTEGER PRIMARY KEY, from_node_id INTEGER NOT NULL, to_node_id INTEGER NOT NULL, road_type TEXT NOT NULL)")
+    conn.execute(
+        "INSERT INTO town_state (id, year_start, current_date, aggression, magic_prevalence) "
+        "VALUES (1, '1300-01-01', '1301-01-01', 0.0, 0.0)"
+    )
+    conn.commit()
+
+    data = get_map_data(conn)
+    conn.close()
+
+    assert data["local_bounds"] is None

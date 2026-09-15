@@ -3,6 +3,18 @@ import sqlite3
 from typing import Any, Dict, Optional
 
 
+def _read_local_bounds(conn: sqlite3.Connection) -> Optional[Dict[str, float]]:
+    try:
+        row = conn.execute(
+            "SELECT svg_min_x, svg_min_y, svg_max_x, svg_max_y FROM town_state WHERE id = 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None  # town_state predates this feature -- no such column
+    if row is None or any(v is None for v in row):
+        return None
+    return {"min_x": row[0], "min_y": row[1], "max_x": row[2], "max_y": row[3]}
+
+
 def get_map_data(conn: sqlite3.Connection) -> Dict[str, Any]:
     districts = [
         {"id": row[0], "zone_type": row[1], "polygon": json.loads(row[2])}
@@ -35,6 +47,7 @@ def get_map_data(conn: sqlite3.Connection) -> Dict[str, Any]:
     return {
         "districts": districts, "buildings": buildings, "water_features": water_features,
         "roads": {"nodes": road_nodes, "edges": road_edges},
+        "local_bounds": _read_local_bounds(conn),
     }
 
 

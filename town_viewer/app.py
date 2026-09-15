@@ -15,6 +15,11 @@ def create_app(db_path: str) -> Flask:
     def index():
         return send_from_directory(STATIC_DIR, "index.html")
 
+    @app.get("/api/town.svg")
+    def town_svg():
+        svg_path = os.path.splitext(db_path)[0] + ".svg"
+        return send_from_directory(os.path.dirname(svg_path) or ".", os.path.basename(svg_path))
+
     @app.get("/api/map")
     def map_data():
         conn = connect(db_path)

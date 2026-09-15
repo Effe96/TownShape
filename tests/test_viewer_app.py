@@ -64,3 +64,20 @@ def test_resident_detail_endpoint_404s_for_missing_resident(tmp_path):
     client = _client(tmp_path)
     response = client.get("/api/residents/999")
     assert response.status_code == 404
+
+
+def test_town_svg_endpoint_serves_the_persisted_svg(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+    svg_path = str(tmp_path / "town.svg")
+    with open(svg_path, "w", encoding="utf-8") as f:
+        f.write("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>")
+
+    app = create_app(db_path)
+    app.testing = True
+    client = app.test_client()
+    response = client.get("/api/town.svg")
+
+    assert response.status_code == 200
+    assert b"<svg" in response.data
+    assert "svg" in response.content_type
