@@ -81,3 +81,20 @@ def test_town_svg_endpoint_serves_the_persisted_svg(tmp_path):
     assert response.status_code == 200
     assert b"<svg" in response.data
     assert "svg" in response.content_type
+
+
+def test_town_svg_endpoint_serves_the_persisted_svg_with_relative_db_path(tmp_path, monkeypatch):
+    db_path = tmp_path / "town.db"
+    build_full_town(str(db_path))
+    svg_path = tmp_path / "town.svg"
+    svg_path.write_text("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    app = create_app("town.db")
+    app.testing = True
+    client = app.test_client()
+    response = client.get("/api/town.svg")
+
+    assert response.status_code == 200
+    assert b"<svg" in response.data
+    assert "svg" in response.content_type
