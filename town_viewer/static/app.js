@@ -128,13 +128,62 @@ function draw() {
   updateSvgTransform();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Water/farmland/building fills and road lines used to be drawn here.
-  // Settlemaker's own SVG (rendered underneath via #svg-layer, positioned
-  // by updateSvgTransform above) already shows all of that -- see
+  // Water/farmland/building fills and road lines used to be drawn here
+  // unconditionally. Settlemaker's own SVG (rendered underneath via
+  // #svg-layer, positioned by updateSvgTransform above) now shows all of
+  // that for towns with local_bounds -- see
   // docs/superpowers/specs/2026-09-09-town-viewer-svg-overlay-design.md.
-  // The canvas now exists only for interaction (click hit-testing, which
-  // reads mapData directly and was never part of this function) and the
-  // selection highlight below.
+  // For a .db generated before this feature (local_bounds is null, no SVG
+  // overlay), fall back to the old flat-canvas rendering so the map isn't
+  // blank.
+  if (!mapData.local_bounds) {
+    ctx.globalAlpha = 0.6;
+    for (const water of mapData.water_features) drawPolygon(water.polygon, WATER_COLOR, null);
+    for (const district of mapData.districts) {
+      if (district.zone_type !== "farmland_edge") continue;
+      const color = ZONE_COLORS[district.zone_type] || DEFAULT_ZONE_COLOR;
+      drawPolygon(district.polygon, color, "black");
+    }
+    ctx.globalAlpha = 1;
+
+    const roadNodeById = new Map((mapData.roads?.nodes || []).map((n) => [n.id, n]));
+    for (const edge of mapData.roads?.edges || []) {
+      const from = roadNodeById.get(edge.from_node_id);
+      const to = roadNodeById.get(edge.to_node_id);
+      if (!from || !to) continue;
+      const style = ROAD_STYLE[edge.road_type] || ROAD_STYLE.spur;
+      const a = worldToScreen(from.x, from.y);
+      const b = worldToScreen(to.x, to.y);
+      ctx.beginPath();
+      ctx.moveTo(a.sx, a.sy);
+      ctx.lineTo(b.sx, b.sy);
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = style.width;
+      ctx.stroke();
+    }
+
+    for (const building of mapData.buildings) {
+      ctx.fillStyle = buildingColor(building.building_type);
+      if (building.footprint) {
+        ctx.beginPath();
+        building.footprint.forEach(([x, y], i) => {
+          const { sx, sy } = worldToScreen(x, y);
+          if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        });
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        const { sx, sy } = worldToScreen(building.x, building.y);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(building.rotation);
+        const screenWidth = building.width * view.scale;
+        const screenHeight = building.height * view.scale;
+        ctx.fillRect(-screenWidth / 2, -screenHeight / 2, screenWidth, screenHeight);
+        ctx.restore();
+      }
+    }
+  }
 
   for (const buildingId of highlightedBuildingIds) {
     const building = mapData.buildings.find((b) => b.id === buildingId);
@@ -177,16 +226,25 @@ function loadMap() {
       svgViewBox = null;
       if (mapData.local_bounds) {
         fetch("/api/town.svg")
-          .then((r) => r.text())
+          .then((r) => (r.ok ? r.text() : ""))
           .then((svgText) => {
             svgLayer.innerHTML = svgText;
             const svgEl = svgLayer.querySelector("svg");
+            if (!svgEl) {
+              svgLayer.innerHTML = "";
+              draw();
+              return;
+            }
             const vb = (svgEl.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
             if (vb.length === 4) {
               svgViewBox = { minX: vb[0], minY: vb[1], width: vb[2], height: vb[3] };
               svgEl.setAttribute("width", vb[2]);
               svgEl.setAttribute("height", vb[3]);
             }
+            draw();
+          })
+          .catch(() => {
+            svgLayer.innerHTML = "";
             draw();
           });
       }
