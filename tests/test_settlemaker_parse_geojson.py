@@ -60,8 +60,9 @@ def test_confirmed_ward_mappings():
         ("military", ZoneType.CIVIC), ("park", ZoneType.PARK),
         ("merchant", ZoneType.MERCHANT), ("market", ZoneType.MERCHANT),
         ("slum", ZoneType.POOR_RESIDENTIAL), ("craftsmen", ZoneType.POOR_RESIDENTIAL),
+        ("gate", ZoneType.POOR_RESIDENTIAL),
         ("patriciate", ZoneType.RICH_RESIDENTIAL),
-        ("harbour", ZoneType.PORT), ("gate", ZoneType.PORT),
+        ("harbour", ZoneType.PORT),
         ("farm", ZoneType.FARMLAND_EDGE),
     ]:
         geojson = {"features": [_ward(ward_type, SQUARE)]}
@@ -131,6 +132,41 @@ def test_building_without_poi_gets_zone_infill_type_and_capacity():
     assert buildings[0].capacity == BUILDING_HOME_CAPACITY["farmstead"]
     # JOB_VACANCIES_BY_BUILDING_TYPE["farmstead"] == [("farmer", 1), ("farmhand", 3)] -> 4 vacancy slots
     assert len(buildings[0].vacancies) == 4
+
+
+def test_residence_capacity_scales_with_target_population():
+    # Regression guard for the population-shortfall root cause: residence/
+    # manor capacity used to be a flat BUILDING_HOME_CAPACITY constant
+    # regardless of town size, undercounting how many people settlemaker's
+    # own (population-scaled) building footprint was actually built to
+    # hold. See settlemaker_bridge.parse_geojson._residential_capacity's
+    # doc comment.
+    geojson_small = {"features": [_ward("slum", SQUARE), _building("slum", SQUARE, "b1")]}
+    _districts, small_buildings = parse_settlemaker_geojson(geojson_small, seed="s", target_population=300)
+    geojson_big = {"features": [_ward("slum", SQUARE), _building("slum", SQUARE, "b1")]}
+    _districts, big_buildings = parse_settlemaker_geojson(geojson_big, seed="s", target_population=20000)
+
+    assert small_buildings[0].capacity == 4  # settlemaker's own density-curve floor
+    assert big_buildings[0].capacity == 12  # settlemaker's own density-curve ceiling
+    assert big_buildings[0].capacity > small_buildings[0].capacity
+
+
+def test_manor_capacity_scales_with_target_population_and_keeps_its_ratio_to_residence():
+    geojson = {"features": [_ward("patriciate", SQUARE), _building("patriciate", SQUARE, "b1")]}
+    _districts, buildings = parse_settlemaker_geojson(geojson, seed="s", target_population=20000)
+    # BUILDING_HOME_CAPACITY's original manor:residence ratio (10/6) is
+    # preserved at the (now population-scaled) residence capacity, not
+    # collapsed to the same number as residence.
+    assert buildings[0].capacity == round(12 * (BUILDING_HOME_CAPACITY["manor"] / BUILDING_HOME_CAPACITY["residence"]))
+
+
+def test_farmstead_capacity_is_unaffected_by_target_population():
+    # Farm-ward housing is a structurally separate, much sparser model
+    # (~20% of subplots get a building at all) -- never part of the
+    # density curve residence/manor now use.
+    geojson = {"features": [_ward("farm", SQUARE), _building("farm", SQUARE, "b1")]}
+    _districts, buildings = parse_settlemaker_geojson(geojson, seed="s", target_population=20000)
+    assert buildings[0].capacity == BUILDING_HOME_CAPACITY["farmstead"]
 
 
 def test_park_ward_infills_buildings_as_garden():

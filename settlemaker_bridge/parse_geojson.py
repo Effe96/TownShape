@@ -2,6 +2,7 @@
 models. See docs/superpowers/specs/2026-09-08-settlemaker-integration-design.md,
 "Data Model" and "Architecture" sections for the mapping this implements.
 """
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from shapely.geometry import Polygon as ShapelyPolygon
@@ -20,9 +21,28 @@ WARD_TYPE_TO_ZONE_TYPE: Dict[str, ZoneType] = {
     "market": ZoneType.MERCHANT,
     "slum": ZoneType.POOR_RESIDENTIAL,
     "craftsmen": ZoneType.POOR_RESIDENTIAL,
+    # Moved out of ZoneType.PORT 2026-09-16 (real generated towns landing at
+    # 16-50% of target_population, traced to this mapping): settlemaker's
+    # GateWard extends CommonWard, the exact same ordinary-row-housing base
+    # class as CraftsmenWard/Slum -- just with a smaller lot size near wall
+    # entrances -- not the specialized warehouse/pier geometry Harbour
+    # builds. Bucketing it with "harbour" under PORT sent every gate-ward
+    # building through PORT's zero-capacity "workshop" infill, and gate
+    # wards are not a minor case: measured 24-51% of a town's ENTIRE
+    # building stock across population 2000-15000, consistently the single
+    # largest or second-largest ward type in every sample. That was the
+    # dominant cause of realized population landing far under
+    # target_population (single-variable test on one seed: 802 -> 2613
+    # residents at target 5000, gate reclassification alone, nothing else
+    # changed). See _residential_capacity's doc comment for the other,
+    # smaller contributor. PORT is now only ever "harbour", which -- unlike
+    # gate -- really is placed against the coastline (see Harbour.createPiers
+    # in settlemaker's source), so _reclassify_landlocked_port_districts in
+    # settlemaker_bridge/pipeline.py stays as a safety net for a mispredicted
+    # harbour position, not the routine gate cleanup it used to run.
+    "gate": ZoneType.POOR_RESIDENTIAL,
     "patriciate": ZoneType.RICH_RESIDENTIAL,
     "harbour": ZoneType.PORT,
-    "gate": ZoneType.PORT,
     "farm": ZoneType.FARMLAND_EDGE,
     # NOT in the spec's original table -- discovered when Phase 1's first
     # real (walled + port) town run hit the raise below. Provisional only,
@@ -209,6 +229,45 @@ def _parse_village_geojson(
     return [district], buildings
 
 
+def _density_curve(population: int) -> float:
+    """Python port of settlemaker's own generator/generation-params.js
+    densityCurve(population): average people per ordinary CommonWard
+    building, 4 for a small town rising log-linearly to 12 at population
+    >= 20,000. This is what settlemaker itself assumed when it decided how
+    much land area / how many buildings this population needed -- see
+    _residential_capacity's doc comment for why matching it (instead of a
+    flat constant) matters."""
+    if population <= 500:
+        return 4.0
+    return min(12.0, 4.0 + 8.0 * math.log10(population / 500) / math.log10(40))
+
+
+def _residential_capacity(building_type: str, target_population: int) -> int:
+    """Capacity for a ward-based (non-village) building. "residence" and
+    "manor" -- the ordinary-CommonWard infill types, now covering every
+    non-farm, non-POI building after the gate-ward fix above -- are scaled
+    by this town's own target_population via _density_curve rather than a
+    flat constant: settlemaker sizes the whole town's footprint/building
+    count off that same curve, so a flat constant (the old residence=6/
+    manor=10, calibrated back when only slum/craftsmen/patriciate wards
+    counted at all) was the second, smaller half of why realized population
+    ran under target_population even after the gate misclassification (the
+    dominant cause) is fixed. manor keeps its original ratio to residence
+    (10/6, patriciate houses being the biggest CommonWard lots) rather than
+    both collapsing to the same number. Every other building_type
+    (farmstead, garden, workshop, temple, ...) is unaffected -- Farm ward
+    housing in particular is a structurally separate, much sparser model
+    (only ~20% of subplots get a building at all; see Farm.createGeometry
+    in settlemaker's source) that was never part of this curve to begin
+    with."""
+    if building_type not in ("residence", "manor"):
+        return BUILDING_HOME_CAPACITY.get(building_type, 0)
+    people_per_building = _density_curve(target_population)
+    if building_type == "manor":
+        people_per_building *= BUILDING_HOME_CAPACITY["manor"] / BUILDING_HOME_CAPACITY["residence"]
+    return max(1, round(people_per_building))
+
+
 def parse_settlemaker_geojson(
     geojson: Dict[str, Any], seed: Any, target_population: int = 0,
 ) -> Tuple[List[District], List[Building]]:
@@ -300,7 +359,7 @@ def parse_settlemaker_geojson(
                 district_zone_type=current_district.zone_type,
                 x=cx, y=cy,
                 building_type=building_type,
-                capacity=BUILDING_HOME_CAPACITY.get(building_type, 0),
+                capacity=_residential_capacity(building_type, target_population),
                 name=_building_name(seed, building_type, building_id),
                 footprint=ring,
                 vacancies=vacancies,

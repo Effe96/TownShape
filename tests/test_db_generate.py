@@ -207,7 +207,7 @@ def test_generate_town_database_default_water_params_match_previous_behavior(tmp
     assert conn_a.execute("SELECT COUNT(*) FROM water_features").fetchone()[0] == 0
 
 
-def test_generate_town_database_persists_water_features_and_port_buildings(tmp_path):
+def test_generate_town_database_persists_water_features(tmp_path):
     db_path = str(tmp_path / "town.db")
     generate_town_database(
         ("town", 1), target_population=1500, db_path=db_path,
@@ -217,6 +217,25 @@ def test_generate_town_database_persists_water_features_and_port_buildings(tmp_p
     kinds = sorted(row[0] for row in conn.execute("SELECT kind FROM water_features").fetchall())
     assert kinds == ["coastline", "river"]
 
+
+def test_generate_town_database_persists_port_buildings(tmp_path):
+    # Population bumped from 1500 to 3000, seed unchanged: at 1500,
+    # settlemaker's placeHarbour() does place a real 'harbour' ward for this
+    # seed, but Harbour.createWarehouses() yields zero buildings in it -- the
+    # walled core is too small at that population for even one warehouse lot
+    # (minSq 15-45 for a 'small' harbour, per settlemaker's harbour.js). Not
+    # a bug this test needs to chase further: it's here to check DB
+    # persistence of port buildings, not settlemaker's own small-town
+    # harbour-yield behavior, and pop 3000 reliably yields several (verified
+    # directly across seeds ("town", 1) through ("town", 7): every one
+    # produced 4-12 port buildings once build_input.py's harbourSize fix
+    # landed -- see that module's doc comment).
+    db_path = str(tmp_path / "town.db")
+    generate_town_database(
+        ("town", 1), target_population=3000, db_path=db_path,
+        num_rivers=1, has_coastline=True, has_port=True,
+    )
+    conn = sqlite3.connect(db_path)
     port_building_count = conn.execute(
         "SELECT COUNT(*) FROM buildings WHERE zone_type = 'port'"
     ).fetchone()[0]
@@ -236,8 +255,15 @@ def test_generate_town_database_with_water_passes_foreign_key_check(tmp_path):
 
 
 def test_generate_town_database_persists_water_feature_interior_rings(tmp_path):
+    # Range widened from 10 to 20 seeds: settlemaker_bridge.pipeline's water
+    # is now clipped to real district geometry after generation (a real fix,
+    # see settlemaker_bridge/pipeline.py's docstring), which changes the
+    # coastline polygon's exact shape -- seeds 0-9 no longer happen to
+    # produce a multi-ring result, but seed 12 (and several more through 49,
+    # confirmed by a wider sweep) still does, so interior-ring persistence
+    # still has real, natural coverage, just not in the first 10 anymore.
     found_multi_ring = False
-    for seed_index in range(10):
+    for seed_index in range(20):
         seed = ("town", seed_index)
         db_path = str(tmp_path / f"town_{seed_index}.db")
         generate_town_database(seed, target_population=1500, db_path=db_path, has_coastline=True)

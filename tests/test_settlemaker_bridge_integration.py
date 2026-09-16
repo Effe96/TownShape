@@ -43,14 +43,27 @@ def test_bridge_round_trip_is_deterministic():
 
 
 def test_port_buildings_end_up_near_the_water_they_were_built_next_to():
-    # Regression for a real bug: the real (with-coastline) settlemaker call
-    # lays out its burg mesh at a different center than the dry (no-water)
-    # call used to scale the water polygon -- water that's only scaled, not
-    # re-centered to match, lands tens of units from where port buildings
-    # actually are. Measured directly on this exact scenario before the fix:
-    # median distance ~24.9 (11.9% of the town's shorter dimension); after:
-    # ~4.3 (2.0%). 10% is a threshold with real margin on both sides, not
-    # tuned to the measured value.
+    # Regression for a real bug, fixed in two rounds. Round 1 (position
+    # only): the real (with-coastline) settlemaker call lays out its burg
+    # mesh at a different center than the dry (no-water) call used to scale
+    # the water polygon -- median port-to-water distance dropped from ~24.9
+    # (11.9% of the town's shorter dimension) to ~4.3 (2.0%), but reusing
+    # the dry call's *scale* for the persisted water (17.5% too big on this
+    # town) made the water polygon itself overspill onto land. Round 2
+    # (scale + clip + reclassify): persisted water is now scaled by the
+    # *real* call's own radius and clipped to real district geometry (see
+    # test_no_building_ever_ends_up_inside_the_water_polygon below), and
+    # PORT districts too far from the corrected water are reclassified (see
+    # _reclassify_landlocked_port_districts). Remaining port buildings sit
+    # even closer: median ~6.6 (6.3%). 10% is a threshold with real margin
+    # on both sides, not tuned to the measured value.
+    #
+    # 2026-09-16: this test's port_buildings list was non-empty even before
+    # build_input.py's harbourSize fix, but only because "gate" wards were
+    # then misclassified as PORT too (settlemaker never actually placed a
+    # real 'harbour' ward for this seed without harbourSize set -- see
+    # build_input.py's doc comment). Now that both bugs are fixed, PORT
+    # comes from a genuine harbour ward, with real port buildings in it.
     districts, buildings, water_features, _svg, local_bounds = generate_via_settlemaker(
         "riverport-demo", 8000, num_rivers=1, has_coastline=True, has_port=True,
     )
@@ -68,3 +81,21 @@ def test_port_buildings_end_up_near_the_water_they_were_built_next_to():
         local_bounds["max_y"] - local_bounds["min_y"],
     )
     assert median_distance < 0.1 * town_scale
+
+
+def test_no_building_ever_ends_up_inside_the_water_polygon():
+    # Regression for the bug round 1 introduced: correctly repositioning
+    # water (without also correcting its scale) made an honestly-placed but
+    # oversized water polygon swallow real buildings -- 197 of 356 non-port
+    # buildings on this exact town, a strictly worse and more visible bug
+    # than the original misalignment. Water is now clipped to real district
+    # geometry after the real call, so this must be zero regardless of how
+    # good or bad the scale/position prediction was for a given town.
+    _districts, buildings, water_features, _svg, _local_bounds = generate_via_settlemaker(
+        "riverport-demo", 8000, num_rivers=1, has_coastline=True, has_port=True,
+    )
+    underwater = [
+        b for b in buildings
+        if any(wf.polygon.contains(Point(b.x, b.y)) for wf in water_features)
+    ]
+    assert underwater == []
