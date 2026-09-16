@@ -25,6 +25,30 @@ line, so the marker stays meaningful.
 
 ---
 
+## 2026-09-16 — generating Palifas from a real campaign narrative
+
+Source: a real D&D campaign narrative document (`Palifas.md`, Scission
+Campaign), mapped to `TownParameters` and generated end-to-end.
+
+### Gap: no way to express a symmetric/planned city layout
+
+**Status:** Deferred — user's own words: "we will come back to it when we
+start working on the agentic control and narrative control layer for the
+tool."
+
+The narrative described Palifas as rebuilt "perfect from a geometric
+point of view" by a hired architect — implied to read as symmetric along
+a single axis. The actual town layout comes entirely from settlemaker (an
+external Voronoi-patch-based procedural generator, called as a
+subprocess) via `settlemaker_bridge.pipeline.generate_via_settlemaker` —
+ward placement is driven by randomized rating functions with no concept
+of an axis of symmetry, and no parameter anywhere in `TownParameters` or
+the settlemaker burg input requests one. Producing a genuinely
+mirror-symmetric town would mean either (a) a schematic/illustrative
+diagram instead of a real generated town, or (b) generating half a town
+and mirroring it programmatically — nontrivial, since roads/walls/districts
+wouldn't naturally line up at the seam. Left as narrative flavor for now.
+
 ## 2026-08-26 — test generation from a real campaign narrative
 
 Source: a real DM's campaign narrative document, mapped to
