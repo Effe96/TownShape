@@ -198,3 +198,10 @@ people, credited here in the manner each project's license calls for:
   TownShape's longer-term, not-yet-scheduled multi-town/world-scale
   vision; see `Project_Vision/00-proposals.md`'s P001 for the research
   notes.
+
+## License
+
+TownShape's own code is **MIT** — see `LICENSE`. This covers only what's
+actually written in this repo; it doesn't relicense settlemaker (which
+stays GPL-3.0-only, invoked as a separate subprocess and never
+vendored/distributed here) or any of the other credited work above.
