@@ -76,10 +76,18 @@ def assign_residents(
     residents: List[ResidentSlot] = []
     resident_id = 0
 
+    # Draw every household's SES and zone preference first (same draw order
+    # as before), then house rich households first: placing in plain
+    # household order let drifting poor households fill the rich district
+    # before most rich ones arrived, so rich residents -- and the nobles
+    # later drawn from them -- overflowed into poor districts.
+    plans = []
     for household in households:
         ses = _draw_household_ses(rng, rich_proportion)
-        preferred_zones = _preferred_zones(ses, rng)
+        plans.append((household, ses, _preferred_zones(ses, rng)))
+    plans.sort(key=lambda plan: plan[1] != SES.RICH)  # stable: rich first, order kept within each tier
 
+    for household, ses, preferred_zones in plans:
         member_specs = [("adult", True)]
         if household.has_spouse:
             member_specs.append(("adult", True))

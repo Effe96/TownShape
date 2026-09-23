@@ -194,3 +194,25 @@ def test_assign_residents_never_fills_a_reserved_vacant_building():
 
     for building in poor_district.buildings[1:]:
         assert building.resident_ids == []
+
+
+def test_assign_residents_poor_drifters_never_displace_rich_households():
+    # A rich district too small for every rich household: rich households
+    # are housed first, so a poor household that drifts toward the rich zone
+    # never takes a home a rich household needed.
+    def district(district_id, zone, capacity):
+        d = District(id=district_id, zone_type=zone, anchor=Anchor(id=district_id, zone_type=zone, x=0.0, y=0.0),
+                     polygon_parts=[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]])
+        d.buildings = [Building(id=district_id, district_id=district_id, district_zone_type=zone,
+                                x=0.0, y=0.0, building_type="house", capacity=capacity)]
+        return d
+
+    rich, poor = district(1, ZoneType.RICH_RESIDENTIAL, 15), district(2, ZoneType.POOR_RESIDENTIAL, 1000)
+    households = [Household(id=i, has_spouse=False, child_count=0) for i in range(400)]
+    residents = assign_residents(("town", 7), households, [rich, poor], rich_proportion=0.1)
+
+    rich_district_occupants = [r for r in residents if r.home_building_id == 1]
+    rich_outside = [r for r in residents if r.ses == SES.RICH and r.home_building_id != 1]
+    assert len(rich_district_occupants) == 15
+    assert rich_outside, "fixture must have more rich residents than rich homes"
+    assert all(r.ses == SES.RICH for r in rich_district_occupants)

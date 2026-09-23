@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import date
 from typing import Any, Dict, List, Tuple
 
+from town_shaper.models import ZoneType
 from town_shaper.seeding import rng_for
 
 from town_db.ages import birth_date_from_age, draw_age
@@ -83,16 +84,23 @@ def build_households_and_residents(
                 "age_bracket": member.age_bracket,
             })
 
-    _tag_nobility(rng, resident_rows, town.target_population)
+    zone_by_building = {b.id: b.district_zone_type for d in town.districts for b in d.buildings}
+    _tag_nobility(rng, resident_rows, town.target_population, zone_by_building)
     _tag_magical_talent(rng, resident_rows, magic_prevalence)
 
     return household_rows, resident_rows
 
 
-def _tag_nobility(rng, resident_rows: List[Dict[str, Any]], target_population: int) -> None:
+def _tag_nobility(
+    rng, resident_rows: List[Dict[str, Any]], target_population: int, zone_by_building: Dict[int, Any] = None
+) -> None:
+    # Nobles come from rich adults living in the rich district first, then
+    # any other rich adult if there aren't enough there.
+    zone_by_building = zone_by_building or {}
     noble_count = max(0, round(target_population / NOBLE_POPULATION_RATIO))
     eligible = [r for r in resident_rows if r["ses"] == "rich" and r["age_bracket"] == "adult"]
     rng.shuffle(eligible)
+    eligible.sort(key=lambda r: zone_by_building.get(r["home_building_id"]) != ZoneType.RICH_RESIDENTIAL)
     for row in eligible[:noble_count]:
         row["is_noble"] = True
 

@@ -146,3 +146,15 @@ def test_magic_prevalence_zero_matches_default_behavior():
     _, explicit = build_households_and_residents(town, ("town", 1), REFERENCE_DATE, magic_prevalence=0.0)
     key = lambda r: (r["household_id"], r["first_name"], r["race"], r["birth_date"], r["has_magical_talent"])
     assert [key(r) for r in baseline] == [key(r) for r in explicit]
+
+
+def test_nobles_come_from_the_rich_district_first():
+    import random
+    from town_db.households import _tag_nobility
+    from town_shaper.models import ZoneType
+
+    rows = [{"ses": "rich", "age_bracket": "adult", "home_building_id": 1 if i < 5 else 2, "is_noble": False}
+            for i in range(20)]
+    zone_by_building = {1: ZoneType.RICH_RESIDENTIAL, 2: ZoneType.POOR_RESIDENTIAL}
+    _tag_nobility(random.Random(0), rows, target_population=1000, zone_by_building=zone_by_building)  # 5 nobles
+    assert [r["home_building_id"] for r in rows if r["is_noble"]] == [1] * 5
