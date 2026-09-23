@@ -186,6 +186,23 @@ def test_search_residents_second_page_is_the_remainder(tmp_path):
     assert len(result["residents"]) == 1
 
 
+def test_search_residents_matches_full_first_and_last_name_together(tmp_path):
+    # Regression guard: town_viewer's frontend searches by "First Last"
+    # (space-joined) when a resident is selected from elsewhere in the
+    # UI (a building's occupant list, a relationship link) -- neither a
+    # bare first_name nor last_name LIKE match catches that combined
+    # string on its own.
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+
+    conn = connect(db_path)
+    result = search_residents(conn, query="Mira Stonebrook")
+    conn.close()
+
+    assert result["total"] == 1
+    assert result["residents"][0]["first_name"] == "Mira"
+
+
 def test_search_residents_with_no_matches_returns_empty_with_zero_total(tmp_path):
     db_path = str(tmp_path / "town.db")
     build_full_town(db_path)

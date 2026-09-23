@@ -86,13 +86,18 @@ def search_residents(
 ) -> Dict[str, Any]:
     offset = (page - 1) * page_size
     like = f"%{query}%"
-    total = conn.execute(
-        "SELECT COUNT(*) FROM residents WHERE first_name LIKE ? OR last_name LIKE ?", (like, like)
-    ).fetchone()[0]
+    # Matches first OR last name alone (typing "Kala" or "Acerdwadle"), AND
+    # "first last" together -- the town_viewer frontend searches by full
+    # name when a resident is selected from elsewhere (a building's
+    # occupant list, a relationship link), which wouldn't match either
+    # single-column LIKE on its own.
+    where = "first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ?"
+    params = (like, like, like)
+    total = conn.execute(f"SELECT COUNT(*) FROM residents WHERE {where}", params).fetchone()[0]
     rows = conn.execute(
-        "SELECT id, first_name, last_name, occupation FROM residents "
-        "WHERE first_name LIKE ? OR last_name LIKE ? ORDER BY last_name, first_name LIMIT ? OFFSET ?",
-        (like, like, page_size, offset),
+        f"SELECT id, first_name, last_name, occupation FROM residents "
+        f"WHERE {where} ORDER BY last_name, first_name LIMIT ? OFFSET ?",
+        params + (page_size, offset),
     ).fetchall()
     residents = [{"id": r[0], "first_name": r[1], "last_name": r[2], "occupation": r[3]} for r in rows]
     return {"residents": residents, "total": total, "page": page, "page_size": page_size}

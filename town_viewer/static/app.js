@@ -510,6 +510,13 @@ function selectResident(residentId) {
       const home = mapData.buildings.find((b) => b.id === resident.home_building_id);
       if (home) { view.offsetX = home.x; view.offsetY = home.y; }
       draw();
+      // Selecting a resident from anywhere (a building's occupant list, a
+      // relationship link, a shop's linked name) should also surface them
+      // in the upper search tab, not just the lower detail panel -- search
+      // by their exact name so the results list includes them.
+      document.getElementById("search-input").value = `${resident.first_name} ${resident.last_name}`;
+      currentPage = 1;
+      loadResidents();
     });
 }
 
