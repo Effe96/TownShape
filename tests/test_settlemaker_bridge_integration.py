@@ -42,6 +42,23 @@ def test_bridge_round_trip_is_deterministic():
     assert bounds1 == bounds2
 
 
+def test_water_renders_in_settlemakers_own_svg_without_a_port():
+    # Regression for a real bug: settlemaker's azgaar-input.js silently
+    # drops coastlineGeometry unless burg.port is true, regardless of
+    # whether the caller wants a harbour -- a plain river/coastline town
+    # with has_port=False (the common case: scenery water, no dock) sent
+    # settlemaker no water definition at all, so its own SVG painted none,
+    # even though Town.water_features was correct. See
+    # generate_via_settlemaker's own docstring for the fix (force
+    # port=True internally whenever there's water) and the sweep that
+    # verified it (36/36 across population/seed/water-kind combinations).
+    _districts, _buildings, water_features, svg, _local_bounds = generate_via_settlemaker(
+        "no-port-water-test", 6000, num_rivers=1, has_coastline=True, has_port=False,
+    )
+    assert len(water_features) == 2
+    assert '<g id="water"' in svg
+
+
 def test_port_buildings_end_up_near_the_water_they_were_built_next_to():
     # Regression for a real bug, fixed in two rounds. Round 1 (position
     # only): the real (with-coastline) settlemaker call lays out its burg

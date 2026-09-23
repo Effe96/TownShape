@@ -21,6 +21,28 @@ not one -- an acceptable cost at this project's generation volume (see the
 design spec's "why a subprocess" rationale, which already accepted
 per-call subprocess overhead on the same grounds).
 
+**Why `port` gets forced to `True` whenever there's any water at all, even
+for a plain river/coastline town with `has_port=False`.** Discovered
+2026-09-16 after a user report that a generated coastal+river town's SVG
+showed no water at all, despite `Town.water_features` being correct:
+settlemaker's `dist/input/azgaar-input.js` silently drops
+`coastlineGeometry` from the params it actually passes to the generator
+unless `burg.port === true` -- the exact same gate `harbourSize` and
+`oceanBearing` are behind (see `build_input.py`'s doc comment). This
+project's own `port` field always meant "does settlemaker place a
+harbour/dock ward," which is a real, independent, user-facing choice
+(`has_port`) -- but settlemaker itself overloads the same flag to also mean
+"accept a water definition at all," with no way to ask for one without the
+other. A generated town with water always looks materially better than one
+whose requested water silently never reached settlemaker, so this module
+always sets it to `True` once `water_features` is non-empty, regardless of
+`has_port` -- `harbourSize` (and therefore whether a real harbour ward gets
+placed) still only follows the caller's actual `has_port`, unaffected by
+this. Verified directly: forcing `port=True` alone (nothing else changed)
+turned "settlemaker's SVG paints zero water" into real, visible water on
+every case in a sweep of population 2000/3000/6000/8000 x 3 seeds x
+{river-only, coastline-only, both} = 36/36.
+
 **Why the persisted water is scaled and positioned a second time, after the
 real call, instead of just reusing the dry-run-scaled version.** The dry
 call's frame is only ever a *prediction* of the real call's frame, used
@@ -296,6 +318,19 @@ def generate_via_settlemaker(
 
     persisted_water_features: List[WaterFeature] = []
     if water_features:
+        # settlemaker's azgaar-input.js silently drops coastlineGeometry
+        # (same gate harbourSize/oceanBearing have -- see build_input.py's
+        # doc comment) unless burg.port is true, regardless of whether the
+        # caller actually wants a harbour. Without this, a water town
+        # generated with has_port=False sent settlemaker no water
+        # definition at all -- confirmed directly: settlemaker's own SVG
+        # painted zero water for such towns, and forcing port=True here
+        # (nothing else changed) fixed it on a sweep of population
+        # 2000-8000 x 3 seeds x {river, coastline, both} = 36/36. Forced on
+        # BOTH calls, not just the one that attaches coastlineGeometry
+        # below, so the dry call's own local_bounds stays an accurate proxy
+        # for the real call, which now also carries this override.
+        burg = dict(burg, port=True)
         dry_result = call_settlemaker(burg, settlemaker_seed)
         dry_radius = _local_radius_from_bounds(dry_result["geojson"]["metadata"]["local_bounds"])
         # Dry-run-scaled water is used for exactly this: the coastlineGeometry
