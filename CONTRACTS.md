@@ -36,67 +36,6 @@ downstream tasks (T06, T07, T08) consume from upstream ones (T01–T05):
 Every new/changed RNG draw goes through `town_shaper.seeding.rng_for(seed, *parts)` — never bare
 `random` module state. A "year" is exactly 365 days (`YEAR_LENGTH_DAYS`) everywhere in this plan.
 
-### Social-sim integration (PROPOSED 2026-10-09, not yet agreed)
-
-Why and what for: `social-sim-demo/docs/townshape-integration.md`. In short (owner's
-decision, 2026-10-09): "create town" runs TownShape's generator, then the social sim's setup,
-and saves everything into the town's database; from then on the social sim drives the town
-(`advance_town` is not run on these towns) and writes its state back here. Nothing below
-changes how TownShape generates a town today; it adds tables, accepted values and three
-functions.
-
-- **Schema additions** (`town_db/schema.py`; created empty for every town, filled only by the
-  social sim; TownShape's own code doesn't read them unless it wants to):
-  - `resident_traits(resident_id INTEGER PRIMARY KEY REFERENCES residents(id), religiousness
-    REAL, skepticism REAL, cunning REAL, loyalty REAL, is_ex_soldier INTEGER,
-    same_sex_attracted INTEGER, stress REAL, hungry_months INTEGER, is_beggar INTEGER)`.
-  - `relationships` gains nullable columns `time REAL, intimacy REAL, services REAL,
-    valence_a_to_b REAL, valence_b_to_a REAL, former_type TEXT` (`NULL` until the social sim
-    sets them). `relationship_type` also accepts `friend` and `shopkeeper_customer`.
-  - `household_economy(household_id INTEGER PRIMARY KEY REFERENCES households(id), cash
-    REAL, property REAL, rent_behind REAL, usual_income REAL)`, florins. `households.wealth`
-    holds `cash + property` once the social sim has run, so TownShape's views stay meaningful.
-  - `house_tenure(building_id INTEGER PRIMARY KEY REFERENCES buildings(id),
-    owner_household_id INTEGER REFERENCES households(id), owner_kind TEXT NOT NULL, value
-    REAL NOT NULL, room INTEGER NOT NULL, cost_left REAL)`. `owner_kind` is `household`,
-    `commune` or `church`; `cost_left` is non-`NULL` while a house is being built.
-  - `departures(id INTEGER PRIMARY KEY AUTOINCREMENT, resident_id INTEGER NOT NULL UNIQUE
-    REFERENCES residents(id), departure_date TEXT NOT NULL, reason TEXT NOT NULL)`. People who
-    left town alive (`moved away`, `banished`); not in `deaths`. A departed resident's
-    `death_date` stays `NULL`; "living in town" means no `deaths` row and no `departures` row.
-  - `sim_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)`, JSON values, for the social
-    sim's town-level state (commune and Church money, class lines, granary, hoards, workshop
-    stocks, merchants' cargoes, debts, phenomenon state, its clock). Opaque to TownShape.
-  - `town_state` gains `loyalty REAL, religiosity REAL, strictness REAL` (nullable; the
-    social sim's town parameters beside `aggression`).
-- **Accepted values** (no schema change):
-  - `deaths.cause` takes the social sim's causes as they are (owner, 2026-10-09): `old age`,
-    `plague`, `flu`, `diarrhea`, `famine`, `hardship`, `violence`, `riot`, `execution`, `coup`.
-    `reported_by_building_id` may be `NULL`.
-  - `residents.occupation` takes the social sim's occupations: `merchant`, `outworker`,
-    `day_labourer`, `rentier`, `sharecropper`, craft masters (`<trade>`) and hands
-    (`<trade>_hand`), e.g. `dyer`, `weaver_hand`. `residents.home_building_id` `NULL` means
-    homeless (already allowed).
-  - New `residents` and `households` rows come with ids the social sim assigns (max + 1, the
-    AUTOINCREMENT rule).
-- **`town_db/names.py`: `name_new_resident(seed, resident_id, race, gender,
-  family_name=None) -> (first_name, last_name)`.** For people the social sim creates during
-  a run: a newborn passes its household's `family_name`, a newcomer passes `None` and gets a
-  drawn surname. Draws through `rng_for(seed, "name", resident_id)`, so a name depends only on
-  the resident, not on call order. Wraps `draw_first_name` / `draw_surname`.
-- **`town_relationships`: row-level writes.** `derive_relationships` is called once, at
-  creation, and never on a town the social sim has run. Afterwards the social sim inserts and
-  deletes `relationships` rows itself (plain SQL); TownShape needs no function for it, only
-  to not re-derive.
-- **`town_shaper` (or `town_db`): `place_building(db_path, seed, building_type, capacity,
-  preferred_district_id=None) -> building_id`.** For a house, shop or workshop the social sim
-  builds: finds free ground inside the walls (in the preferred district if possible), inserts
-  the `buildings` row with position, size, rotation and footprint like a generated building,
-  and returns its id; `None` if there is no room. The viewer shows it as an outline at once;
-  the settlemaker SVG is not re-rendered (open: whether it should be).
-- **Out of scope for TownShape:** the `create_town` pipeline, loading and saving the social
-  sim's state, and every value above are the social sim's to build and write.
-
 ## File / Module Ownership
 
 <!-- Which task owns which files/modules, so two tasks don't edit the same surface unnoticed. -->
