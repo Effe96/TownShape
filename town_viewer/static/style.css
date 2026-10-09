@@ -41,3 +41,6 @@ html, body { margin: 0; height: 100%; font-family: sans-serif; }
 #legend .swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border: 1px solid #666; }
 #legend .row { margin: 1px 0; }
 #legend .icon { display: inline-block; width: 18px; text-align: center; }
+#legend .toggle { cursor: pointer; user-select: none; }
+#legend .toggle:hover { background: rgba(0, 0, 0, 0.06); }
+#legend .toggle.off { opacity: 0.35; text-decoration: line-through; }

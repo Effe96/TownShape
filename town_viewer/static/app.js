@@ -84,12 +84,34 @@ function buildingWorldSize(building) {
   return Math.sqrt((Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys)));
 }
 
+// Icon types the viewer switched off by clicking their legend row.
+// Remembered per browser; storage may be unavailable (private mode), in
+// which case the toggles just last for the session.
+const hiddenIconTypes = new Set();
+try {
+  JSON.parse(localStorage.getItem("townViewerHiddenIcons") || "[]").forEach((t) => hiddenIconTypes.add(t));
+} catch (e) {
+  // ignore -- start with every icon shown
+}
+
+function toggleIconType(buildingType) {
+  if (hiddenIconTypes.has(buildingType)) hiddenIconTypes.delete(buildingType);
+  else hiddenIconTypes.add(buildingType);
+  try {
+    localStorage.setItem("townViewerHiddenIcons", JSON.stringify([...hiddenIconTypes]));
+  } catch (e) {
+    // ignore
+  }
+  draw();
+  renderLegend();
+}
+
 function drawBuildingIcons() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const building of mapData.buildings) {
     const icon = BUILDING_TYPE_ICONS[building.building_type];
-    if (!icon) continue;
+    if (!icon || hiddenIconTypes.has(building.building_type)) continue;
     const screenSize = buildingWorldSize(building) * view.scale;
     if (screenSize < ICON_MIN_SCREEN_PX && !ALWAYS_VISIBLE_ICONS.has(building.building_type)) continue;
     const size = Math.min(Math.max(screenSize * 0.8, 12), 24);
@@ -600,6 +622,23 @@ function selectResident(residentId) {
 // paints -- a "Zones" key while looking at settlemaker's own art (or a
 // "Buildings" key while looking at the zones fill) described colors that
 // were never on screen. One legend, one mode, always in sync.
+function iconRowClass(buildingType) {
+  return hiddenIconTypes.has(buildingType) ? "row toggle off" : "row toggle";
+}
+
+document.getElementById("legend").addEventListener("click", (e) => {
+  const row = e.target.closest("[data-icon-type]");
+  if (row) toggleIconType(row.dataset.iconType);
+});
+document.getElementById("legend").addEventListener("keydown", (e) => {
+  const row = e.target.closest("[data-icon-type]");
+  if (row && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    toggleIconType(row.dataset.iconType);
+    document.querySelector(`[data-icon-type="${row.dataset.iconType}"]`)?.focus();
+  }
+});
+
 function renderLegend() {
   const legend = document.getElementById("legend");
   const mode = effectiveRenderMode();
@@ -609,7 +648,7 @@ function renderLegend() {
   if (mode === "settlemaker") {
     const rows = buildingTypesPresent
       .filter((bt) => BUILDING_TYPE_ICONS[bt])
-      .map((bt) => `<div class="row"><span class="icon">${BUILDING_TYPE_ICONS[bt]}</span>${bt}</div>`)
+      .map((bt) => `<div class="${iconRowClass(bt)}" data-icon-type="${bt}" role="button" tabindex="0" aria-pressed="${!hiddenIconTypes.has(bt)}" title="Click to hide/show these icons"><span class="icon">${BUILDING_TYPE_ICONS[bt]}</span>${bt}</div>`)
       .join("");
     legend.innerHTML = rows ? `<div><strong>Landmarks</strong></div>${rows}` : "";
     return;
@@ -625,7 +664,9 @@ function renderLegend() {
   }
 
   const rows = buildingTypesPresent
-    .map((bt) => `<div class="row"><span class="swatch" style="background:${buildingColor(bt)}"></span><span class="icon">${BUILDING_TYPE_ICONS[bt] || ""}</span>${bt}</div>`)
+    .map((bt) => BUILDING_TYPE_ICONS[bt]
+      ? `<div class="${iconRowClass(bt)}" data-icon-type="${bt}" role="button" tabindex="0" aria-pressed="${!hiddenIconTypes.has(bt)}" title="Click to hide/show these icons"><span class="swatch" style="background:${buildingColor(bt)}"></span><span class="icon">${BUILDING_TYPE_ICONS[bt]}</span>${bt}</div>`
+      : `<div class="row"><span class="swatch" style="background:${buildingColor(bt)}"></span><span class="icon"></span>${bt}</div>`)
     .join("");
   legend.innerHTML = `<div><strong>Buildings</strong></div>${rows || "<div class=\"row hint\">none</div>"}`;
 }
