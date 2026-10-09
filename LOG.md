@@ -12,6 +12,49 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-10-09 — Frodo — construction edits: `add_buildings` + edit log
+
+New `town_db/construction.py` (+ `scripts/add_buildings.py`,
+`docs/narrative-construction.md`): physical-layer-only edits on an existing
+town, deliberately decoupled from residents and `advance_town` — the "why"
+(newcomers needing housing etc.) lives in a separate project that will call
+in. `add_buildings(db, count, where="roads"|"perimeter", building_type)`
+places footprints outside the built-up area (non-farmland districts + walls
++ buildings), sized from the town's own buildings, and appends them to the
+SVG's `#buildings`/`#shadows` groups so settlemaker's stylesheet draws them
+natively. Every edit is logged in a new `construction_edits` table
+(created on first edit, `IF NOT EXISTS`, not in `schema.py`).
+
+Gotchas: settlemaker towns persist **no roads or walls** to the DB
+(`road_nodes`/`road_edges` are empty) — placement parses them from the SVG.
+SVG coords = DB footprint coords (same local frame). Also found
+`demo_riverport_town.svg` is stale vs its `.db` (Sep 16 vs Sep 23) — its
+overlay is misaligned; regenerate it before using it as a demo.
+
+Follow-up same day: growth is now ribbons capped at 1.6 town radii +
+**side streets** (branching through lane gaps reserved every 20 units along
+every road/street, written into the SVG `#roads` as casing/core paths, read
+back as roads next call) instead of ring/cluster accretion. Fields touched
+by new houses/streets convert to `poor_residential` (plot removed from the
+SVG) and are re-sown as Voronoi plots outside the farmland belt; the frame
+widens when needed (viewBox, the two frame `<rect>`s and `town_state` svg
+bounds are updated together -- they must stay identical). "Core" (no-build
+area) = generation-time non-farmland districts minus districts converted by
+earlier edits (read from `construction_edits.params`). Later the same day:
+streets made deliberately irregular (wandering, oblique, varied width,
+joining other roads; terraced, gable-mixed frontage) after feedback that
+straight perpendicular lanes "look like modern American living areas";
+fields are now trimmed (cut-off part -> new `poor_residential` district)
+and only converted when >50% lost; streets also go to `road_nodes`/
+`road_edges`; flat viewer modes draw roads parsed from the SVG. Settlemaker's
+landscape glyphs (`#symbols`/`#canopy`/`#marks` `<use>`s, `#greens`) are
+obstacles, parsed from the SVG; new non-residential buildings are sized as
+1.4x a typical house (settlemaker's own tavern lots are ~5x a house).
+
+Also: viewer building-type emoji icons (`BUILDING_TYPE_ICONS` in
+`town_viewer/static/app.js`). Settlemaker buildings store width/height as
+0, so anything sizing a building must use its `footprint`.
+
 ## 2026-09-01 — Frodo — dead-code/stdlib cleanup, PR #10 merged
 
 Ran `/ponytail:ponytail-audit` (repo-wide over-engineering/dead-code scan,

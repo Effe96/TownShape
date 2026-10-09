@@ -261,8 +261,21 @@ function draw() {
     }
     ctx.globalAlpha = 1;
 
+    for (const road of mapData.svgRoads || []) {
+      ctx.beginPath();
+      road.points.forEach(([x, y], i) => {
+        const { sx, sy } = worldToScreen(x, y);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.strokeStyle = ROAD_STYLE.artery.color;
+      ctx.lineWidth = Math.max(1, road.width * view.scale * 0.6);
+      ctx.stroke();
+    }
+
     const roadNodeById = new Map((mapData.roads?.nodes || []).map((n) => [n.id, n]));
-    for (const edge of mapData.roads?.edges || []) {
+    // The SVG already carries every road incl. construction streets; the DB
+    // road graph is only drawn for towns without one.
+    for (const edge of mapData.svgRoads?.length ? [] : mapData.roads?.edges || []) {
       const from = roadNodeById.get(edge.from_node_id);
       const to = roadNodeById.get(edge.to_node_id);
       if (!from || !to) continue;
@@ -355,6 +368,13 @@ function loadMap() {
               draw();
               return;
             }
+            // Settlemaker towns keep their roads (and construction's side
+            // streets) only in the SVG -- same coordinates as the DB -- so the
+            // flat modes draw them from here.
+            mapData.svgRoads = [...svgEl.querySelectorAll("#roads path.casing")].map((p) => ({
+              points: (p.getAttribute("d").match(/-?[\d.]+,-?[\d.]+/g) || []).map((xy) => xy.split(",").map(Number)),
+              width: Number(p.getAttribute("stroke-width")) || 1,
+            }));
             const vb = (svgEl.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
             if (vb.length === 4) {
               svgViewBox = { minX: vb[0], minY: vb[1], width: vb[2], height: vb[3] };
