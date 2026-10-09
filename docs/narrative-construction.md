@@ -53,6 +53,31 @@ Side effects, all automatic:
 `building_type` is any key of `town_shaper.buildings.JOB_VACANCIES_BY_BUILDING_TYPE`
 (`residence`, `workshop`, `tavern`, `farmstead`, ...).
 
+### Editing an existing building
+
+CLI: `python scripts/edit_building.py <db> demolish|resize|reshape ...` (see
+its usage line). Find the building id first (the viewer shows it when you
+click a building; or query `buildings` by `building_type`/`name`).
+
+- `demolish_building(db, id, ruin=False)` — `ruin=False`: cleared off the
+  map (type `demolished`, its land free for new construction).
+  `ruin=True`: left standing as a ruin, drawn faded with a broken outline,
+  type `ruin`, renamed "Ruins of …". Either way the row stays and capacity
+  becomes 0 — residents/workers still pointing at it are the people layer's
+  to re-home.
+- `resize_building(db, id, area_factor, absorb_neighbors=False)` — grow
+  (`> 1`) or shrink (`< 1`) about its centre, keeping its shape. Growth stays
+  in its district, off roads/walls/water, and stops at neighbours: in a
+  packed block a 2× request may only reach ~1.1×. `absorb_neighbors=True`
+  builds across the whole lot of every same-district neighbour it overlaps
+  (they're demolished), so the result can exceed the request. Returns
+  `{"building_id", "absorbed", "area_factor_achieved"}` — report the
+  achieved size back rather than assuming the request was met.
+- `reshape_building(db, id, "rectangle"|"square"|"round", area_factor=1.0,
+  absorb_neighbors=False)` — rebuild with that footprint, same centre,
+  aligned with its long side; clipped like resize (a round tower in a packed
+  block comes out flattened where it meets neighbours).
+
 ## Narrative language → call
 
 | Narrative | Call |
@@ -62,12 +87,19 @@ Side effects, all automatic:
 | "a new suburb / faubourg has grown up outside the walls" | `roads` pass, then one or more `perimeter` passes |
 | "new lanes of houses are eating into the farmland" | `add_buildings(db, N, "perimeter")` |
 | "a tavern opened by the north road" | `add_buildings(db, 1, "roads", "tavern")` |
+| "the tavern burned down" | `demolish_building(db, tavern_id, ruin=True)` |
+| "they pulled the old house down" | `demolish_building(db, house_id)` |
+| "the temple was enlarged" | `resize_building(db, temple_id, 1.5–2)`; if it's boxed in and the story allows, `absorb_neighbors=True` |
+| "the lord rebuilt his hall as a round tower" | `reshape_building(db, hall_id, "round")` |
 
 Count guide: a settlemaker house holds ~6 people (`BUILDING_HOME_CAPACITY`),
 so "room for ~120 newcomers" ≈ 20 residences.
 
 ## Not yet supported
 
-Reshaping or demolishing existing buildings, and generation-time layout
-changes (river direction, citadel/castle shape, star-shaped walls,
-symmetry). See `docs/narrative-gaps.md`.
+Moving a building, placing construction "near" a named place, and the
+generation-time layout changes settlemaker can't express yet (castle
+size/shape, star-shaped walls, symmetry). Known limit: a cathedral is one
+`temple` building drawn as several pieces; resizing/reshaping it redraws it
+as a single outline, so its inner cloister courtyard and piece divisions
+are lost.

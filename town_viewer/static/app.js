@@ -36,6 +36,7 @@ const BUILDING_TYPE_COLORS = {
   warehouse: "#8b7355",
   workshop: "#708090",
   garden: "#2e7d32",
+  ruin: "#b8ad94",
 };
 const GENERIC_BUILDING_COLOR = "#555555";
 

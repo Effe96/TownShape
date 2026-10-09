@@ -29,7 +29,9 @@ def get_map_data(conn: sqlite3.Connection) -> Dict[str, Any]:
         }
         for row in conn.execute(
             "SELECT id, district_id, zone_type, building_type, x, y, name, width, height, rotation, footprint "
-            "FROM buildings"
+            # Demolished buildings keep their row (see town_db.construction)
+            # but are gone from the map.
+            "FROM buildings WHERE building_type != 'demolished'"
         )
     ]
     water_features = [

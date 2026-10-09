@@ -422,7 +422,9 @@ def add_buildings(
             params = json.loads(params)
             grown_before.update(params.get("converted_district_ids", []) + params.get("living_district_ids", []))
 
-        rows = conn.execute("SELECT building_type, x, y, width, height, rotation, footprint FROM buildings").fetchall()
+        # Demolished buildings' land is free again; ruins still stand.
+        rows = conn.execute("SELECT building_type, x, y, width, height, rotation, footprint FROM buildings "
+                            "WHERE building_type != 'demolished'").fetchall()
         existing = []
         for b_type, x, y, w, h, rot, footprint in rows:
             if footprint:
@@ -754,3 +756,270 @@ def add_buildings(
         with open(svg_path, "w", encoding="utf-8") as f:
             f.write(svg)
     return new_ids
+
+
+# --- editing existing buildings ---------------------------------------------
+#
+# Physical layer only, like add_buildings: a demolished building keeps its
+# row (residents/workplaces may still point at it -- re-homing them is the
+# people layer's job), retyped DEMOLISHED (gone from the map) or RUIN (left
+# standing as a ruin), capacity 0.
+
+DEMOLISHED = "demolished"
+RUIN = "ruin"
+RESHAPES = ("rectangle", "square", "round")
+# Ruins: faded fill, broken (dashed) outline, no shadow. Injected into
+# settlemaker's own stylesheet the first time a ruin is drawn.
+RUIN_STYLE = ("#buildings .ruin,#landmarks .ruin{fill:#cdbf9c;stroke:#7a6a4f;"
+              "stroke-width:0.2;stroke-dasharray:0.6 0.4;opacity:0.8}")
+# Settlemaker groups a building's shape can be drawn in (park lawns are
+# "buildings" in its data but drawn in #greens).
+_BUILDING_GROUPS = ("buildings", "landmarks", "greens")
+
+
+def _svg_tags_for(svg: str, footprint: Polygon) -> List[Tuple[str, str]]:
+    """[(full <path .../> tag, its d)] of the drawn shape(s) that are this
+    footprint -- settlemaker's buildings carry no id in the SVG, so they're
+    matched by geometry: one shape overlapping it >= 90%, or, for a
+    building merged from several drawn pieces (a cathedral), every shape
+    lying >= 90% inside it, if together they cover it >= 80%."""
+    candidates = []
+    for group_id in _BUILDING_GROUPS:
+        start, end = _svg_group(svg, group_id)
+        if start < 0:
+            continue
+        for match in re.finditer(r'<path\b[^>]*\sd="([^"]+)"[^>]*/>', svg[start:end]):
+            points = _points(match.group(1))
+            if len(points) >= 3:
+                shape = Polygon(points).buffer(0)
+                if shape.intersects(footprint):
+                    candidates.append((match.group(0), match.group(1), shape))
+
+    def iou(shape):
+        return shape.intersection(footprint).area / shape.union(footprint).area
+
+    best = max(candidates, key=lambda c: iou(c[2]), default=None)
+    if best and iou(best[2]) >= 0.9:
+        return [(best[0], best[1])]
+    pieces = [c for c in candidates if c[2].intersection(footprint).area >= 0.9 * c[2].area]
+    if pieces and unary_union([c[2] for c in pieces]).intersection(footprint).area >= 0.8 * footprint.area:
+        return [(tag, d) for tag, d, _ in pieces]
+    return []
+
+
+def _svg_drop_shadow(svg: str, d: str) -> str:
+    start, end = _svg_group(svg, "shadows")
+    if start < 0:
+        return svg
+    section = re.sub(r'<path d="' + re.escape(d) + r'"/>\n?', "", svg[start:end], count=1)
+    return svg[:start] + section + svg[end:]
+
+
+def _footprint_of(row) -> Polygon:
+    x, y, w, h, rot, footprint = row
+    return Polygon(json.loads(footprint)) if footprint else _rect((x, y), w, h, rot)
+
+
+def _load(db_path: str, svg_path: Optional[str]):
+    if svg_path is None:
+        svg_path = os.path.splitext(db_path)[0] + ".svg"
+    svg = ""
+    if os.path.exists(svg_path):
+        with open(svg_path, encoding="utf-8") as f:
+            svg = f.read()
+    conn = connect(db_path)
+    conn.execute(CONSTRUCTION_EDITS_SQL)
+    return conn, svg_path, svg
+
+
+def _log(conn, operation: str, params: dict, building_ids: List[int]) -> None:
+    edit_id = conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM construction_edits").fetchone()[0]
+    conn.execute("INSERT INTO construction_edits (id, operation, params, building_ids) VALUES (?, ?, ?, ?)",
+                 (edit_id, operation, json.dumps(params), json.dumps(building_ids)))
+
+
+def _building(conn, building_id: int):
+    row = conn.execute(
+        "SELECT building_type, name, district_id, x, y, width, height, rotation, footprint FROM buildings WHERE id = ?",
+        (building_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"no building {building_id}")
+    if row[0] == DEMOLISHED:
+        raise ValueError(f"building {building_id} is already demolished")
+    return row
+
+
+def _demolish(conn, svg: str, building_id: int, ruin: bool) -> str:
+    """DB + SVG side of a demolition; returns the updated SVG."""
+    b_type, name, _, *geometry = _building(conn, building_id)
+    footprint = _footprint_of(geometry)
+    new_name = (f"Ruins of {name}" if name else None) if ruin else name
+    conn.execute("UPDATE buildings SET building_type = ?, capacity = 0, name = ? WHERE id = ?",
+                 (RUIN if ruin else DEMOLISHED, new_name, building_id))
+    for tag, d in (_svg_tags_for(svg, footprint) if svg else []):
+        if ruin:
+            ruined = re.sub(r'\sclass="[^"]*"', "", tag).replace("<path", '<path class="ruin"', 1)
+            svg = svg.replace(tag, ruined, 1)
+            if ".ruin{" not in svg:
+                svg = svg.replace("</style>", RUIN_STYLE + "\n</style>", 1)
+        else:
+            svg = svg.replace(tag + "\n", "", 1).replace(tag, "", 1)
+        svg = _svg_drop_shadow(svg, d)
+    return svg
+
+
+def _save(conn, svg_path: str, svg: str) -> None:
+    conn.commit()
+    conn.close()
+    if svg:
+        with open(svg_path, "w", encoding="utf-8") as f:
+            f.write(svg)
+
+
+def demolish_building(db_path: str, building_id: int, ruin: bool = False, svg_path: Optional[str] = None) -> None:
+    """Take a building down. ruin=False: it's cleared off the map (type
+    `demolished`). ruin=True: it's left standing as a ruin -- drawn faded
+    with a broken outline, type `ruin`, renamed "Ruins of ...". Either way
+    capacity becomes 0 and the row stays."""
+    conn, svg_path, svg = _load(db_path, svg_path)
+    try:
+        svg = _demolish(conn, svg, building_id, ruin)
+        _log(conn, "demolish_building", {"building_id": building_id, "ruin": ruin}, [building_id])
+    except Exception:
+        conn.close()
+        raise
+    _save(conn, svg_path, svg)
+
+
+def _shaped(footprint: Polygon, shape: str, area: float) -> Polygon:
+    """`footprint` rebuilt as `shape`, `area` big, centred where it was and
+    aligned with its long side."""
+    centre = footprint.centroid
+    if shape == "round":
+        return centre.buffer(math.sqrt(area / math.pi), quad_segs=8)
+    corners = list(footprint.minimum_rotated_rectangle.exterior.coords)[:4]
+    a, b = math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2])
+    long_edge = (corners[0], corners[1]) if a >= b else (corners[1], corners[2])
+    angle = math.atan2(long_edge[1][1] - long_edge[0][1], long_edge[1][0] - long_edge[0][0])
+    if shape == "square":
+        side = math.sqrt(area)
+        return _rect((centre.x, centre.y), side, side, angle)
+    ratio = max(a, b) / max(min(a, b), 1e-9)
+    width = math.sqrt(area * ratio)
+    return _rect((centre.x, centre.y), width, area / width, angle)
+
+
+def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbors, keep_original, svg_path):
+    """Shared body of resize/reshape: replace a building's footprint with
+    `target_of(footprint)`, clipped to what's free -- its own district,
+    minus roads, walls, water and (unless absorb_neighbors, in which case
+    same-district neighbours it overlaps are demolished) other buildings."""
+    conn, svg_path, svg = _load(db_path, svg_path)
+    try:
+        b_type, _, district_id, *geometry = _building(conn, building_id)
+        footprint = _footprint_of(geometry)
+        target = target_of(footprint)
+
+        district = unary_union([Polygon(part).buffer(0) for part in json.loads(conn.execute(
+            "SELECT polygon FROM districts WHERE id = ?", (district_id,)).fetchone()[0]) if len(part) >= 3])
+        water = unary_union([Polygon(json.loads(p)[0], json.loads(p)[1:])
+                             for (p,) in conn.execute("SELECT polygon FROM water_features")])
+        roads = unary_union([line.buffer(w / 2 + BUILDING_GAP)
+                             for line, w in _svg_lines(svg, "roads", "casing") if w > 0])
+        walls = unary_union([line.buffer(WALL_CLEARANCE) for line, _ in _svg_lines(svg, "walls")])
+        allowed = district.union(footprint).difference(unary_union([water, roads, walls]))
+
+        absorbed, absorbed_lots, others = [], [], []
+        for n_id, n_district, *n_geometry in conn.execute(
+                "SELECT id, district_id, x, y, width, height, rotation, footprint FROM buildings "
+                "WHERE id != ? AND building_type != ?", (building_id, DEMOLISHED)):
+            if not (n_geometry[-1] or (n_geometry[2] and n_geometry[3])):
+                continue
+            shape = _footprint_of(n_geometry)
+            if not shape.intersects(target):
+                continue
+            if absorb_neighbors and n_district == district_id and shape.intersection(target).area > 0.01:
+                absorbed.append(n_id)
+                absorbed_lots.append(shape)
+            else:
+                others.append(shape)
+        for n_id in absorbed:
+            svg = _demolish(conn, svg, n_id, ruin=False)
+
+        # Neighbours aren't buffered: settlemaker's buildings share walls.
+        result = target.intersection(allowed).difference(unary_union(others))
+        if keep_original:
+            result = result.union(footprint)
+        # Absorbed neighbours' whole lots are built over, not left as holes
+        # -- so with absorb_neighbors the result can exceed the request.
+        result = unary_union([result] + absorbed_lots)
+        result = _largest(result.buffer(0))
+        if result is None or result.area < 0.5:
+            raise ValueError(f"no room to rebuild building {building_id} like that")
+        result = Polygon(result.exterior).simplify(0.05)
+
+        corners = list(result.minimum_rotated_rectangle.exterior.coords)[:4]
+        width, depth = math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2])
+        angle = math.atan2(corners[1][1] - corners[0][1], corners[1][0] - corners[0][0])
+        coords = [list(pt) for pt in result.exterior.coords[:-1]]
+        conn.execute(
+            "UPDATE buildings SET footprint = ?, x = ?, y = ?, width = ?, height = ?, rotation = ? WHERE id = ?",
+            (json.dumps(coords), result.centroid.x, result.centroid.y, width, depth, angle, building_id))
+
+        drawn = _svg_tags_for(svg, footprint) if svg else []
+        if drawn:
+            # The first drawn piece becomes the new outline; any others (a
+            # merged cathedral's) go.
+            (tag, d), rest = drawn[0], drawn[1:]
+            new_d = _path_d(coords) + "Z"
+            svg = svg.replace(tag, tag.replace(f'd="{d}"', f'd="{new_d}"'), 1)
+            start, end = _svg_group(svg, "shadows")
+            if start >= 0:
+                svg = svg[:start] + svg[start:end].replace(f'<path d="{d}"/>', f'<path d="{new_d}"/>', 1) + svg[end:]
+            for other_tag, other_d in rest:
+                svg = _svg_drop_shadow(svg.replace(other_tag + "\n", "", 1).replace(other_tag, "", 1), other_d)
+
+        outcome = {"building_id": building_id, "absorbed": absorbed,
+                   "area_factor_achieved": round(result.area / footprint.area, 3)}
+        _log(conn, operation, dict(params, **outcome), [building_id] + absorbed)
+    except Exception:
+        conn.close()
+        raise
+    _save(conn, svg_path, svg)
+    return outcome
+
+
+def resize_building(db_path: str, building_id: int, area_factor: float,
+                    absorb_neighbors: bool = False, svg_path: Optional[str] = None) -> dict:
+    """Grow (area_factor > 1) or shrink (< 1) a building about its centre,
+    keeping its shape. Growth stays inside its district and off roads,
+    walls and water, and stops at neighbouring buildings -- unless
+    absorb_neighbors, which lets it take over (build across the whole lot
+    of) every same-district neighbour it overlaps; they're demolished, and
+    the result can exceed the request. Returns {"building_id", "absorbed",
+    "area_factor_achieved"}: in a packed block growth can fall well short
+    of the request without absorb_neighbors."""
+    if area_factor <= 0:
+        raise ValueError("area_factor must be positive")
+    scale = math.sqrt(area_factor)
+    return _rebuild(db_path, building_id,
+                    lambda fp: affinity.scale(fp, scale, scale, origin=fp.centroid),
+                    "resize_building", {"area_factor": area_factor, "absorb_neighbors": absorb_neighbors},
+                    absorb_neighbors, keep_original=area_factor >= 1, svg_path=svg_path)
+
+
+def reshape_building(db_path: str, building_id: int, shape: str, area_factor: float = 1.0,
+                     absorb_neighbors: bool = False, svg_path: Optional[str] = None) -> dict:
+    """Rebuild a building as a "rectangle", "square" or "round" footprint of
+    `area_factor` times its current area, same centre, aligned with its
+    long side; clipped like resize_building (so a big round tower in a
+    packed block may come out flattened against its neighbours unless
+    absorb_neighbors)."""
+    if shape not in RESHAPES:
+        raise ValueError(f"shape must be one of {RESHAPES}")
+    if area_factor <= 0:
+        raise ValueError("area_factor must be positive")
+    return _rebuild(db_path, building_id, lambda fp: _shaped(fp, shape, fp.area * area_factor),
+                    "reshape_building",
+                    {"shape": shape, "area_factor": area_factor, "absorb_neighbors": absorb_neighbors},
+                    absorb_neighbors, keep_original=False, svg_path=svg_path)

@@ -208,3 +208,141 @@ def test_add_buildings_is_deterministic(tmp_path):
     b = add_buildings(str(other / "town.db"), 20, where="roads")
     assert [s.wkt for s in _footprints(db_path, a)] == [s.wkt for s in _footprints(str(other / "town.db"), b)]
     assert (tmp_path / "town.svg").read_text(encoding="utf-8") == (other / "town.svg").read_text(encoding="utf-8")
+
+
+# --- editing existing buildings ---------------------------------------------
+
+from town_db.construction import demolish_building, reshape_building, resize_building
+
+HOUSE_A = [[-12, -8], [-8, -8], [-8, -6], [-12, -6]]   # shares its x=-8 wall with B
+HOUSE_B = [[-8, -8], [-4, -8], [-4, -6], [-8, -6]]
+
+
+def _town_with_pair(tmp_path):
+    db_path = _make_town(tmp_path)
+    conn = connect(db_path)
+    for b_id, ring in ((2, HOUSE_A), (3, HOUSE_B)):
+        conn.execute(
+            "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, footprint) "
+            "VALUES (?, 1, 'poor_residential', 'residence', ?, ?, 6, ?, ?)",
+            (b_id, Polygon(ring).centroid.x, Polygon(ring).centroid.y, f"House {b_id}", json.dumps(ring)))
+    conn.commit()
+    conn.close()
+    svg_file = tmp_path / "town.svg"
+    svg = svg_file.read_text(encoding="utf-8")
+    for ring in (HOUSE_A, HOUSE_B):
+        d = "M" + "L".join(f"{x:.2f},{y:.2f}" for x, y in ring) + "Z"
+        svg = svg.replace('<g id="buildings">', f'<g id="buildings"><path class="slum" d="{d}"/>', 1)
+        svg = svg.replace('<g id="shadows">', f'<g id="shadows"><path d="{d}"/>', 1)
+    svg_file.write_text(svg, encoding="utf-8")
+    return db_path
+
+
+def _row(db_path, b_id):
+    conn = connect(db_path)
+    row = conn.execute("SELECT building_type, capacity, name, footprint FROM buildings WHERE id = ?", (b_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def test_demolish_clears_the_building_off_the_map_but_keeps_its_row(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    demolish_building(db_path, 2)
+    assert _row(db_path, 2)[:2] == ("demolished", 0)
+    svg = (tmp_path / "town.svg").read_text(encoding="utf-8")
+    assert "M-12.00,-8.00" not in svg  # building and its shadow both gone
+    assert "M-8.00,-8.00" in svg       # the neighbour untouched
+    # Its land is free again: new construction ignores demolished rows.
+    conn = connect(db_path)
+    assert conn.execute("SELECT operation FROM construction_edits").fetchone() == ("demolish_building",)
+    conn.close()
+
+
+def test_ruin_stays_on_the_map_restyled(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    demolish_building(db_path, 2, ruin=True)
+    b_type, capacity, name, _ = _row(db_path, 2)
+    assert (b_type, capacity, name) == ("ruin", 0, "Ruins of House 2")
+    svg = (tmp_path / "town.svg").read_text(encoding="utf-8")
+    assert '<path class="ruin" d="M-12.00,-8.00' in svg
+    assert svg.count('<path d="M-12.00,-8.00') == 0  # no shadow under a ruin
+
+
+def test_enlarging_stops_at_a_neighbour_unless_it_absorbs_it(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    outcome = resize_building(db_path, 2, 2.0)
+    grown = Polygon(json.loads(_row(db_path, 2)[3]))
+    assert outcome["absorbed"] == []
+    assert grown.area > Polygon(HOUSE_A).area
+    assert grown.intersection(Polygon(HOUSE_B)).area < 1e-6
+    assert outcome["area_factor_achieved"] < 2.0
+
+    (tmp_path / "again").mkdir()
+    db_path2 = _town_with_pair(tmp_path / "again")
+    outcome = resize_building(db_path2, 2, 2.0, absorb_neighbors=True)
+    assert outcome["absorbed"] == [3]
+    assert _row(db_path2, 3)[0] == "demolished"
+    # It builds across B's whole lot, so it can exceed the request.
+    assert outcome["area_factor_achieved"] >= 2.0
+    assert Polygon(json.loads(_row(db_path2, 2)[3])).buffer(1e-6).contains(Polygon(HOUSE_B))
+
+
+def test_shrinking_keeps_the_shape_about_its_centre(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    outcome = resize_building(db_path, 2, 0.5)
+    shrunk = Polygon(json.loads(_row(db_path, 2)[3]))
+    assert abs(shrunk.area - 4.0) < 0.05
+    assert shrunk.centroid.distance(Polygon(HOUSE_A).centroid) < 1e-6
+    assert outcome["area_factor_achieved"] == 0.5
+    svg = (tmp_path / "town.svg").read_text(encoding="utf-8")
+    assert "M-12.00,-8.00" not in svg  # redrawn
+
+
+def test_reshape_round_and_square(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    # Same area, round: narrower than the 4x2 house, so it never reaches B.
+    outcome = reshape_building(db_path, 2, "round")
+    tower = Polygon(json.loads(_row(db_path, 2)[3]))
+    assert len(tower.exterior.coords) > 12  # actually round
+    assert abs(tower.area - 8.0) < 0.5
+    assert outcome["absorbed"] == []
+    # Twice as big it overlaps B: clipped flat against it by default...
+    flattened = reshape_building(db_path, 2, "round", area_factor=2.0)
+    assert flattened["absorbed"] == [] and flattened["area_factor_achieved"] < 2.0
+    assert Polygon(json.loads(_row(db_path, 2)[3])).intersection(Polygon(HOUSE_B)).area < 1e-6
+    # ...or taking B's lot when allowed to.
+    absorbed = reshape_building(db_path, 2, "round", area_factor=2.0, absorb_neighbors=True)
+    assert absorbed["absorbed"] == [3]
+    tower = Polygon(json.loads(_row(db_path, 2)[3]))
+    reshape_building(db_path, 2, "square")
+    square_shape = Polygon(json.loads(_row(db_path, 2)[3]))
+    assert len(square_shape.exterior.coords) == 5
+    assert abs(square_shape.area - tower.area) < 0.5
+
+
+def test_a_building_drawn_as_several_pieces_is_edited_as_one(tmp_path):
+    # A merged cathedral: one DB building, drawn as two #landmarks pieces.
+    db_path = _make_town(tmp_path)
+    left = [[-12, -14], [-8, -14], [-8, -10], [-12, -10]]
+    right = [[-8, -14], [-4, -14], [-4, -10], [-8, -10]]
+    whole = [[-12, -14], [-4, -14], [-4, -10], [-12, -10]]
+    conn = connect(db_path)
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, footprint) "
+        "VALUES (5, 1, 'civic', 'temple', -8, -12, 0, 'Temple', ?)", (json.dumps(whole),))
+    conn.commit()
+    conn.close()
+    svg_file = tmp_path / "town.svg"
+    pieces = "".join(
+        '<path class="cathedral" d="M' + "L".join(f"{x:.2f},{y:.2f}" for x, y in ring) + 'Z"/>'
+        for ring in (left, right))
+    svg_file.write_text(svg_file.read_text(encoding="utf-8").replace(
+        "</svg>", f'<g id="landmarks">{pieces}</g>\n</svg>'), encoding="utf-8")
+
+    resize_building(db_path, 5, 0.5)
+    svg = svg_file.read_text(encoding="utf-8")
+    landmarks = svg[svg.index('<g id="landmarks">'):]
+    assert landmarks.count("<path") == 1                     # one outline left...
+    assert "M-12.00,-14.00" not in landmarks and "M-8.00,-14.00" not in landmarks  # ...redrawn
+    demolish_building(db_path, 5, ruin=True)
+    assert 'class="ruin"' in svg_file.read_text(encoding="utf-8")
