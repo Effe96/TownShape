@@ -421,3 +421,18 @@ def test_get_map_data_returns_none_local_bounds_when_columns_predate_this_featur
     conn.close()
 
     assert data["local_bounds"] is None
+
+
+def test_get_resident_detail_works_before_relationships_are_derived(tmp_path):
+    # generate_town_from_parameters doesn't derive relationships; the viewer
+    # must still open such a town's residents instead of erroring.
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+    conn = connect(db_path)
+    conn.execute("DROP TABLE relationships")
+    conn.execute("DROP TABLE shop_relationships")
+    mira = get_resident_detail(conn, 1)
+    conn.close()
+
+    assert mira["first_name"] == "Mira"
+    assert mira["relationships"] == [] and mira["shopping"] == []

@@ -103,6 +103,10 @@ def search_residents(
     return {"residents": residents, "total": total, "page": page, "page_size": page_size}
 
 
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
 def get_resident_detail(conn: sqlite3.Connection, resident_id: int) -> Optional[Dict[str, Any]]:
     row = conn.execute(
         "SELECT id, household_id, first_name, last_name, gender, race, birth_date, death_date, "
@@ -126,7 +130,10 @@ def get_resident_detail(conn: sqlite3.Connection, resident_id: int) -> Optional[
         "race": household_row[2], "wealth": household_row[3],
     }
 
-    relationship_rows = conn.execute(
+    # relationships/shop_relationships only exist once
+    # town_relationships.derive_relationships has run -- a town generated
+    # without that step still shows its residents, just without links.
+    relationship_rows = [] if not _has_table(conn, "relationships") else conn.execute(
         """
         SELECT * FROM (
             SELECT resident_b_id, res.first_name, res.last_name, relationship_type, 'a'
@@ -152,7 +159,7 @@ def get_resident_detail(conn: sqlite3.Connection, resident_id: int) -> Optional[
         for r in relationship_rows
     ]
 
-    shopping_rows = conn.execute(
+    shopping_rows = [] if not _has_table(conn, "shop_relationships") else conn.execute(
         "SELECT shop_building_id, purchase_count, total_spent, is_primary "
         "FROM shop_relationships WHERE resident_id = ? ORDER BY total_spent DESC",
         (resident_id,),
