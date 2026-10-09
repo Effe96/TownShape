@@ -1,8 +1,10 @@
+import pytest
 import json
 import re
 import shutil
 
 from shapely.geometry import Point, Polygon
+from shapely.ops import unary_union
 
 from town_db.construction import add_buildings
 from town_db.schema import connect, create_schema
@@ -320,29 +322,118 @@ def test_reshape_round_and_square(tmp_path):
     assert abs(square_shape.area - tower.area) < 0.5
 
 
-def test_a_building_drawn_as_several_pieces_is_edited_as_one(tmp_path):
-    # A merged cathedral: one DB building, drawn as two #landmarks pieces.
+def _town_with_cloister(tmp_path):
+    """One DB building (a merged cathedral) drawn as four #landmarks pieces
+    around an open courtyard: outline -12..-4 x -18..-10, courtyard
+    -10..-6 x -16..-12."""
     db_path = _make_town(tmp_path)
-    left = [[-12, -14], [-8, -14], [-8, -10], [-12, -10]]
-    right = [[-8, -14], [-4, -14], [-4, -10], [-8, -10]]
-    whole = [[-12, -14], [-4, -14], [-4, -10], [-12, -10]]
+    pieces = [
+        [[-12, -18], [-4, -18], [-4, -16], [-12, -16]],   # south range
+        [[-12, -12], [-4, -12], [-4, -10], [-12, -10]],   # north range
+        [[-12, -16], [-10, -16], [-10, -12], [-12, -12]],  # west range
+        [[-6, -16], [-4, -16], [-4, -12], [-6, -12]],     # east range
+    ]
+    whole = [[-12, -18], [-4, -18], [-4, -10], [-12, -10]]
     conn = connect(db_path)
     conn.execute(
         "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, footprint) "
-        "VALUES (5, 1, 'civic', 'temple', -8, -12, 0, 'Temple', ?)", (json.dumps(whole),))
+        "VALUES (5, 1, 'civic', 'temple', -8, -14, 0, 'Temple', ?)", (json.dumps(whole),))
     conn.commit()
     conn.close()
     svg_file = tmp_path / "town.svg"
-    pieces = "".join(
-        '<path class="cathedral" d="M' + "L".join(f"{x:.2f},{y:.2f}" for x, y in ring) + 'Z"/>'
-        for ring in (left, right))
+    paths = "".join('<path class="cathedral" d="M' + "L".join(f"{x:.2f},{y:.2f}" for x, y in ring) + 'Z"/>'
+                    for ring in pieces)
     svg_file.write_text(svg_file.read_text(encoding="utf-8").replace(
-        "</svg>", f'<g id="landmarks">{pieces}</g>\n</svg>'), encoding="utf-8")
+        "</svg>", f'<g id="landmarks">{paths}</g>\n</svg>'), encoding="utf-8")
+    return db_path, svg_file
 
-    resize_building(db_path, 5, 0.5)
+
+def _landmark_shapes(svg_file):
     svg = svg_file.read_text(encoding="utf-8")
-    landmarks = svg[svg.index('<g id="landmarks">'):]
-    assert landmarks.count("<path") == 1                     # one outline left...
-    assert "M-12.00,-14.00" not in landmarks and "M-8.00,-14.00" not in landmarks  # ...redrawn
+    section = svg[svg.index('<g id="landmarks">'):]
+    return [Polygon([tuple(map(float, xy.split(","))) for xy in re.findall(r"-?[\d.]+,-?[\d.]+", d)])
+            for d in re.findall(r'<path[^>]*\sd="([^"]+)"', section)]
+
+
+def test_resizing_a_multi_piece_building_keeps_its_courtyard(tmp_path):
+    db_path, svg_file = _town_with_cloister(tmp_path)
+    resize_building(db_path, 5, 1.5)
+    shapes = _landmark_shapes(svg_file)
+    assert len(shapes) == 4                                     # still four ranges...
+    assert not any(s.contains(Point(-8, -14)) for s in shapes)  # ...around an open courtyard
+    assert unary_union(shapes).area > 1.3 * (64 - 16)           # and bigger
     demolish_building(db_path, 5, ruin=True)
-    assert 'class="ruin"' in svg_file.read_text(encoding="utf-8")
+    assert svg_file.read_text(encoding="utf-8").count('class="ruin"') == 4
+
+
+def test_reshaping_a_multi_piece_building_redraws_one_outline(tmp_path):
+    db_path, svg_file = _town_with_cloister(tmp_path)
+    reshape_building(db_path, 5, "round")
+    assert len(_landmark_shapes(svg_file)) == 1
+
+
+# --- building near a named place ---------------------------------------------
+
+from town_db.construction import resolve_place
+
+
+def _town_with_gates(tmp_path):
+    """The test town plus a second road leaving north (SVG is Y-down: north
+    is -y), gates where both roads cross the wall, and a named barn."""
+    db_path = _make_town(tmp_path)
+    svg_file = tmp_path / "town.svg"
+    svg = svg_file.read_text(encoding="utf-8")
+    svg = svg.replace('<path class="core" d="M0,0L150,0"',
+                      '<path class="casing" d="M0,0L0,-150" stroke-width="3.00"/><path class="core" d="M0,0L150,0"')
+    svg = svg.replace('<path d="M-20,-20L20,-20L20,20L-20,20L-20,-20"/>',
+                      '<path d="M-20,-20L20,-20L20,20L-20,20L-20,-20"/>'
+                      '<line class="gate" x1="20.00" y1="-2.00" x2="20.00" y2="2.00"/>'
+                      '<line class="gate" x1="-2.00" y1="-20.00" x2="2.00" y2="-20.00"/>')
+    svg_file.write_text(svg, encoding="utf-8")
+    conn = connect(db_path)
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, footprint) "
+        "VALUES (9, 2, 'farmland_edge', 'farmstead', 12, 40, 8, 'Old Barn', ?)",
+        (json.dumps([[10, 39], [14, 39], [14, 41], [10, 41]]),))
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def test_resolve_place_understands_gates_names_types_and_glyphs(tmp_path):
+    db_path = _town_with_gates(tmp_path)
+    svg = (tmp_path / "town.svg").read_text(encoding="utf-8")
+    conn = connect(db_path)
+    try:
+        assert resolve_place(conn, svg, "north gate", (0, 0)).distance(Point(0, -20)) < 1e-6
+        assert resolve_place(conn, svg, "East Gate", (0, 0)).distance(Point(20, 0)) < 1e-6
+        assert resolve_place(conn, svg, "old barn", (0, 0)).distance(Point(12, 40)) < 1e-6
+        assert resolve_place(conn, svg, "farmstead", (0, 0)).distance(Point(12, 40)) < 1e-6
+        assert resolve_place(conn, svg, 9, (0, 0)).distance(Point(12, 40)) < 1e-6
+        assert resolve_place(conn, svg, "mill", (0, 0)).distance(Point(30, 5)) < 1e-6
+        for bad in ("west gate", "the dragon's lair", "river"):
+            with pytest.raises(ValueError):
+                resolve_place(conn, svg, bad, (0, 0))
+    finally:
+        conn.close()
+
+
+def test_tavern_by_the_north_gate_goes_to_the_north_gate(tmp_path):
+    db_path = _town_with_gates(tmp_path)
+    (tavern,) = add_buildings(db_path, 1, building_type="tavern", near="north gate")
+    shape = _footprints(db_path, [tavern])[0]
+    assert shape.distance(Point(0, -20)) < 8
+    assert _edit(db_path, 1)["near"] == "north gate"
+
+
+def test_houses_near_a_named_building_get_a_lane_out_to_it(tmp_path):
+    def distances(near):
+        sub = tmp_path / str(near)
+        sub.mkdir()
+        db_path = _town_with_gates(sub)
+        ids = add_buildings(db_path, 12, where="perimeter", near=near)
+        return sorted(s.distance(Point(12, 40)) for s in _footprints(db_path, ids))
+    near, default = distances("Old Barn"), distances(None)
+    assert near[0] < 4               # a lane reaches the barn, houses beside it
+    assert near[0] < default[0] / 2  # which default growth doesn't do
+    assert sum(near) < sum(default)

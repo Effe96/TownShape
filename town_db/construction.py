@@ -35,7 +35,7 @@ import math
 import os
 import re
 import sqlite3
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import shapely
 from shapely import affinity
@@ -88,6 +88,11 @@ STREET_TURN = 0.3
 STREET_BRANCH_ANGLE = 0.6
 STREET_JOIN = 5.0
 MIN_STREET_LENGTH = 10.0
+# Building `near` a place: lanes steer toward it (this fraction of the
+# heading error corrected per step) and may run up to STREET_MAX_REACH to
+# get there -- a track out to the mill, not a lane wandering off elsewhere.
+STREET_STEER = 0.35
+STREET_MAX_REACH = 80.0
 STREET_HOUSES = 14
 # Frontage irregularity: extra setback, angle jitter, share of houses set
 # gable-end to the street, and how much sparser a street gets by its far end.
@@ -367,6 +372,103 @@ def _new_fields(occupied, obstacles, area_needed, plot_area, centre, rng) -> Lis
     return fields
 
 
+# --- named places ------------------------------------------------------------
+
+COMPASS = {"north": 0, "northeast": 45, "east": 90, "southeast": 135,
+           "south": 180, "southwest": 225, "west": 270, "northwest": 315}
+# A "<direction> gate" must be within this many degrees of that direction.
+GATE_BEARING_TOLERANCE = 60
+WATER_KINDS = {"river": ("river",), "coast": ("coastline",), "sea": ("coastline",),
+               "harbour": ("coastline", "river"), "water": ("river", "coastline")}
+# Landscape glyphs that can be named, by the glyph-id fragment to look for.
+GLYPH_PLACES = {"mill": "mill", "windmill": "mill", "well": "well", "market cross": "market-cross"}
+
+
+def _svg_gates(svg: str) -> List[Point]:
+    start, end = _svg_group(svg, "walls")
+    if start < 0:
+        return []
+    return [Point((float(x1) + float(x2)) / 2, (float(y1) + float(y2)) / 2)
+            for x1, y1, x2, y2 in re.findall(
+                r'<line class="gate" x1="(-?[\d.]+)" y1="(-?[\d.]+)" x2="(-?[\d.]+)" y2="(-?[\d.]+)"', svg[start:end])]
+
+
+def _svg_glyphs(svg: str, fragment: str) -> List[Point]:
+    start, end = _svg_group(svg, "symbols")
+    if start < 0:
+        return []
+    return [Point(float(x), float(y)) for x, y in re.findall(
+        r'<use href="#glyph-sm-[a-z-]*' + re.escape(fragment) + r'[a-z-]*" transform="translate\((-?[\d.]+),(-?[\d.]+)\)',
+        svg[start:end])]
+
+
+def resolve_place(conn, svg: str, near: Union[int, str], centre: Tuple[float, float]):
+    """The geometry a `near` value names, nearest the town centre when
+    several match:
+      - a building id (int, or digits);
+      - "<compass direction> gate" ("north gate", "southwest gate"): the
+        town gate closest to that bearing, within GATE_BEARING_TOLERANCE;
+      - "river" / "coast" / "sea" / "harbour" / "water": that water;
+      - "mill" / "windmill" / "well" / "market cross": a landscape glyph;
+      - a building name ("The Rusty Anvil") or type ("temple"), case-
+        insensitive -- exact name, then name containing it, then type.
+    Raises ValueError if nothing matches."""
+    centre_point = Point(centre)
+
+    def footprint(row):
+        x, y, w, h, rot, fp = row
+        return Polygon(json.loads(fp)) if fp else (_rect((x, y), w, h, rot) if w and h else Point(x, y))
+
+    def nearest(geoms):
+        return min(geoms, key=lambda g: g.distance(centre_point))
+
+    if isinstance(near, int) or str(near).strip().isdigit():
+        row = conn.execute("SELECT x, y, width, height, rotation, footprint FROM buildings WHERE id = ?",
+                           (int(near),)).fetchone()
+        if row is None:
+            raise ValueError(f"no building {near}")
+        return footprint(row)
+    text = " ".join(str(near).lower().replace("-", " ").split())
+
+    if text.endswith(" gate") and text[:-5].replace(" ", "") in COMPASS:
+        bearing = COMPASS[text[:-5].replace(" ", "")]
+        gates = []
+        for gate in _svg_gates(svg):
+            # SVG is Y-down: a compass bearing points along (sin, -cos).
+            gate_bearing = math.degrees(math.atan2(gate.x - centre[0], -(gate.y - centre[1]))) % 360
+            diff = abs((gate_bearing - bearing + 180) % 360 - 180)
+            if diff <= GATE_BEARING_TOLERANCE:
+                gates.append((diff, gate))
+        if not gates:
+            raise ValueError(f"no gate within {GATE_BEARING_TOLERANCE} degrees of {text[:-5]}")
+        return min(gates, key=lambda g: g[0])[1]
+
+    if text in WATER_KINDS:
+        kinds = WATER_KINDS[text]
+        water = [Polygon(json.loads(p)[0], json.loads(p)[1:]) for kind, p in conn.execute(
+            "SELECT kind, polygon FROM water_features") if kind in kinds]
+        if not water:
+            raise ValueError(f"this town has no {text}")
+        return unary_union(water)
+
+    if text in GLYPH_PLACES:
+        glyphs = _svg_glyphs(svg, GLYPH_PLACES[text])
+        if not glyphs:
+            raise ValueError(f"this town has no {text}")
+        return nearest(glyphs)
+
+    rows = conn.execute("SELECT name, building_type, x, y, width, height, rotation, footprint FROM buildings "
+                        "WHERE building_type != 'demolished'").fetchall()
+    for test in (lambda r: (r[0] or "").lower() == text,
+                 lambda r: text in (r[0] or "").lower(),
+                 lambda r: r[1].replace("_", " ") == text):
+        matches = [footprint(r[2:]) for r in rows if test(r)]
+        if matches:
+            return nearest(matches)
+    raise ValueError(f"no place called {near!r}: give a building id, a building name or type, "
+                     "'<direction> gate', 'river'/'coast'/'water', or 'mill'/'well'")
+
+
 # --- the edit ----------------------------------------------------------------
 
 def add_buildings(
@@ -375,10 +477,17 @@ def add_buildings(
     where: str = "roads",
     building_type: str = "residence",
     svg_path: Optional[str] = None,
+    near: Optional[Union[int, str]] = None,
 ) -> List[int]:
     """Build up to `count` new `building_type` buildings outside the town's
     existing built-up area, and return their ids (fewer than `count` if the
     frame runs out of room).
+
+    near: build as close as possible to a named place instead of to the
+    town centre -- see resolve_place for what it accepts ("north gate",
+    "The Rusty Anvil", "temple", "mill", "river", a building id...).
+    Construction still never goes inside the built-up area, so near a place
+    in the old town means the nearest free land outside it.
 
     where="roads": ribbon development -- lots fronting the approach roads,
     nearest the town first, up to RIBBON_REACH town radii out; the rest goes
@@ -462,6 +571,12 @@ def add_buildings(
 
         centre_point = unary_union(footprints).centroid if footprints else Point(0, 0)
         centre = (centre_point.x, centre_point.y)
+        # Placement is ordered and capped by distance from the focus: the
+        # town centre, or the place `near` names.
+        place = resolve_place(conn, svg, near, centre) if near is not None else None
+
+        def focus_distance(c) -> float:
+            return place.distance(Point(c)) if place is not None else math.dist(c, centre)
         radius = math.sqrt(unary_union([core, walls]).area / math.pi) or 20.0
         depth = sizes[len(sizes) // 2][1]
 
@@ -520,6 +635,8 @@ def add_buildings(
             without having joined anything."""
             width = rng.uniform(*STREET_WIDTH)
             target = rng.uniform(*STREET_LENGTH)
+            if place is not None:
+                target = STREET_MAX_REACH  # runs until it arrives (or is blocked)
             start_disk = Point(edge).buffer(parent_width / 2 + 0.6)
             others = road_union.difference(parent_line.buffer(parent_width / 2 + 0.05))
             prepared_others = prep(others)
@@ -542,6 +659,12 @@ def add_buildings(
                 turn = 0.6 * turn + rng.uniform(-STREET_TURN, STREET_TURN)
                 heading += turn
                 last = points[-1]
+                if place is not None:
+                    if focus_distance(last) < STREET_STEP:
+                        break  # arrived
+                    goal = nearest_points(place, Point(last))[0]
+                    error = (math.atan2(goal.y - last[1], goal.x - last[0]) - heading + math.pi) % (2 * math.pi) - math.pi
+                    heading += STREET_STEER * error
                 p = (last[0] + STREET_STEP * math.cos(heading), last[1] + STREET_STEP * math.sin(heading))
                 if not others.is_empty and others.distance(Point(p)) < STREET_JOIN:
                     q = nearest_points(others, Point(p))[0]
@@ -566,23 +689,26 @@ def add_buildings(
             for line, w in roads:
                 for _, (ex, ey), (nx, ny), angle in _frontage(line, w):
                     c = (ex + nx * (BUILDING_GAP + depth / 2), ey + ny * (BUILDING_GAP + depth / 2))
-                    if math.dist(c, centre) <= reach:
+                    if focus_distance(c) <= reach:
                         candidates.append((c, angle))
             candidates += _ring_candidates(unary_union([core, walls] + footprints), depth)
-            place_centred([(math.dist(c, centre) + ROAD_AFFINITY * road_union.distance(Point(c)), c, a)
+            place_centred([(focus_distance(c) + ROAD_AFFINITY * road_union.distance(Point(c)), c, a)
                            for c, a in candidates], count)
         else:
             if where == "roads":
                 reach = RIBBON_REACH * radius
-                place_frontage([(math.dist(e, centre), s, e, n, a) for line, w in roads
-                                for s, e, n, a in _frontage(line, w) if math.dist(e, centre) <= reach], count)
+                place_frontage([(focus_distance(e), s, e, n, a) for line, w in roads
+                                for s, e, n, a in _frontage(line, w) if focus_distance(e) <= reach], count)
             # Overflow goes onto side streets, innermost lane slots first;
             # each new street adds its own lane slots, so the warren grows
             # outward branch by branch.
             queue = []
 
             def push(slot):
-                distance = math.dist(slot[0], centre)
+                # Judged a lane's depth out, so near a place the gaps on the
+                # side of the road facing it come first.
+                (ex, ey), (nx, ny) = slot[0], slot[1]
+                distance = focus_distance((ex + nx * LANE_DEPTH, ey + ny * LANE_DEPTH))
                 if distance <= STREET_REACH * radius:
                     heapq.heappush(queue, (distance + rng.uniform(0, radius / 3), len(queue), slot))
 
@@ -601,7 +727,8 @@ def add_buildings(
                 lane_slots += new_slots
                 state["roads"] = prep(road_union)
                 state["lanes"] = prep(unary_union([s[2] for s in lane_slots]))
-                place_frontage([(s + rng.uniform(0, 2), s, e, n, a) for s, e, n, a in _frontage(street, width)],
+                place_frontage([((focus_distance(e) if place is not None else s) + rng.uniform(0, 2), s, e, n, a)
+                                for s, e, n, a in _frontage(street, width)],
                                STREET_HOUSES, street.length)
                 for slot in new_slots:
                     push(slot)
@@ -721,7 +848,7 @@ def add_buildings(
         conn.execute(
             "INSERT INTO construction_edits (id, operation, params, building_ids) VALUES (?, ?, ?, ?)",
             (edit_id, "add_buildings",
-             json.dumps({"count": count, "where": where, "building_type": building_type,
+             json.dumps({"count": count, "where": where, "building_type": building_type, "near": near,
                          "streets": len(streets), "converted_district_ids": converted,
                          "trimmed_district_ids": sorted(trimmed), "living_district_ids": living,
                          "new_field_district_ids": field_ids}),
@@ -782,7 +909,8 @@ def _svg_tags_for(svg: str, footprint: Polygon) -> List[Tuple[str, str]]:
     footprint -- settlemaker's buildings carry no id in the SVG, so they're
     matched by geometry: one shape overlapping it >= 90%, or, for a
     building merged from several drawn pieces (a cathedral), every shape
-    lying >= 90% inside it, if together they cover it >= 80%."""
+    lying >= 90% inside it, if together they cover it >= 60% (less than
+    all of it: a cloister courtyard is part of the outline, not a piece)."""
     candidates = []
     for group_id in _BUILDING_GROUPS:
         start, end = _svg_group(svg, group_id)
@@ -802,7 +930,7 @@ def _svg_tags_for(svg: str, footprint: Polygon) -> List[Tuple[str, str]]:
     if best and iou(best[2]) >= 0.9:
         return [(best[0], best[1])]
     pieces = [c for c in candidates if c[2].intersection(footprint).area >= 0.9 * c[2].area]
-    if pieces and unary_union([c[2] for c in pieces]).intersection(footprint).area >= 0.8 * footprint.area:
+    if pieces and unary_union([c[2] for c in pieces]).intersection(footprint).area >= 0.6 * footprint.area:
         return [(tag, d) for tag, d, _ in pieces]
     return []
 
@@ -909,11 +1037,23 @@ def _shaped(footprint: Polygon, shape: str, area: float) -> Polygon:
     return _rect((centre.x, centre.y), width, area / width, angle)
 
 
-def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbors, keep_original, svg_path):
+def _geom_d(geometry) -> str:
+    """SVG path data for a polygon or multipolygon (outer outlines)."""
+    return "".join(_path_d(list(g.exterior.coords)[:-1]) + "Z"
+                   for g in getattr(geometry, "geoms", [geometry]) if isinstance(g, Polygon) and not g.is_empty)
+
+
+def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbors, keep_original, svg_path,
+             piece_transform=None):
     """Shared body of resize/reshape: replace a building's footprint with
     `target_of(footprint)`, clipped to what's free -- its own district,
     minus roads, walls, water and (unless absorb_neighbors, in which case
-    same-district neighbours it overlaps are demolished) other buildings."""
+    same-district neighbours it overlaps are demolished) other buildings.
+
+    A building drawn as several pieces (a merged cathedral) is redrawn
+    piece by piece when `piece_transform` is given -- each piece moved like
+    the whole and clipped to the new outline -- so its courtyard and inner
+    divisions survive; otherwise it's redrawn as one outline."""
     conn, svg_path, svg = _load(db_path, svg_path)
     try:
         b_type, _, district_id, *geometry = _building(conn, building_id)
@@ -967,7 +1107,30 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
             (json.dumps(coords), result.centroid.x, result.centroid.y, width, depth, angle, building_id))
 
         drawn = _svg_tags_for(svg, footprint) if svg else []
-        if drawn:
+        if len(drawn) > 1 and piece_transform is not None:
+            outline = Polygon(coords).buffer(0)
+            covered = []
+            for tag, d in drawn:
+                piece = piece_transform(Polygon(_points(d)).buffer(0)).intersection(outline)
+                new_d = _geom_d(piece)
+                if new_d:
+                    svg = svg.replace(tag, tag.replace(f'd="{d}"', f'd="{new_d}"'), 1)
+                    start, end = _svg_group(svg, "shadows")
+                    if start >= 0:
+                        svg = (svg[:start] + svg[start:end].replace(f'<path d="{d}"/>', f'<path d="{new_d}"/>', 1)
+                               + svg[end:])
+                    covered.append(piece)
+                else:
+                    svg = _svg_drop_shadow(svg.replace(tag + "\n", "", 1).replace(tag, "", 1), d)
+            # Lots taken from neighbours become extra pieces of the building.
+            extra = unary_union(absorbed_lots).intersection(outline).difference(unary_union(covered))
+            extra_d = _geom_d(extra.buffer(0)) if absorbed_lots else ""
+            if extra_d:
+                first_tag, first_d = drawn[0]
+                svg = _svg_insert(svg, "landmarks" if _svg_group(svg, "landmarks")[0] >= 0 else "buildings",
+                                  [first_tag.replace(f'd="{first_d}"', f'd="{extra_d}"')])
+                svg = _svg_insert(svg, "shadows", [f'<path d="{extra_d}"/>'])
+        elif drawn:
             # The first drawn piece becomes the new outline; any others (a
             # merged cathedral's) go.
             (tag, d), rest = drawn[0], drawn[1:]
@@ -1002,10 +1165,16 @@ def resize_building(db_path: str, building_id: int, area_factor: float,
     if area_factor <= 0:
         raise ValueError("area_factor must be positive")
     scale = math.sqrt(area_factor)
-    return _rebuild(db_path, building_id,
-                    lambda fp: affinity.scale(fp, scale, scale, origin=fp.centroid),
+    origin = {}
+
+    def grow(fp):
+        origin["centre"] = fp.centroid
+        return affinity.scale(fp, scale, scale, origin=fp.centroid)
+
+    return _rebuild(db_path, building_id, grow,
                     "resize_building", {"area_factor": area_factor, "absorb_neighbors": absorb_neighbors},
-                    absorb_neighbors, keep_original=area_factor >= 1, svg_path=svg_path)
+                    absorb_neighbors, keep_original=area_factor >= 1, svg_path=svg_path,
+                    piece_transform=lambda piece: affinity.scale(piece, scale, scale, origin=origin["centre"]))
 
 
 def reshape_building(db_path: str, building_id: int, shape: str, area_factor: float = 1.0,

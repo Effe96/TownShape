@@ -13,9 +13,9 @@ same call → same buildings.
 
 ## Operations
 
-### `add_buildings(db_path, count, where="roads", building_type="residence")`
+### `add_buildings(db_path, count, where="roads", building_type="residence", near=None)`
 
-CLI: `python scripts/add_buildings.py <db> <count> [--where roads|perimeter] [--type residence]`
+CLI: `python scripts/add_buildings.py <db> <count> [--where roads|perimeter] [--type residence] [--near PLACE]`
 
 Builds up to `count` new buildings *outside* the existing built-up area
 (every non-farmland district, the walls, and every building), on the town's
@@ -49,6 +49,19 @@ Side effects, all automatic:
 - The edit's `construction_edits.params` records `streets`,
   `converted_district_ids`, `trimmed_district_ids`, `living_district_ids`
   and `new_field_district_ids`.
+
+`near` builds as close as possible to a named place instead of the town
+centre. It accepts a building id; a building name ("The Rusty Anvil") or
+type ("temple"), case-insensitive; `"<compass direction> gate"` ("north
+gate", "southwest gate" -- the gate within 60° of that bearing);
+`"river"`, `"coast"`/`"sea"`, `"harbour"`, `"water"`; or a landscape glyph,
+`"mill"`/`"windmill"`, `"well"`, `"market cross"`. Several matches -> the
+one nearest the town centre (pass an id to pick a specific one). Lanes
+opened for it steer toward the place, so a place no road reaches gets a
+track out to it with the houses at its end. Construction still never goes
+inside the built-up area: "near the temple" in the old town means the
+nearest free land outside it. Unknown place -> `ValueError` listing what's
+accepted.
 
 `building_type` is any key of `town_shaper.buildings.JOB_VACANCIES_BY_BUILDING_TYPE`
 (`residence`, `workshop`, `tavern`, `farmstead`, ...).
@@ -86,7 +99,9 @@ click a building; or query `buildings` by `building_type`/`name`).
 | "the town is spilling out along the roads" | `add_buildings(db, 30-60, "roads")` |
 | "a new suburb / faubourg has grown up outside the walls" | `roads` pass, then one or more `perimeter` passes |
 | "new lanes of houses are eating into the farmland" | `add_buildings(db, N, "perimeter")` |
-| "a tavern opened by the north road" | `add_buildings(db, 1, "roads", "tavern")` |
+| "a tavern opened by the north gate" | `add_buildings(db, 1, building_type="tavern", near="north gate")` |
+| "cottages went up out by the mill" | `add_buildings(db, 6-12, "perimeter", near="mill")` |
+| "fishermen's huts along the river" | `add_buildings(db, N, "perimeter", near="river")` |
 | "the tavern burned down" | `demolish_building(db, tavern_id, ruin=True)` |
 | "they pulled the old house down" | `demolish_building(db, house_id)` |
 | "the temple was enlarged" | `resize_building(db, temple_id, 1.5–2)`; if it's boxed in and the story allows, `absorb_neighbors=True` |
@@ -97,9 +112,7 @@ so "room for ~120 newcomers" ≈ 20 residences.
 
 ## Not yet supported
 
-Moving a building, placing construction "near" a named place, and the
-generation-time layout changes settlemaker can't express yet (castle
-size/shape, star-shaped walls, symmetry). Known limit: a cathedral is one
-`temple` building drawn as several pieces; resizing/reshaping it redraws it
-as a single outline, so its inner cloister courtyard and piece divisions
-are lost.
+Moving a building, and the generation-time layout changes settlemaker can't express yet (castle
+size/shape, star-shaped walls, symmetry). A cathedral is one `temple` building
+drawn as several pieces: resizing keeps its pieces and cloister courtyard
+(each piece scaled with the whole); reshaping redraws it as one outline.

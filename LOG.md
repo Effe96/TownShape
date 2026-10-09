@@ -12,6 +12,24 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-10-10 — Frodo — build near a named place; resizing keeps a cathedral's cloister
+
+`add_buildings(..., near=...)` (+ `--near`): `resolve_place` turns a building
+id/name/type, "<compass> gate" (from the SVG's `#walls` gate lines; SVG is
+Y-down so bearing -> (sin, -cos)), water ("river", "coast"...) or a glyph
+("mill", "well") into a geometry; placement then orders/caps by distance to
+it instead of the town centre, lane slots are judged a lane's depth out (so
+the side facing the place wins), and lanes steer toward it
+(`STREET_STEER`), running until they arrive (<= `STREET_MAX_REACH`). First
+version without steering/run-until-arrival put "near the mill" houses
+~300px off on the nearest road, because no road reached the mill.
+
+`resize_building` on a multi-piece building (merged cathedral) now scales
+each drawn piece with the whole and clips it to the new outline, so the
+cloister courtyard and piece divisions survive; absorbed lots become extra
+pieces. Multi-piece matching coverage threshold dropped 80% -> 60%: a
+courtyard is part of the outline but no piece covers it.
+
 ## 2026-10-09 — Frodo — building edits: demolish / ruin / resize / reshape
 
 `town_db/construction.py` gained `demolish_building` (cleared ->
