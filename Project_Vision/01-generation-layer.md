@@ -46,8 +46,8 @@ itself off `target_population` against its own hardcoded
   mapped to `ZoneType` via `WARD_TYPE_TO_ZONE_TYPE` — administration/
   cathedral/military/park → civic, merchant/market → merchant, slum/
   craftsmen → poor_residential, patriciate → rich_residential, harbour/
-  gate → port, farm → farmland_edge; `castle` has never appeared in a
-  real run and still raises loudly rather than silently defaulting).
+  gate → port, farm → farmland_edge; `castle` → civic with `garrison`
+  buildings since 2026-10-09 — see Parser fixes below).
   Buildings carry a `poi.kind` (inn, smithy, shop, guardhouse, ...)
   mapped to TownShape's own `building_type` vocabulary
   (`POI_KIND_TO_BUILDING_TYPE`) when one exists, falling back to a
@@ -83,10 +83,56 @@ subdivision, building placement, and wall/tower/gate geometry entirely.
 `town_shaper/roads.py` is deleted; `Town.road_network` is always an
 empty `RoadNetwork()` now (never `None`, never populated) — settlemaker's
 own `street` GeoJSON layer isn't mapped onto TownShape's `RoadNode`/
-`RoadEdge` models, so the `road_nodes`/`road_edges` tables are always
-empty. (`town_viewer/`'s road-drawing code still reads those tables —
+`RoadEdge` models, so the `road_nodes`/`road_edges` tables are empty at
+generation (since 2026-10-09 they only ever hold side streets added by
+`town_db/construction.py`, `road_type='street'`). (`town_viewer/`'s road-drawing code still reads those tables —
 harmless, since they're empty, but it's dead weight now; see the
 visualization layer doc.)
+
+### Layout knobs for random towns (2026-10-09)
+
+`TownParameters` gained `river_bearings` (river i flows in from that compass
+bearing and leaves opposite, crossing near the centre, meandering half as
+much as a random river), `has_citadel` (settlemaker's castle ward; parsed as
+civic land with `garrison` buildings), and `road_bearings` (settlemaker puts
+a gate within a few degrees of each; the road's course outside the walls
+still follows field edges). Recorded in `generation_parameters`. Mapped from
+narrative in `docs/narrative-town-parameters.md`.
+
+### Parser fixes (2026-10-09/10)
+
+- `castle` wards (reachable via `has_citadel`) → civic + `garrison` (the old
+  "raises loudly" item below is resolved).
+- Park lawns are settlemaker "buildings" with stray `shop` POIs pinned on
+  some — POIs on park wards are now ignored (lawns stay `garden`).
+- A cathedral ward (~5-15 pieces, one typed `temple`, the rest `workshop`)
+  now merges into **one** `temple` building whose footprint is the union.
+- Towns generated before these fixes keep the old typing until regenerated.
+
+### Construction edits on an existing town (2026-10-09/10)
+
+`town_db/construction.py` (+ `scripts/add_buildings.py`,
+`scripts/edit_building.py`, agent guide `docs/narrative-construction.md`):
+physical-layer-only edits, decoupled from residents/`advance_town` (the
+*why* of growth belongs to a separate project of the owner's).
+
+- `add_buildings(count, where="roads"|"perimeter", building_type, near=)`:
+  ribbon houses along approach roads (capped at 1.6 town radii), overflow on
+  wandering side streets that branch through reserved lane gaps and join
+  other roads (deliberately irregular — straight perpendicular lanes read as
+  "modern American"); near-terraced frontage with gable-end plots; taverns/
+  shops at the most central road lot; `near` = building id/name/type,
+  "<compass> gate", water, or a glyph ("mill"), with lanes steering toward it.
+- Fields new construction cuts into are trimmed (cut part → new
+  `poor_residential` district) or converted if mostly lost; lost field area
+  is re-sown outside the farmland belt, widening the SVG frame/`town_state`
+  bounds when needed.
+- `demolish_building` (cleared or `ruin`), `resize_building`,
+  `reshape_building`; rows of demolished buildings are kept (capacity 0).
+- Settlemaker's roads/walls/glyphs exist only in the SVG, so they're parsed
+  from it; new geometry is appended to settlemaker's own SVG groups;
+  settlemaker buildings are matched to their drawn shape(s) by geometry.
+  Every edit is logged in `construction_edits`.
 
 ### Determinism
 
@@ -138,9 +184,31 @@ one.
 
 ### `castle` ward type remains unresolved
 
-**Status:** Open, by design — still raises loudly
+**Status:** Addressed 2026-10-09 — `has_citadel` made it reachable; mapped
+to civic with `garrison` buildings (`settlemaker_bridge/parse_geojson.py`).
 
-Never seen in a real run across either the Phase 1 checkpoint or the
-migration's own test sweeps. `WARD_TYPE_TO_ZONE_TYPE` still has no entry
-for it and `parse_settlemaker_geojson` still raises rather than silently
-guessing, per the original design decision.
+
+### The town's structure should follow the narrative (P002)
+
+**Status:** Planned — `docs/superpowers/specs/2026-10-10-narrative-layout-engine-design.md`
+
+The agent writes a *layout spec* (shapes, walls, water, roads, districts,
+open spaces, landmarks with any footprint, symmetry) from the narrative;
+TownShape builds that structure and settlemaker — in a fork with a
+"structured" entry point — fills the rest in its own style; the agent reviews
+a render and a fidelity report and revises. Phase 0 is a 2-3 day spike
+proving settlemaker's wards can fill regions TownShape defines. Random towns
+keep today's path. Awaiting owner decisions D1-D4 in the spec.
+
+### Construction edits: known gaps
+
+**Status:** Open
+
+- Moving a building isn't supported.
+- A cathedral reshaped to rectangle/square/round loses its inner pieces
+  (resize keeps them).
+- New houses sit on field-striping only where fields weren't trimmed;
+  re-sown fields are Voronoi-shaped, a bit more angular than settlemaker's.
+- `generate_town_from_parameters` doesn't derive relationships (the viewer
+  copes since 2026-10-09, but the entry point could run that step).
+- `demo_riverport_town.svg` is stale vs. its `.db` and needs regenerating.

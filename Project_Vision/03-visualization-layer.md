@@ -47,6 +47,15 @@ section.
 
 ### Interactive web viewer (`town_viewer/`)
 
+**2026-10-09/10 additions:** building-type emoji icons drawn at each
+landmark/commercial building in all render modes (civic types always,
+commercial ones once zoomed in), clickable legend rows that hide/show each
+type's icons (remembered per browser, keyboard accessible), ruins coloured
+in flat mode and demolished buildings hidden, the flat modes drawing every
+road (settlemaker's and construction's streets) parsed from the SVG, and
+resident details that no longer fail on towns without derived
+relationships.
+
 Unaffected by the migration except upstream data provenance: still
 Flask + vanilla JS canvas, pan/zoom, click a building for its detail
 (who works/lives there), a searchable resident list, click-through
@@ -106,7 +115,10 @@ original complaint was about.
 
 ### The interactive viewer never got settlemaker's visual treatment
 
-**Status:** Open — flagged by the user 2026-09-09, comparing a
+**Status:** Addressed 2026-09-09/10 — option (b) below: the viewer now
+shows settlemaker's own SVG as its default map layer with click/search on
+top (see `docs/superpowers/specs/2026-09-09-town-viewer-svg-overlay-design.md`),
+plus a mode toggle for the flat colour views. Original entry, flagged by the user 2026-09-09, comparing a
 `town_viewer` screenshot against the settlemaker SVG shown earlier the
 same session ("this looks much, much poorer quality than what you
 showed me previously")
@@ -136,3 +148,15 @@ information density and click-through, not prettiness, and the two
 tools can keep serving different purposes. Whoever picks this up should
 weigh effort against how much the interactive viewer actually gets used
 day to day.
+
+
+### Rendering for structured (P002) towns
+
+**Status:** Planned — see `docs/superpowers/specs/2026-10-10-narrative-layout-engine-design.md`,
+"Rendering" and decision D2
+
+Structured towns are meant to render through settlemaker's own scene/SVG
+pipeline (via the fork), so they look like today's towns; custom landmark
+footprints (e.g. a heart-shaped church) as landmark polygons. Open: keep
+today's style exactly, or allow a distinct one. The agent's review loop
+also needs a rendered PNG preview tool.
