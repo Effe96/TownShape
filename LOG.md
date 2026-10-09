@@ -12,6 +12,28 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-10-09 — Frodo — building edits: demolish / ruin / resize / reshape
+
+`town_db/construction.py` gained `demolish_building` (cleared ->
+`demolished`, or `ruin=True` -> `ruin` drawn faded/dashed), `resize_building`
+and `reshape_building` (rectangle/square/round), + `scripts/edit_building.py`.
+Physical layer only: demolished rows are kept (capacity 0) so resident /
+workplace references stay valid; the viewer's map query and add_buildings
+both skip `demolished`. Settlemaker buildings carry no id in the SVG, so
+edits find a building's drawn shape by geometry (best IoU >= 0.9, searched
+in #buildings/#landmarks/#greens; measured 557/561 on a real town -- the 4
+misses were park lawns, hence #greens). Growth is clipped to the building's
+district minus roads/walls/water/neighbours (unbuffered: settlemaker
+buildings share walls); `absorb_neighbors` builds over whole same-district
+neighbour lots. Found and fixed: settlemaker's cathedral ward is ~5-15 pieces (all
+drawn in #landmarks as class "cathedral"), one typed `temple`, the rest
+civic `workshop` infill (or stray `shop` POIs). `parse_geojson` now merges a
+cathedral ward into ONE `temple` building (`MERGED_WARD_BUILDING_TYPE`,
+union footprint, outer outline only); construction edits match a building
+to several drawn pieces (`_svg_tags_for`) and redraw it as one outline --
+which loses the cloister courtyard. Towns generated before this keep the
+split cathedral.
+
 ## 2026-10-09 — Frodo — layout parameters: river direction, citadel, road bearings
 
 `TownParameters` gained `river_bearings`, `has_citadel`, `road_bearings`
