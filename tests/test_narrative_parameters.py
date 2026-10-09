@@ -119,3 +119,19 @@ def test_aggression_out_of_range_raises():
 def test_aggression_boundary_values_are_valid():
     TownParameters(seed="town-1", target_population=1000, aggression=0.0)
     TownParameters(seed="town-1", target_population=1000, aggression=1.0)
+
+
+def test_layout_defaults_leave_layout_to_the_generator():
+    params = TownParameters(seed="s", target_population=100)
+    assert params.has_citadel is False
+    assert params.river_bearings == () and params.road_bearings == ()
+
+
+def test_more_river_bearings_than_rivers_raises():
+    with pytest.raises(ValueError, match="river_bearings"):
+        TownParameters(seed="s", target_population=100, num_rivers=1, river_bearings=(0.0, 90.0))
+
+
+def test_bearing_out_of_range_raises():
+    with pytest.raises(ValueError, match="bearings"):
+        TownParameters(seed="s", target_population=100, road_bearings=(360.0,))

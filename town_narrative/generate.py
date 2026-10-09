@@ -1,3 +1,5 @@
+import json
+
 from town_db.generate import generate_town_database
 from town_db.schema import connect
 
@@ -17,16 +19,21 @@ def generate_town_from_parameters(params: TownParameters, db_path: str) -> None:
         has_port=params.has_port,
         magic_prevalence=params.magic_prevalence,
         aggression=params.aggression,
+        has_citadel=params.has_citadel,
+        river_bearings=params.river_bearings,
+        road_bearings=params.road_bearings,
     )
 
     conn = connect(db_path)
     conn.execute(
         "INSERT INTO generation_parameters (id, seed, target_population, area_per_resident_multiplier, "
-        "density_multiplier, rich_proportion, num_rivers, has_coastline, has_port, magic_prevalence, aggression) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "density_multiplier, rich_proportion, num_rivers, has_coastline, has_port, magic_prevalence, aggression, "
+        "has_citadel, river_bearings, road_bearings) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (1, str(params.seed), params.target_population, params.area_per_resident_multiplier,
          params.density_multiplier, params.rich_proportion, params.num_rivers,
-         int(params.has_coastline), int(params.has_port), params.magic_prevalence, params.aggression),
+         int(params.has_coastline), int(params.has_port), params.magic_prevalence, params.aggression,
+         int(params.has_citadel), json.dumps(list(params.river_bearings)), json.dumps(list(params.road_bearings))),
     )
     conn.commit()
     conn.close()

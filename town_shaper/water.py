@@ -1,6 +1,6 @@
 # town_shaper/water.py
 import math
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 
 from shapely.geometry import LineString, Polygon
 
@@ -15,6 +15,13 @@ RIVER_WAYPOINT_JITTER_ABS_MIN = 2.0  # absolute floor on offset magnitude, in ma
 ROOM_SAFETY_FACTOR = 0.9  # stay strictly inside available room to a bound, never touch it
 COASTLINE_DEPTH_FRACTION = 0.12  # fraction of the shorter bounds dimension
 COASTLINE_JITTER = 0.08  # fraction of the shorter bounds dimension
+# A bearing-directed river crosses the town near (not exactly through) its
+# centre: its course shifts sideways by up to this fraction of the
+# half-width, so two towns with the same bearing don't share one axis.
+RIVER_BEARING_OFFSET = 0.05
+# ...and meanders this much less than a random river, so "crosses the town"
+# stays true: the full meander can carry a river off the walled core.
+RIVER_BEARING_MEANDER = 0.5
 
 _EDGES = ["north", "south", "east", "west"]
 
@@ -48,7 +55,25 @@ def _room_to_bounds(point: Tuple[float, float], direction: Tuple[float, float], 
     return max(0.0, min(limits))
 
 
-def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, width: float, bounds: Tuple[float, float, float, float]) -> Polygon:
+def _bearing_endpoints(bearing_deg: float, bounds: Tuple[float, float, float, float], rng):
+    """Entry and exit points for a river that comes in from compass bearing
+    `bearing_deg` (0 = north, clockwise) and leaves on the opposite side,
+    crossing near the centre. town_shaper is Y-up (north = max_y), so a
+    bearing's direction is (sin, cos)."""
+    min_x, min_y, max_x, max_y = bounds
+    rad = math.radians(bearing_deg)
+    direction = (math.sin(rad), math.cos(rad))
+    offset = rng.uniform(-RIVER_BEARING_OFFSET, RIVER_BEARING_OFFSET) * (max_x - min_x) / 2.0
+    centre = ((min_x + max_x) / 2.0 + direction[1] * offset, (min_y + max_y) / 2.0 - direction[0] * offset)
+    ends = []
+    for sign in (1.0, -1.0):
+        d = (direction[0] * sign, direction[1] * sign)
+        reach = _room_to_bounds(centre, d, bounds)
+        ends.append((centre[0] + d[0] * reach, centre[1] + d[1] * reach))
+    return ends[0], ends[1]
+
+
+def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, width: float, bounds: Tuple[float, float, float, float], meander: float = 1.0) -> Polygon:
     dx = end[0] - start[0]
     dy = end[1] - start[1]
     length = math.hypot(dx, dy)
@@ -63,7 +88,7 @@ def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, wid
         t = i / (waypoint_count + 1)
         base_x = start[0] + dx * t
         base_y = start[1] + dy * t
-        target_magnitude = rng.uniform(RIVER_WAYPOINT_JITTER_MIN, RIVER_WAYPOINT_JITTER_MAX) * length
+        target_magnitude = rng.uniform(RIVER_WAYPOINT_JITTER_MIN, RIVER_WAYPOINT_JITTER_MAX) * length * meander
         # Near-corner start/end pairs can produce a chord so short that a
         # purely length-proportional target is negligible (the buffer's round
         # end-caps then dominate the polygon's area, masking any curvature).
@@ -120,16 +145,25 @@ def _generate_coastline(seed, bounds: Tuple[float, float, float, float]) -> Poly
 def generate_water_features(
     seed, bounds: Tuple[float, float, float, float],
     num_rivers: int = 0, has_coastline: bool = False,
+    river_bearings: Sequence[float] = (),
 ) -> List[WaterFeature]:
+    """`river_bearings[i]`, when given, is the compass bearing river i flows
+    in from; it leaves on the opposite side. Rivers beyond the list keep a
+    random edge-to-edge course."""
     features: List[WaterFeature] = []
     feature_id = 0
 
     for i in range(num_rivers):
         rng = rng_for(seed, "water", "river", i)
-        start_edge, end_edge = rng.sample(_EDGES, 2)
-        start = _point_on_edge(start_edge, bounds, rng)
-        end = _point_on_edge(end_edge, bounds, rng)
-        polygon = _curved_strip(start, end, rng, RIVER_WIDTH, bounds)
+        meander = 1.0
+        if i < len(river_bearings):
+            start, end = _bearing_endpoints(river_bearings[i], bounds, rng)
+            meander = RIVER_BEARING_MEANDER
+        else:
+            start_edge, end_edge = rng.sample(_EDGES, 2)
+            start = _point_on_edge(start_edge, bounds, rng)
+            end = _point_on_edge(end_edge, bounds, rng)
+        polygon = _curved_strip(start, end, rng, RIVER_WIDTH, bounds, meander)
         features.append(WaterFeature(id=feature_id, kind="river", polygon=polygon))
         feature_id += 1
 

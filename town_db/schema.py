@@ -163,7 +163,10 @@ CREATE TABLE generation_parameters (
     has_coastline INTEGER NOT NULL,
     has_port INTEGER NOT NULL,
     magic_prevalence REAL NOT NULL,
-    aggression REAL NOT NULL
+    aggression REAL NOT NULL,
+    has_citadel INTEGER NOT NULL DEFAULT 0,
+    river_bearings TEXT NOT NULL DEFAULT '[]',
+    road_bearings TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE water_features (

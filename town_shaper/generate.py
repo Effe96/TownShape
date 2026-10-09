@@ -1,5 +1,5 @@
 import math
-from typing import Tuple
+from typing import Sequence, Tuple
 
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION, assign_residents
 from town_shaper.households import generate_households
@@ -27,6 +27,9 @@ def generate_town(
     has_coastline: bool = False,
     has_port: bool = False,
     magic_prevalence: float = 0.0,
+    has_citadel: bool = False,
+    river_bearings: Sequence[float] = (),
+    road_bearings: Sequence[float] = (),
 ) -> Town:
     # Lazy import: settlemaker_bridge.pipeline imports compute_town_bounds
     # from this module, so a top-level import here would be circular.
@@ -44,6 +47,7 @@ def generate_town(
         seed, target_population,
         area_per_resident_multiplier=area_per_resident_multiplier,
         num_rivers=num_rivers, has_coastline=has_coastline, has_port=has_port,
+        has_citadel=has_citadel, river_bearings=river_bearings, road_bearings=road_bearings,
     )
 
     households = generate_households(seed, target_population)

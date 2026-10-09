@@ -97,7 +97,7 @@ perfect one, so nothing downstream of it can just trust it blindly.**
    town's buildings. This function is now a safety net for a mispredicted
    *harbour* position specifically, not the routine cleanup it used to run.)
 """
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 from shapely.geometry import MultiPolygon
 from shapely.geometry import Polygon as ShapelyPolygon
@@ -294,6 +294,9 @@ def generate_via_settlemaker(
     num_rivers: int = 0,
     has_coastline: bool = False,
     has_port: bool = False,
+    has_citadel: bool = False,
+    river_bearings: Sequence[float] = (),
+    road_bearings: Sequence[float] = (),
 ) -> Tuple[List[District], List[Building], List[WaterFeature], str, Dict[str, float]]:
     """Returns (districts, buildings, scaled_water_features, svg, local_bounds).
     `local_bounds` is settlemaker's own metadata.local_bounds for this call,
@@ -310,10 +313,12 @@ def generate_via_settlemaker(
     town_bounds_half = (bounds[2] - bounds[0]) / 2.0
 
     water_features = generate_water_features(
-        seed, bounds, num_rivers=num_rivers, has_coastline=has_coastline,
+        seed, bounds, num_rivers=num_rivers, has_coastline=has_coastline, river_bearings=river_bearings,
     )
 
-    burg = build_azgaar_burg_input(seed, target_population, has_port=has_port)
+    burg = build_azgaar_burg_input(
+        seed, target_population, has_port=has_port, has_citadel=has_citadel, road_bearings=road_bearings,
+    )
     settlemaker_seed = _settlemaker_seed(seed)
 
     persisted_water_features: List[WaterFeature] = []

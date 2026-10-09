@@ -12,6 +12,24 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-10-09 — Frodo — layout parameters: river direction, citadel, road bearings
+
+`TownParameters` gained `river_bearings`, `has_citadel`, `road_bearings`
+(all compass degrees, 0 = N clockwise), plumbed through `town_db` /
+`town_shaper` / `settlemaker_bridge` and recorded in
+`generation_parameters` (new columns with defaults). Bearing-set rivers
+cross near the centre and meander half as much as random ones. Frames:
+town_shaper is Y-up (bearing -> (sin, cos)); settlemaker is Y-down
+(bearing -> (sin, -cos)); the water rescale's Y flip makes them agree.
+
+`citadel` exposed settlemaker's `castle` ward type, which the parser had
+deliberately left unmapped: now `ZoneType.CIVIC` with buildings typed
+`garrison` (`WARD_INFILL_BUILDING_TYPE`). Road bearings: settlemaker puts
+gates within a few degrees of each request, but the outer road path
+follows field edges and can end 20-40 deg off; in one sampled case (river
++ two bearings) it routed both requests along one road. Treat bearings as
+"which gates exist".
+
 ## 2026-10-09 — Frodo — construction edits: `add_buildings` + edit log
 
 New `town_db/construction.py` (+ `scripts/add_buildings.py`,
