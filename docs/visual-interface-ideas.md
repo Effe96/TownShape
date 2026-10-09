@@ -136,7 +136,11 @@ real town — deferred, not blocking, to pick up later:
    arterial roads follow the real district-boundary graph instead of
    straight lines from a hub. See
    `docs/superpowers/specs/2026-09-04-organic-town-rendering-design.md`.
-4. **Building-type icons.** Color-coding alone (current `LANDMARK_COLORS`
+4. ~~**Building-type icons.**~~ **Fixed 2026-10-09:** landmark/commercial
+   types get an emoji pin (`BUILDING_TYPE_ICONS` in `app.js`) in all three
+   render modes, legend included. Population-capped civic types always show;
+   shops/stalls/taverns etc. only once their footprint is >= 8px on screen.
+   Original note: Color-coding alone (current `LANDMARK_COLORS`
    scheme in `town_viewer/static/app.js`) isn't legible enough at a
    glance — want actual icons/pins per building type (temple, shop,
    tavern, etc.) rather than just a colored rectangle.

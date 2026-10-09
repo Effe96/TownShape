@@ -40,3 +40,4 @@ html, body { margin: 0; height: 100%; font-family: sans-serif; }
 #render-mode-select { display: block; width: 100%; margin-bottom: 6px; font-size: 12px; padding: 4px 6px; }
 #legend .swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border: 1px solid #666; }
 #legend .row { margin: 1px 0; }
+#legend .icon { display: inline-block; width: 18px; text-align: center; }
