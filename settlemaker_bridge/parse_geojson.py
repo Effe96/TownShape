@@ -57,10 +57,25 @@ WARD_TYPE_TO_ZONE_TYPE: Dict[str, ZoneType] = {
     # park gets its own ZoneType, infilled as "garden" below, not folded
     # into civic.
     "park": ZoneType.PARK,
+    # Decided 2026-10-09, when TownParameters.has_citadel first let a castle
+    # ward through: a castle is civic land, and its buildings are a garrison
+    # (WARD_INFILL_BUILDING_TYPE below), not generic civic "workshop" infill.
+    "castle": ZoneType.CIVIC,
 }
+
+# Ward types whose plain (non-POI) buildings aren't their zone's generic
+# infill.
+WARD_INFILL_BUILDING_TYPE: Dict[str, str] = {
+    "castle": "garrison",
+}
+
+# Ward types whose "buildings" aren't buildings, so any POI settlemaker pins
+# on them is ignored. A park's building features are its lawn wedges (the
+# green triangles), yet settlemaker still attaches `shop` POIs to some --
+# found 2026-10-09 as shop icons drawn on a park.
+POI_IGNORING_WARD_TYPES = {"park"}
 # Not buildable area -- skipped, never raise. Everything else unmapped
-# (castle, park, and -- discovered while implementing this, not in the
-# spec's original table -- military) raises loudly per the plan's Phase 1
+# raises loudly per the plan's Phase 1
 # task 3, so an actual generated town surfaces whether they show up in
 # practice before Phase 2 has to decide their fate for real.
 SKIPPABLE_WARD_TYPES = {"empty", "water"}
@@ -294,6 +309,7 @@ def parse_settlemaker_geojson(
     buildings: List[Building] = []
 
     current_district: Optional[District] = None
+    current_ward_type: Optional[str] = None
     next_district_id = 0
 
     poi_by_building_id: Dict[str, Dict[str, Any]] = {
@@ -329,6 +345,7 @@ def parse_settlemaker_geojson(
             next_district_id += 1
             districts.append(district)
             current_district = district
+            current_ward_type = ward_type
             continue
 
         if layer == "building":
@@ -340,12 +357,13 @@ def parse_settlemaker_geojson(
             cx, cy = _centroid(ring)
             building_id = current_district.id * BUILDING_ID_STRIDE + len(current_district.buildings)
 
-            poi = poi_by_building_id.get(props.get("building_id"))
+            poi = None if current_ward_type in POI_IGNORING_WARD_TYPES else poi_by_building_id.get(props.get("building_id"))
             building_type = None
             if poi is not None:
                 building_type = POI_KIND_TO_BUILDING_TYPE.get(poi["kind"])
             if building_type is None:
-                building_type = INFILL_BUILDING_TYPE_BY_ZONE[current_district.zone_type]
+                building_type = WARD_INFILL_BUILDING_TYPE.get(
+                    current_ward_type, INFILL_BUILDING_TYPE_BY_ZONE[current_district.zone_type])
 
             vacancies = [
                 JobVacancy(building_id=building_id, occupation=occupation)
