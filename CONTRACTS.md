@@ -33,6 +33,17 @@ downstream tasks (T06, T07, T08) consume from upstream ones (T01–T05):
   `succession.py`.
 - **`town_db.simulation.advance_town(db_path, seed, years=1)`** (T07) — consumes everything above.
 
+**Consumed by the social sim** (`social-sim-demo/docs/townshape-brief.md`; don't change without
+telling its side):
+- `town_db.schema` — the sim's tables/columns (`SIM_SCHEMA_SQL`, `SIM_COLUMNS`),
+  `ensure_sim_schema(conn)`, `sim_has_run(conn)`; `advance_town`/`derive_relationships` raise
+  `SimOwnedTownError` once `sim_state` has a row. A resident with a `departures` row has left
+  town alive. Causes of death, occupations and relationship types are open lists.
+- `town_db.names.name_new_resident(seed, resident_id, race, gender, family_name=None) -> (first, last)`.
+- `town_db.construction.place_building(db_path, seed, building_type, capacity,
+  preferred_district_id=None) -> Optional[int]`.
+- Generation keeps every house within `buildings.capacity`.
+
 Every new/changed RNG draw goes through `town_shaper.seeding.rng_for(seed, *parts)` — never bare
 `random` module state. A "year" is exactly 365 days (`YEAR_LENGTH_DAYS`) everywhere in this plan.
 

@@ -584,7 +584,9 @@ function renderResidentDetail(resident) {
     <div class="detail-row"><span class="label">Household:</span> ${resident.household.family_name} (wealth ${resident.household.wealth})</div>
     <div class="detail-row"><span class="label">SES:</span> ${resident.ses}</div>
     <div class="detail-row"><span class="label">Occupation:</span> ${resident.occupation || "none"}</div>
-    <div class="detail-row"><span class="label">Home:</span> ${resident.home_building_id != null ? `<span class="linked-name" data-building-id="${resident.home_building_id}">Building #${resident.home_building_id}</span>` : "none"}</div>
+    ${resident.death ? `<div class="detail-row"><span class="label">Died:</span> ${resident.death.date} (${resident.death.cause})</div>` : ""}
+    ${resident.departure ? `<div class="detail-row"><span class="label">Left town:</span> ${resident.departure.date} (${resident.departure.reason})</div>` : ""}
+    <div class="detail-row"><span class="label">Home:</span> ${resident.home_building_id != null ? `<span class="linked-name" data-building-id="${resident.home_building_id}">Building #${resident.home_building_id}</span>` : (resident.death || resident.departure ? "none" : "homeless")}</div>
     <div class="detail-row"><span class="label">Workplace:</span> ${resident.workplace_building_id != null ? `<span class="linked-name" data-building-id="${resident.workplace_building_id}">Building #${resident.workplace_building_id}</span>` : "none"}</div>
     <h4>Family & relationships</h4>
     ${relRows}

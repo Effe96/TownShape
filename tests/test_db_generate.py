@@ -77,6 +77,12 @@ def test_generate_town_database_business_rules(tmp_path):
     ).fetchall()
     assert duplicate_deaths == []
 
+    over_capacity = conn.execute(
+        "SELECT COUNT(*) FROM (SELECT b.id FROM buildings b JOIN residents r ON r.home_building_id = b.id "
+        "WHERE r.death_date IS NULL GROUP BY b.id HAVING COUNT(*) > b.capacity)"
+    ).fetchone()[0]
+    assert over_capacity == 0
+
 
 def test_generate_town_database_plausibility_bounds(tmp_path):
     db_path = str(tmp_path / "town.db")

@@ -189,6 +189,65 @@ CREATE TABLE town_state (
 """
 
 
+# The social sim's state (social-sim-demo/docs/townshape-brief.md). Only the
+# sim writes these; TownShape creates them empty and otherwise leaves them
+# alone, except that a resident with a departures row has left town alive.
+SIM_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS resident_traits (
+    resident_id INTEGER PRIMARY KEY REFERENCES residents(id),
+    religiousness REAL,
+    skepticism REAL,
+    cunning REAL,
+    loyalty REAL,
+    is_ex_soldier INTEGER,
+    same_sex_attracted INTEGER,
+    stress REAL,
+    hungry_months INTEGER,
+    is_beggar INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS household_economy (
+    household_id INTEGER PRIMARY KEY REFERENCES households(id),
+    cash REAL,
+    property REAL,
+    rent_behind REAL,
+    usual_income REAL
+);
+
+CREATE TABLE IF NOT EXISTS house_tenure (
+    building_id INTEGER PRIMARY KEY REFERENCES buildings(id),
+    owner_household_id INTEGER REFERENCES households(id),
+    owner_kind TEXT NOT NULL,
+    value REAL NOT NULL,
+    room INTEGER NOT NULL,
+    cost_left REAL
+);
+
+CREATE TABLE IF NOT EXISTS departures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resident_id INTEGER NOT NULL UNIQUE REFERENCES residents(id),
+    departure_date TEXT NOT NULL,
+    reason TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sim_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+# Nullable columns the sim adds to existing tables; NULL until it sets them.
+# relationships only exists once derive_relationships has run, so its columns
+# are added whenever it's (re)created.
+SIM_COLUMNS = {
+    "town_state": ["loyalty REAL", "religiosity REAL", "strictness REAL"],
+    "relationships": [
+        "time REAL", "intimacy REAL", "services REAL",
+        "valence_a_to_b REAL", "valence_b_to_a REAL", "former_type TEXT",
+    ],
+}
+
+
 def connect(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
@@ -197,3 +256,37 @@ def connect(db_path: str) -> sqlite3.Connection:
 
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
+    ensure_sim_schema(conn)
+
+
+def ensure_sim_schema(conn: sqlite3.Connection) -> None:
+    """Adds whatever of the social sim's tables and columns a town lacks --
+    idempotent, so towns generated before them can be brought up to date."""
+    conn.executescript(SIM_SCHEMA_SQL)
+    for table, columns in SIM_COLUMNS.items():
+        have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not have:
+            continue  # table not created yet
+        for column in columns:
+            if column.split()[0] not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+
+
+def sim_has_run(conn: sqlite3.Connection) -> bool:
+    """True once the social sim has taken a town over (it keeps its state in
+    sim_state). From then on TownShape mustn't advance the town or re-derive
+    relationships -- the sim owns its people."""
+    have = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sim_state'").fetchone()
+    return bool(have) and conn.execute("SELECT 1 FROM sim_state LIMIT 1").fetchone() is not None
+
+
+class SimOwnedTownError(RuntimeError):
+    pass
+
+
+def refuse_if_sim_owned(conn: sqlite3.Connection, action: str) -> None:
+    if sim_has_run(conn):
+        raise SimOwnedTownError(
+            f"The social sim runs this town (sim_state has rows); TownShape won't {action} -- "
+            "it would overwrite the sim's people and ties."
+        )

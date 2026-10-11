@@ -1,5 +1,7 @@
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
+
+from town_shaper.seeding import rng_for
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -55,3 +57,15 @@ def draw_first_name(rng, race: str, gender: str) -> str:
 
 def draw_surname(rng, race: str) -> str:
     return rng.choice(_surnames_for(race))
+
+
+def name_new_resident(seed, resident_id: int, race: str, gender: str, family_name: Optional[str] = None) -> Tuple[str, str]:
+    """Names someone who joins a town after generation (the social sim's
+    births and newcomers). A newborn passes its household's family_name; a
+    newcomer passes None and gets a drawn surname. Seeded by the resident id,
+    so a name doesn't depend on call order."""
+    if race not in RACES:
+        raise ValueError(f"no name lists for race {race!r}; known: {RACES}")
+    rng = rng_for(seed, "name", resident_id)
+    first_name = draw_first_name(rng, race, gender)
+    return first_name, family_name if family_name is not None else draw_surname(rng, race)

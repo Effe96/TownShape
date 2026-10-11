@@ -75,7 +75,9 @@ def get_building_detail(conn: sqlite3.Connection, building_id: int) -> Optional[
         }
         for r in conn.execute(
             "SELECT id, first_name, last_name, home_building_id, workplace_building_id "
-            "FROM residents WHERE home_building_id = ? OR workplace_building_id = ? ORDER BY id",
+            "FROM residents WHERE (home_building_id = ? OR workplace_building_id = ?)"
+            + (" AND id NOT IN (SELECT resident_id FROM departures)" if _has_table(conn, "departures") else "")
+            + " ORDER BY id",
             (building_id, building_id),
         )
     ]
@@ -123,6 +125,15 @@ def get_resident_detail(conn: sqlite3.Connection, resident_id: int) -> Optional[
         "gender": row[4], "race": row[5], "birth_date": row[6], "death_date": row[7],
         "ses": row[8], "occupation": row[9], "home_building_id": row[10], "workplace_building_id": row[11],
     }
+
+    # The social sim's causes of death and departure reasons are open lists --
+    # shown as stored.
+    death = conn.execute("SELECT death_date, cause FROM deaths WHERE resident_id = ?", (resident_id,)).fetchone()
+    resident["death"] = {"date": death[0], "cause": death[1]} if death else None
+    departure = None if not _has_table(conn, "departures") else conn.execute(
+        "SELECT departure_date, reason FROM departures WHERE resident_id = ?", (resident_id,)
+    ).fetchone()
+    resident["departure"] = {"date": departure[0], "reason": departure[1]} if departure else None
 
     household_row = conn.execute(
         "SELECT id, family_name, race, wealth FROM households WHERE id = ?", (resident["household_id"],)

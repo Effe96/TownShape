@@ -22,7 +22,7 @@ from town_db.persistence import (
     update_household_wealth,
 )
 from town_db.purchases import SHOP_BUILDING_TYPES, generate_purchases
-from town_db.schema import connect
+from town_db.schema import connect, refuse_if_sim_owned
 from town_db.taxes import generate_tax_payments
 from town_db.unrest import generate_skirmish_casualties, generate_skirmish_events
 from town_db.vital_records import generate_births_and_deaths, generate_disease_events
@@ -110,6 +110,7 @@ def advance_town(db_path: str, seed, years: int = 1) -> None:
 
     conn = connect(db_path)
     try:
+        refuse_if_sim_owned(conn, "advance the town")
         # `current_date` collides with SQLite's CURRENT_DATE keyword -- a bare read returns
         # today's date, not the column. Must be quoted. See CONTRACTS.md / LOG.md.
         state_row = conn.execute(

@@ -28,6 +28,7 @@ detail. Keep it in sync whenever an entry's status changes.
 |---|---|---|---|
 | [P001](#p001--integrate-existing-open-source-watabou-style-generators-instead-of-building-bespoke) | Integrate existing open-source watabou-style generators instead of building bespoke | generation (cross-cutting) | Addressed (Phases 1-2); Phase 3 deferred |
 | [P002](#p002--the-towns-physical-structure-should-follow-whatever-the-narrative-describes) | The town's physical structure should follow whatever the narrative describes | generation (cross-cutting) | Planned — design spec written, awaiting owner decisions D1-D4 |
+| [P003](#p003--the-social-sim-drives-the-towns-people-and-growth-townshape-provides-the-town) | The social sim drives the town's people and growth; TownShape provides the town | cross-cutting | Addressed on TownShape's side; sim side pending |
 
 ## Status values
 
@@ -181,3 +182,45 @@ by a few knobs.
   rebuilt, D4 offering the entry point upstream.
 
 **Resolution:** <open>
+
+
+## P003 — The social sim drives the town's people and growth; TownShape provides the town
+
+**Status:** Addressed on TownShape's side (branch `sim-integration`); sim side pending
+**Layer:** cross-cutting (schema, simulation, construction, viewer)
+**Date:** 2026-10-11
+
+**Request:**
+Two documents in `social-sim-demo/docs` (`townshape-brief.md`,
+`townshape-integration.md`) "contain instructions on how to integrate
+town_shape with the new social and ties simulator, which also simulates for
+economy and population dynamics." The owner's picture (from those docs):
+starting a town creates everything (TownShape's generator, then the sim's
+setup), the sim then drives every interaction and development, and what it
+builds appears in the physical town. The town database is the single source
+of truth.
+
+**Why:** the owner's separate social sim is the "why" of growth that
+P002-era construction work deliberately left out ("I have another project
+I am working on that will take care of that, and we will just need to
+integrate").
+
+**Notes:**
+- Built per the brief: the sim's tables/columns (`town_db/schema.py`,
+  `ensure_sim_schema` for older towns), open value lists, viewer support
+  for deaths/departures/homeless, `name_new_resident`, houses within
+  capacity at generation, `place_building` (infill inside the walls, then
+  outward growth via `add_buildings`).
+- Deviations, told to the sim side: `advance_town`/`derive_relationships`
+  now refuse a sim-owned town (`sim_state` non-empty), so the sim must
+  derive relationships before writing `sim_state`; capacity is fitted to
+  occupants after the first year rather than enforced by suppressing births
+  (suppression would have meant zero births); `place_building` takes
+  TownShape building types (`residence`, `workshop`).
+- Instructions for the sim agent: `docs/sim-integration-for-social-sim.md`.
+- Not built until asked: farmsteads for the sim's new farms, a neighbour-tie
+  cap for big towns, a batch `place_buildings`.
+
+**Resolution:** TownShape side addressed 2026-10-11 (branch
+`sim-integration`). Next: the sim's `create_town`/load/save, then an
+end-to-end run checked in the viewer.

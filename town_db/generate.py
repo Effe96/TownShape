@@ -219,5 +219,15 @@ def generate_town_database(
         ),
     )
 
+    # Houses are filled to capacity, so the first year's births leave some
+    # over it. A house's capacity is how many it holds, so raise it to fit
+    # who lives there at the end of the year (the social sim reads it as room).
+    conn.execute(
+        "UPDATE buildings SET capacity = (SELECT COUNT(*) FROM residents r "
+        "WHERE r.home_building_id = buildings.id AND r.death_date IS NULL) "
+        "WHERE capacity < (SELECT COUNT(*) FROM residents r "
+        "WHERE r.home_building_id = buildings.id AND r.death_date IS NULL)"
+    )
+
     conn.commit()
     conn.close()
