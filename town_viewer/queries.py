@@ -75,7 +75,7 @@ def get_building_detail(conn: sqlite3.Connection, building_id: int) -> Optional[
         }
         for r in conn.execute(
             "SELECT id, first_name, last_name, home_building_id, workplace_building_id "
-            "FROM residents WHERE (home_building_id = ? OR workplace_building_id = ?)"
+            "FROM residents WHERE (home_building_id = ? OR workplace_building_id = ?) AND death_date IS NULL"
             + (" AND id NOT IN (SELECT resident_id FROM departures)" if _has_table(conn, "departures") else "")
             + " ORDER BY id",
             (building_id, building_id),

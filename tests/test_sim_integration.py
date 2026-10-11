@@ -27,6 +27,7 @@ def _town(db_path):
             "INSERT INTO residents (id, household_id, first_name, last_name, gender, race, birth_date, ses, home_building_id) "
             "VALUES (?, 1, 'A', 'Oak', 'male', 'human', '0980-01-01', 'lower', ?)", (rid, home))
     conn.execute("INSERT INTO deaths (resident_id, death_date, cause) VALUES (3, '1000-05-01', 'pneumonic plague')")
+    conn.execute("UPDATE residents SET death_date = '1000-05-01' WHERE id = 3")
     conn.execute("INSERT INTO departures (resident_id, departure_date, reason) VALUES (4, '1000-06-01', 'banished')")
     conn.commit()
     return conn
@@ -63,6 +64,7 @@ def test_relationships_get_the_sims_columns_and_derivation_stops_once_the_sim_ru
         derive_relationships(db_path)
     with pytest.raises(SimOwnedTownError):
         advance_town(db_path, "seed")
+    (tmp_path / "t.db").unlink()  # both closed their connection, so the file isn't locked
 
 
 def test_name_new_resident_depends_only_on_the_resident():
@@ -80,5 +82,5 @@ def test_viewer_shows_deaths_departures_and_the_homeless(tmp_path):
     assert get_resident_detail(conn, 3)["death"] == {"date": "1000-05-01", "cause": "pneumonic plague"}
     assert get_resident_detail(conn, 4)["departure"] == {"date": "1000-06-01", "reason": "banished"}
     assert get_resident_detail(conn, 1)["death"] is None and get_resident_detail(conn, 1)["departure"] is None
-    # whoever has left town no longer shows as living in their old house
-    assert [r["id"] for r in get_building_detail(conn, 1)["residents"]] == [1, 3]
+    # the dead and whoever has left town no longer show as living in their old house
+    assert [r["id"] for r in get_building_detail(conn, 1)["residents"]] == [1]
