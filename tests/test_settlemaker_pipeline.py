@@ -1,6 +1,7 @@
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from settlemaker_bridge.pipeline import (
+    _coastline_rings,
     _center_of_bounds,
     _clip_water_to_land,
     _reclassify_landlocked_port_districts,
@@ -150,3 +151,13 @@ def test_reclassify_landlocked_port_districts_no_water_is_a_no_op():
     district = _district(ZoneType.PORT, x=1000.0, y=1000.0)
     _reclassify_landlocked_port_districts([district], [], max_distance=10.0)
     assert district.zone_type == ZoneType.PORT
+
+
+def test_coastline_rings_merge_a_river_running_into_the_sea():
+    # settlemaker reads the rings even-odd; overlapping rings would turn the
+    # river mouth into land.
+    sea = WaterFeature(id=0, kind="coastline", polygon=ShapelyPolygon([(0, 0), (10, 0), (10, 10), (0, 10)]))
+    river = WaterFeature(id=1, kind="river", polygon=ShapelyPolygon([(8, 4), (20, 4), (20, 6), (8, 6)]))
+    rings = _coastline_rings([sea, river])
+    assert len(rings) == 1
+    assert ShapelyPolygon([(p["x"], p["y"]) for p in rings[0]]).area == 100 + 20

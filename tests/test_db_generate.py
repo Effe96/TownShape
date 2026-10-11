@@ -3,9 +3,12 @@ import sqlite3
 
 import pytest
 
-from town_shaper.generate import generate_town
+from shapely.geometry import Polygon
 
-from town_db.generate import generate_town_database
+from town_shaper.generate import generate_town
+from town_shaper.models import WaterFeature
+
+from town_db.generate import _water_feature_rings, generate_town_database
 
 
 def test_generate_town_database_creates_a_populated_db(tmp_path):
@@ -260,32 +263,13 @@ def test_generate_town_database_with_water_passes_foreign_key_check(tmp_path):
     assert violations == []
 
 
-def test_generate_town_database_persists_water_feature_interior_rings(tmp_path):
-    # Range widened from 10 to 20 seeds: settlemaker_bridge.pipeline's water
-    # is now clipped to real district geometry after generation (a real fix,
-    # see settlemaker_bridge/pipeline.py's docstring), which changes the
-    # coastline polygon's exact shape -- seeds 0-9 no longer happen to
-    # produce a multi-ring result, but seed 12 (and several more through 49,
-    # confirmed by a wider sweep) still does, so interior-ring persistence
-    # still has real, natural coverage, just not in the first 10 anymore.
-    found_multi_ring = False
-    for seed_index in range(20):
-        seed = ("town", seed_index)
-        db_path = str(tmp_path / f"town_{seed_index}.db")
-        generate_town_database(seed, target_population=1500, db_path=db_path, has_coastline=True)
-
-        town = generate_town(seed, target_population=1500, has_coastline=True)
-        feature = next(f for f in town.water_features if f.kind == "coastline")
-        expected_ring_count = 1 + len(feature.polygon.interiors)
-        if expected_ring_count > 1:
-            found_multi_ring = True
-
-        conn = sqlite3.connect(db_path)
-        row = conn.execute("SELECT polygon FROM water_features WHERE kind = 'coastline'").fetchone()
-        rings = json.loads(row[0])
-        assert len(rings) == expected_ring_count
-
-    assert found_multi_ring, "expected at least one seed to produce a coastline with interior rings"
+def test_water_feature_rings_persist_interior_rings():
+    # Generated coastlines no longer have holes (they were land slivers drawn
+    # as road-like bands in the sea), so test the persisted ring layout directly.
+    lake = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)], [[(4, 4), (6, 4), (6, 6), (4, 6)]])
+    rings = _water_feature_rings(WaterFeature(id=0, kind="coastline", polygon=lake))
+    assert rings == [[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)],
+                     [(4.0, 4.0), (6.0, 4.0), (6.0, 6.0), (4.0, 6.0)]]
 
 
 def test_generate_town_database_default_magic_prevalence_matches_previous_behavior(tmp_path):

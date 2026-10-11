@@ -192,6 +192,18 @@ def _scale_water_features(
     return scaled
 
 
+def _coastline_rings(water_features: List[WaterFeature]) -> List[List[Dict[str, float]]]:
+    """settlemaker's coastlineGeometry: the water features merged into one
+    shape first. settlemaker reads its rings even-odd (both for painting
+    #water and for classifying patches as water), so a river running on
+    into the sea would otherwise turn their overlap into land."""
+    merged = unary_union([feature.polygon for feature in water_features])
+    polygons = merged.geoms if isinstance(merged, MultiPolygon) else [merged]
+    return [[{"x": x, "y": y} for x, y in list(ring.coords)[:-1]]
+            for polygon in polygons if not polygon.is_empty
+            for ring in [polygon.exterior, *polygon.interiors]]
+
+
 def _translate_water_features(
     water_features: List[WaterFeature], dx: float, dy: float,
 ) -> List[WaterFeature]:
@@ -343,11 +355,7 @@ def generate_via_settlemaker(
         # module's docstring for why a second, real-radius scaling replaces
         # it once the real call's own local_bounds are known.
         input_water_features = _scale_water_features(water_features, town_bounds_half, dry_radius)
-        burg = dict(burg, coastlineGeometry=[
-            [{"x": x, "y": y} for x, y in ring]
-            for feature in input_water_features
-            for ring in _water_feature_rings(feature)
-        ])
+        burg = dict(burg, coastlineGeometry=_coastline_rings(input_water_features))
 
     result = call_settlemaker(burg, settlemaker_seed)
     districts, buildings = parse_settlemaker_geojson(result["geojson"], seed, target_population)

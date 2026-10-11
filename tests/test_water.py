@@ -107,3 +107,11 @@ def test_rivers_beyond_the_bearing_list_stay_random():
     with_bearing = generate_water_features(("town", 1), bounds, num_rivers=2, river_bearings=(45.0,))
     without = generate_water_features(("town", 1), bounds, num_rivers=2)
     assert with_bearing[1].polygon.equals(without[1].polygon)
+
+
+def test_coastline_has_no_land_holes():
+    # The curved strip can bend away from the sea box and enclose a sliver
+    # of land, drawn as a road-like band in the sea.
+    for seed in range(40):
+        (coast,) = generate_water_features(seed, (-100.0, -100.0, 100.0, 150.0), has_coastline=True)
+        assert not list(coast.polygon.interiors)

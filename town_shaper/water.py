@@ -139,7 +139,9 @@ def _generate_coastline(seed, bounds: Tuple[float, float, float, float]) -> Poly
         "west": (min_x - depth * 4, min_y - depth, min_x + depth, max_y + depth),
     }[edge]
     sea_box = Polygon.from_bounds(*sea_box_bounds)
-    return strip.union(sea_box)
+    # Where the strip curves away from the box's inner edge the union
+    # encloses a land sliver -- drawn as a road-like band out in the sea.
+    return Polygon(strip.union(sea_box).exterior)
 
 
 def generate_water_features(
