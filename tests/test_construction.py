@@ -468,6 +468,24 @@ def test_place_building_fills_a_gap_inside_the_walls(tmp_path):
     assert f'data-building-id="{building_id}"' in (tmp_path / "town.svg").read_text(encoding="utf-8")
 
 
+def test_place_building_avoids_houses_only_drawn_on_the_map(tmp_path):
+    # Older towns draw more houses than their buildings table holds.
+    first = tmp_path / "first"
+    first.mkdir()
+    db_path = _make_town(first)
+    _add_core_houses(db_path)
+    (where_it_went,) = _footprints(db_path, [place_building(db_path, "seed", "residence", 8, preferred_district_id=1)])
+
+    db_path = _make_town(tmp_path)
+    _add_core_houses(db_path)
+    svg_file = tmp_path / "town.svg"
+    drawn = "M" + "L".join(f"{x:.2f},{y:.2f}" for x, y in where_it_went.exterior.coords) + "Z"
+    svg_file.write_text(svg_file.read_text(encoding="utf-8").replace(
+        '<g id="buildings">', f'<g id="buildings"><path class="slum" d="{drawn}"/>'), encoding="utf-8")
+    (shape,) = _footprints(db_path, [place_building(db_path, "seed", "residence", 8, preferred_district_id=1)])
+    assert not shape.intersects(where_it_went)
+
+
 def test_place_building_grows_the_town_once_its_wards_are_full(tmp_path):
     # The core has one building, so it's not a lived-in ward to infill.
     db_path = _make_town(tmp_path)

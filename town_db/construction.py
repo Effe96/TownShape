@@ -208,6 +208,18 @@ def _svg_landscape(svg: str):
     return unary_union(shapes)
 
 
+def _svg_buildings(svg: str):
+    """Every shape drawn in #buildings and #landmarks. Older towns draw far
+    more houses than their buildings table holds, and the map is what's seen."""
+    shapes = []
+    for group_id in ("buildings", "landmarks"):
+        start, end = _svg_group(svg, group_id)
+        if start >= 0:
+            shapes += [Polygon(points).buffer(0) for points in
+                       (_points(d) for d in re.findall(r'\sd="([^"]+)"', svg[start:end])) if len(points) >= 3]
+    return unary_union(shapes)
+
+
 def _svg_frame(svg: str) -> Optional[Tuple[float, float, float, float]]:
     """(min_x, min_y, width, height) from the viewBox."""
     match = re.search(r'viewBox="([^"]+)"', svg)
@@ -608,7 +620,8 @@ def add_buildings(
         depth = sizes[len(sizes) // 2][1]
 
         static_blocked = prep(unary_union([p.buffer(BUILDING_GAP) for p in footprints]
-                                          + [core, water, walls, _svg_landscape(svg).buffer(BUILDING_GAP)]))
+                                          + [core, water, walls, _svg_landscape(svg).buffer(BUILDING_GAP),
+                                             _svg_buildings(svg).buffer(BUILDING_GAP)]))
         road_union = unary_union([line.buffer(w / 2) for line, w in roads])
         lane_slots = []  # (edge, normal, rect, parent line, parent width)
         for line, w in roads:
@@ -978,7 +991,8 @@ def _infill(conn, svg: str, seed, building_type: str, capacity: int,
     water = unary_union([Polygon(json.loads(poly)[0], json.loads(poly)[1:])
                          for (poly,) in conn.execute("SELECT polygon FROM water_features")])
     blocked_geom = unary_union([p.buffer(BUILDING_GAP) for _, p in existing]
-                               + [road_union, water, _svg_landscape(svg).buffer(BUILDING_GAP)]
+                               + [road_union, water, _svg_landscape(svg).buffer(BUILDING_GAP),
+                                  _svg_buildings(svg).buffer(BUILDING_GAP)]
                                + [line.buffer(WALL_CLEARANCE) for line in wall_lines])
     blocked = prep(blocked_geom)
 
