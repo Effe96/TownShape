@@ -1,5 +1,7 @@
 import sqlite3
 
+from town_db.schema import ensure_sim_schema
+
 RELATIONSHIPS_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS relationships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,3 +27,4 @@ CREATE TABLE IF NOT EXISTS shop_relationships (
 
 def create_relationships_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(RELATIONSHIPS_SCHEMA_SQL)
+    ensure_sim_schema(conn)  # the social sim's per-tie columns

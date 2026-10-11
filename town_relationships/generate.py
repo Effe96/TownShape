@@ -3,7 +3,7 @@ from datetime import date
 from typing import Any, Dict, List
 
 from town_db.generate import DEFAULT_YEAR_START
-from town_db.schema import connect
+from town_db.schema import connect, refuse_if_sim_owned
 
 from town_relationships.family import derive_family_relationships
 from town_relationships.military import derive_unit_mate_relationships
@@ -18,6 +18,7 @@ def derive_relationships(db_path: str, reference_date: date = DEFAULT_YEAR_START
     """Safe to call any number of times on the same database -- each call clears and
     re-derives relationships/shop_relationships from current town_db state."""
     conn = connect(db_path)
+    refuse_if_sim_owned(conn, "re-derive relationships")
     create_relationships_schema(conn)
     conn.execute("DELETE FROM relationships")
     conn.execute("DELETE FROM shop_relationships")

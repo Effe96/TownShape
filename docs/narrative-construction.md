@@ -66,6 +66,17 @@ accepted.
 `building_type` is any key of `town_shaper.buildings.JOB_VACANCIES_BY_BUILDING_TYPE`
 (`residence`, `workshop`, `tavern`, `farmstead`, ...).
 
+### `place_building(db_path, seed, building_type, capacity, preferred_district_id=None)`
+
+One building, for an external simulation (the social sim calls it when it
+builds a house or a workshop; see `social-sim-demo/docs/townshape-brief.md`).
+First a free gap inside the walls -- in the preferred district if one fits,
+else the nearest lived-in ward with one (never plazas, parks, civic land or
+fields; a ward needs >= 3 buildings), facing its nearest street. When the
+wards are full it grows the town like `add_buildings(db, 1, near="district
+<id>")`. Sets `capacity` as given; returns the id, or `None` if there's no
+room. ~0.2 s a call on a Riverport-sized town.
+
 ### Editing an existing building
 
 CLI: `python scripts/edit_building.py <db> demolish|resize|reshape ...` (see

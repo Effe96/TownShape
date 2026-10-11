@@ -6,7 +6,7 @@ import shutil
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
-from town_db.construction import add_buildings
+from town_db.construction import add_buildings, place_building
 from town_db.schema import connect, create_schema
 
 # A 40x40 walled core around the origin, one road leaving east, and a ring of
@@ -437,3 +437,45 @@ def test_houses_near_a_named_building_get_a_lane_out_to_it(tmp_path):
     assert near[0] < 4               # a lane reaches the barn, houses beside it
     assert near[0] < default[0] / 2  # which default growth doesn't do
     assert sum(near) < sum(default)
+
+
+def _add_core_houses(db_path):
+    conn = connect(db_path)
+    for i, (x, y) in enumerate([(-12, -12), (12, 12)], start=2):
+        conn.execute(
+            "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, footprint) "
+            "VALUES (?, 1, 'poor_residential', 'residence', ?, ?, 6, ?)",
+            (i, x, y, json.dumps([[x - 2, y - 1], [x + 2, y - 1], [x + 2, y + 1], [x - 2, y + 1]])))
+    conn.commit()
+    conn.close()
+
+
+def test_place_building_fills_a_gap_inside_the_walls(tmp_path):
+    db_path = _make_town(tmp_path)
+    _add_core_houses(db_path)
+    building_id = place_building(db_path, "seed", "residence", 8, preferred_district_id=1)
+
+    (shape,) = _footprints(db_path, [building_id])
+    assert Polygon(CORE).buffer(-2).contains(shape)  # inside, clear of the walls
+    assert not shape.intersects(ROAD)
+    assert shape.distance(ROAD) < 2  # fronting the street
+    others = _footprints(db_path, [1, 2, 3])
+    assert all(not shape.intersects(o) for o in others)
+    conn = connect(db_path)
+    assert conn.execute("SELECT district_id, capacity FROM buildings WHERE id = ?", (building_id,)).fetchone() == (1, 8)
+    assert conn.execute("SELECT operation FROM construction_edits").fetchone() == ("place_building",)
+    conn.close()
+    assert f'data-building-id="{building_id}"' in (tmp_path / "town.svg").read_text(encoding="utf-8")
+
+
+def test_place_building_grows_the_town_once_its_wards_are_full(tmp_path):
+    # The core has one building, so it's not a lived-in ward to infill.
+    db_path = _make_town(tmp_path)
+    building_id = place_building(db_path, "seed", "residence", 8)
+    (shape,) = _footprints(db_path, [building_id])
+    assert not shape.intersects(Polygon(CORE))
+    conn = connect(db_path)
+    assert conn.execute("SELECT capacity FROM buildings WHERE id = ?", (building_id,)).fetchone() == (8,)
+    conn.close()
+    with pytest.raises(ValueError):
+        place_building(db_path, "seed", "dragon_lair", 1)

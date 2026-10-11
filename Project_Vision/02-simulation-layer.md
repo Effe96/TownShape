@@ -46,6 +46,17 @@ taxes, school/military service, household formation (adult children
 pairing off and moving out), and job-market succession (apprentices
 promoted into vacated positions), then re-derives relationships.
 
+**Sim-owned towns (2026-10-11, P003):** once the owner's social sim has
+taken a town over (`sim_state` has a row), `advance_town` and
+`derive_relationships` refuse to run (`SimOwnedTownError`) -- the sim
+drives births, deaths, ties, jobs and building from then on, writing its
+state into the tables `town_db/schema.py` creates for it
+(`resident_traits`, `household_economy`, `house_tenure`, `departures`,
+`sim_state`, plus per-tie columns on `relationships`). People it adds are
+named with `town_db.names.name_new_resident`; buildings it builds are
+placed with `town_db.construction.place_building`. Generation now ends with
+every house within its capacity.
+
 ### Mid-campaign editing (`town_db/edits.py`)
 
 `kill_resident`, `mark_resident_ill`, `scope_disease_event`,
@@ -91,7 +102,11 @@ the underlying birth/household records would support deriving them.
 
 ### Town's physical footprint is fixed after generation
 
-**Status:** Deferred — explicitly set aside during the year-advance
+**Status:** Addressed 2026-10-09/11 for external callers — construction
+edits (`town_db/construction.py`: `add_buildings`, `place_building`,
+demolish/resize/reshape) grow and change the physical town, and the social
+sim (P003) calls `place_building` when it builds. `advance_town` itself
+still doesn't build. Original entry: Deferred — explicitly set aside during the year-advance
 (capability 2) design discussion. As `advance_town` simulates years
 forward, population can grow or shrink, but no mechanism adds or
 removes buildings/districts; a soft cap (household formation slows when

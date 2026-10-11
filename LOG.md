@@ -12,6 +12,35 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-10-10 — Frodo — TownShape's side of the social-sim integration
+
+Per `social-sim-demo/docs/townshape-brief.md` (branch `sim-integration`):
+- `town_db/schema.py`: the sim's tables (`resident_traits`,
+  `household_economy`, `house_tenure`, `departures`, `sim_state`) and
+  nullable columns (`town_state.loyalty/religiosity/strictness`; on
+  `relationships` `time, intimacy, services, valence_a_to_b,
+  valence_b_to_a, former_type`). Created for new towns; `ensure_sim_schema`
+  brings an older town up to date (idempotent; `create_relationships_schema`
+  calls it so the tie columns exist whenever `relationships` does).
+- **Once `sim_state` has a row the sim owns the town:** `advance_town` and
+  `derive_relationships` raise `SimOwnedTownError`. The sim must therefore
+  run `derive_relationships` *before* its setup writes `sim_state`.
+- Viewer: death (date, cause as stored -- the sim's causes are an open
+  list), departure (date, reason), "homeless" for a living resident with no
+  home; departed residents no longer listed in their old house.
+- `town_db.names.name_new_resident(seed, resident_id, race, gender,
+  family_name=None)`, drawn via `rng_for(seed, "name", resident_id)`.
+- Capacity: generation fills houses exactly, and the first year's births
+  pushed ~3% of houses over. Capping births would have meant **no births at
+  all** (every house is full), so instead generation ends by raising an
+  over-full house's capacity to its living occupants -- the integration
+  doc's own rule (a house's room = who lived there at import).
+  `advance_town` unchanged.
+- `town_db.construction.place_building(db, seed, type, capacity,
+  preferred_district_id=None)`: infill inside the walls first (lived-in
+  wards only), else `add_buildings` growth toward the district.
+  `resolve_place` accepts "district <id>".
+
 ## 2026-10-10 — Frodo — build near a named place; resizing keeps a cathedral's cloister
 
 `add_buildings(..., near=...)` (+ `--near`): `resolve_place` turns a building

@@ -40,7 +40,7 @@ from typing import List, Optional, Tuple, Union
 import shapely
 from shapely import affinity
 from shapely.geometry import LineString, MultiPoint, Point, Polygon
-from shapely.ops import nearest_points, unary_union
+from shapely.ops import nearest_points, polygonize, unary_union
 from shapely.prepared import prep
 
 from town_db.schema import connect
@@ -406,6 +406,7 @@ def resolve_place(conn, svg: str, near: Union[int, str], centre: Tuple[float, fl
     """The geometry a `near` value names, nearest the town centre when
     several match:
       - a building id (int, or digits);
+      - "district <id>": that district;
       - "<compass direction> gate" ("north gate", "southwest gate"): the
         town gate closest to that bearing, within GATE_BEARING_TOLERANCE;
       - "river" / "coast" / "sea" / "harbour" / "water": that water;
@@ -429,6 +430,12 @@ def resolve_place(conn, svg: str, near: Union[int, str], centre: Tuple[float, fl
             raise ValueError(f"no building {near}")
         return footprint(row)
     text = " ".join(str(near).lower().replace("-", " ").split())
+
+    if text.startswith("district ") and text[9:].isdigit():
+        row = conn.execute("SELECT polygon FROM districts WHERE id = ?", (int(text[9:]),)).fetchone()
+        if row is None:
+            raise ValueError(f"no {text}")
+        return unary_union([Polygon(part).buffer(0) for part in json.loads(row[0]) if len(part) >= 3])
 
     if text.endswith(" gate") and text[:-5].replace(" ", "") in COMPASS:
         bearing = COMPASS[text[:-5].replace(" ", "")]
@@ -467,6 +474,33 @@ def resolve_place(conn, svg: str, near: Union[int, str], centre: Tuple[float, fl
             return nearest(matches)
     raise ValueError(f"no place called {near!r}: give a building id, a building name or type, "
                      "'<direction> gate', 'river'/'coast'/'water', or 'mill'/'well'")
+
+
+def _sizes_for(building_type: str, existing: List[Tuple[str, Polygon]]) -> List[Tuple[float, float]]:
+    """(width, depth) choices for a new building, from existing (type, footprint)s."""
+    if BUILDING_HOME_CAPACITY.get(building_type, 0) == 0:
+        # Settlemaker gives taverns/shops whatever lot they landed on --
+        # often several houses' worth -- so copying those makes new ones
+        # oversized squares. A new one is a larger-than-average house.
+        return [(w * NONRESIDENTIAL_SCALE, d * NONRESIDENTIAL_SCALE) for w, d in _house_sizes(
+            [p for t, p in existing if t == "residence"] or [p for _, p in existing])]
+    return _house_sizes([p for t, p in existing if t == building_type] or [p for _, p in existing])
+
+
+def _insert_building(conn, building_id, district_id, zone, building_type, capacity, shape: Polygon) -> str:
+    """Insert a new rectangular building's row; returns its SVG path data."""
+    corners = [list(pt) for pt in list(shape.exterior.coords)[:4]]
+    w = math.dist(corners[0], corners[1])
+    d = math.dist(corners[1], corners[2])
+    angle = math.atan2(corners[1][1] - corners[0][1], corners[1][0] - corners[0][0])
+    centroid = shape.centroid
+    conn.execute(
+        "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, "
+        "width, height, rotation, footprint) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)",
+        (building_id, district_id, zone, building_type, centroid.x, centroid.y,
+         capacity, w, d, angle, json.dumps(corners)),
+    )
+    return _path_d(corners) + "Z"
 
 
 # --- the edit ----------------------------------------------------------------
@@ -540,14 +574,7 @@ def add_buildings(
                 existing.append((b_type, Polygon(json.loads(footprint))))
             elif w and h:
                 existing.append((b_type, _rect((x, y), w, h, rot)))
-        if BUILDING_HOME_CAPACITY.get(building_type, 0) == 0:
-            # Settlemaker gives taverns/shops whatever lot they landed on --
-            # often several houses' worth -- so copying those makes new ones
-            # oversized squares. A new one is a larger-than-average house.
-            sizes = [(w * NONRESIDENTIAL_SCALE, d * NONRESIDENTIAL_SCALE) for w, d in _house_sizes(
-                [p for t, p in existing if t == "residence"] or [p for _, p in existing])]
-        else:
-            sizes = _house_sizes([p for t, p in existing if t == building_type] or [p for _, p in existing])
+        sizes = _sizes_for(building_type, existing)
         footprints = [p for _, p in existing]
 
         districts = [(d_id, zone, unary_union([Polygon(part).buffer(0) for part in json.loads(poly) if len(part) >= 3]))
@@ -801,20 +828,10 @@ def add_buildings(
         svg_buildings, svg_shadows = [], []
         for offset, shape in enumerate(placed):
             building_id = next_id + offset
-            centroid = shape.centroid
-            district_id = min(polys, key=lambda d_id: polys[d_id].distance(centroid))
-            corners = [list(pt) for pt in list(shape.exterior.coords)[:4]]
-            w = math.dist(corners[0], corners[1])
-            d = math.dist(corners[1], corners[2])
-            angle = math.atan2(corners[1][1] - corners[0][1], corners[1][0] - corners[0][0])
-            conn.execute(
-                "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, "
-                "width, height, rotation, footprint) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)",
-                (building_id, district_id, zones[district_id], building_type, centroid.x, centroid.y,
-                 BUILDING_HOME_CAPACITY.get(building_type, 0), w, d, angle, json.dumps(corners)),
-            )
+            district_id = min(polys, key=lambda d_id: polys[d_id].distance(shape.centroid))
+            path = _insert_building(conn, building_id, district_id, zones[district_id], building_type,
+                                    BUILDING_HOME_CAPACITY.get(building_type, 0), shape)
             new_ids.append(building_id)
-            path = _path_d(corners) + "Z"
             svg_buildings.append(f'<path data-building-id="{building_id}" d="{path}"/>')
             svg_shadows.append(f'<path d="{path}"/>')
 
@@ -883,6 +900,134 @@ def add_buildings(
         with open(svg_path, "w", encoding="utf-8") as f:
             f.write(svg)
     return new_ids
+
+
+# --- one building, for an external simulation -------------------------------
+
+# Infill only goes into lived-in wards: settlemaker's plazas are districts
+# with no or one building (a well, a statue), and parks, civic land and
+# fields aren't for houses.
+INFILL_MIN_BUILDINGS = 3
+INFILL_EXCLUDED_ZONES = {"farmland_edge", "park", "civic"}
+
+
+def place_building(db_path: str, seed, building_type: str, capacity: int,
+                   preferred_district_id: Optional[int] = None, svg_path: Optional[str] = None) -> Optional[int]:
+    """One new building wherever the town has room -- what the social sim
+    calls when it builds a house or a workshop
+    (social-sim-demo/docs/townshape-brief.md). Returns its id, or None if
+    there's no room anywhere.
+
+    First a free gap inside the walls (the town core, if it has none): in
+    the preferred district if one fits there, else in the nearest lived-in
+    ward that has one, facing its nearest street. Settlemaker packs its
+    wards, so gaps run out; then the town grows outward as add_buildings
+    does, toward the preferred district. Either way it's drawn into the SVG
+    and logged in construction_edits."""
+    if capacity < 0:
+        raise ValueError("capacity must be >= 0")
+    if building_type not in JOB_VACANCIES_BY_BUILDING_TYPE:
+        raise ValueError(f"unknown building_type {building_type!r}")
+    conn, svg_path, svg = _load(db_path, svg_path)
+    try:
+        building_id, svg = _infill(conn, svg, seed, building_type, capacity, preferred_district_id)
+    except BaseException:
+        conn.close()
+        raise
+    if building_id is not None:
+        _log(conn, "place_building", {"building_type": building_type, "capacity": capacity,
+                                      "preferred_district_id": preferred_district_id, "infill": True},
+             [building_id])
+        _save(conn, svg_path, svg)
+        return building_id
+    conn.close()
+
+    near = f"district {preferred_district_id}" if preferred_district_id is not None else None
+    ids = add_buildings(db_path, 1, building_type=building_type, svg_path=svg_path, near=near)
+    if not ids:
+        return None
+    conn = connect(db_path)
+    conn.execute("UPDATE buildings SET capacity = ? WHERE id = ?", (capacity, ids[0]))
+    conn.commit()
+    conn.close()
+    return ids[0]
+
+
+def _infill(conn, svg: str, seed, building_type: str, capacity: int,
+            preferred_district_id: Optional[int]) -> Tuple[Optional[int], str]:
+    rows = conn.execute("SELECT district_id, building_type, x, y, width, height, rotation, footprint "
+                        "FROM buildings WHERE building_type != 'demolished'").fetchall()
+    existing, per_district = [], {}
+    for d_id, b_type, *geometry in rows:
+        if geometry[-1] or (geometry[2] and geometry[3]):
+            existing.append((b_type, _footprint_of(geometry)))
+        per_district[d_id] = per_district.get(d_id, 0) + 1
+    if not existing:
+        return None, svg
+    sizes = _sizes_for(building_type, existing)
+
+    districts = {d_id: (zone, unary_union([Polygon(part).buffer(0) for part in json.loads(poly) if len(part) >= 3]))
+                 for d_id, zone, poly in conn.execute("SELECT id, zone_type, polygon FROM districts")}
+    wall_lines = [line for line, _ in _svg_lines(svg, "walls")]
+    rings = list(polygonize(unary_union(wall_lines))) if wall_lines else []
+    inside = (max(rings, key=lambda r: r.area) if rings else
+              unary_union([poly for zone, poly in districts.values() if zone != "farmland_edge"]))
+
+    roads = [(line, width) for line, width in _svg_lines(svg, "roads", "casing") if width > 0]
+    road_union = unary_union([line.buffer(w / 2) for line, w in roads])
+    water = unary_union([Polygon(json.loads(poly)[0], json.loads(poly)[1:])
+                         for (poly,) in conn.execute("SELECT polygon FROM water_features")])
+    blocked_geom = unary_union([p.buffer(BUILDING_GAP) for _, p in existing]
+                               + [road_union, water, _svg_landscape(svg).buffer(BUILDING_GAP)]
+                               + [line.buffer(WALL_CLEARANCE) for line in wall_lines])
+    blocked = prep(blocked_geom)
+
+    eligible = [d_id for d_id, (zone, poly) in districts.items()
+                if zone not in INFILL_EXCLUDED_ZONES and per_district.get(d_id, 0) >= INFILL_MIN_BUILDINGS
+                and poly.intersects(inside)]
+    if preferred_district_id in districts:
+        target = districts[preferred_district_id][1]
+    else:
+        target = unary_union([p for _, p in existing]).centroid
+    eligible.sort(key=lambda d_id: (d_id != preferred_district_id, districts[d_id][1].distance(target), d_id))
+
+    building_id = conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM buildings").fetchone()[0]
+    rng = rng_for(seed, "place_building", building_id)
+    smallest = min(min(w, d) for w, d in sizes) / 2
+    for d_id in eligible:
+        zone, poly = districts[d_id]
+        region = poly.intersection(inside)
+        room = region.difference(blocked_geom).buffer(-smallest)
+        if room.is_empty:
+            continue
+        prepared_room, prepared_region = prep(room), prep(region)
+        x0, y0, x1, y1 = room.bounds
+        centres = [(x0 + i * CANDIDATE_STEP, y0 + j * CANDIDATE_STEP)
+                   for i in range(int((x1 - x0) / CANDIDATE_STEP) + 1)
+                   for j in range(int((y1 - y0) / CANDIDATE_STEP) + 1)]
+        centres = [c for c in centres if prepared_room.contains(Point(c))]
+        # Nearest the street first: a house fronts a lane, not a back yard.
+        for c in sorted(centres, key=lambda c: (road_union.distance(Point(c)), c)):
+            w, d = rng.choice(sizes)
+            angle = _street_angle(roads, c)
+            for along, across in ((w, d), (d, w)):
+                shape = _rect(c, along, across, angle)
+                if prepared_region.contains(shape) and not blocked.intersects(shape):
+                    path = _insert_building(conn, building_id, d_id, zone, building_type, capacity, shape)
+                    if svg:
+                        svg = _svg_insert(svg, "buildings", [f'<path data-building-id="{building_id}" d="{path}"/>'])
+                        svg = _svg_insert(svg, "shadows", [f'<path d="{path}"/>'])
+                    return building_id, svg
+    return None, svg
+
+
+def _street_angle(roads: List[Tuple[LineString, float]], c: Tuple[float, float]) -> float:
+    """Direction of the road nearest c, so a house lines up with its street."""
+    if not roads:
+        return 0.0
+    point = Point(c)
+    line = min((line for line, _ in roads), key=lambda line: line.distance(point))
+    return _at(line, line.project(point))[1]
 
 
 # --- editing existing buildings ---------------------------------------------
