@@ -191,6 +191,7 @@ to civic with `garrison` buildings (`settlemaker_bridge/parse_geojson.py`).
 ### The town's structure should follow the narrative (P002)
 
 **Status:** Planned — `docs/superpowers/specs/2026-10-10-narrative-layout-engine-design.md`
+(owner decisions D1-D4 made 2026-10-11; construction edits become part of the spec)
 
 The agent writes a *layout spec* (shapes, walls, water, roads, districts,
 open spaces, landmarks with any footprint, symmetry) from the narrative;

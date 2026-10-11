@@ -157,6 +157,6 @@ day to day.
 
 Structured towns are meant to render through settlemaker's own scene/SVG
 pipeline (via the fork), so they look like today's towns; custom landmark
-footprints (e.g. a heart-shaped church) as landmark polygons. Open: keep
-today's style exactly, or allow a distinct one. The agent's review loop
+footprints (e.g. a heart-shaped church) as landmark polygons. Style
+(D2, 2026-10-11): today's style for now; revisit once the engine runs. The agent's review loop
 also needs a rendered PNG preview tool.

@@ -1,6 +1,8 @@
 # Narrative Layout Engine — Design
 
-**Status:** Draft for owner review (2026-10-10). No code yet.
+**Status:** Draft (2026-10-10); owner decisions D1-D4 answered 2026-10-11
+(see the end). D3 changed the design: construction edits live in the spec
+(layer 4 below). No code yet; next is the Phase 0 spike.
 **Proposal:** `Project_Vision/00-proposals.md` P002.
 **Supersedes, for structured towns only:** the "settlemaker owns all
 geometry" assumption of `2026-09-08-settlemaker-integration-design.md`.
@@ -77,7 +79,8 @@ A narrative states some things explicitly and leaves the rest implicit:
 The **layout spec** is the new central artifact: a structured, saved,
 diffable description of a town's structure. The same spec + seed always
 produces the same town; editing the town structurally means editing the spec
-and rebuilding.
+and rebuilding. Construction done after a build (new houses, a demolished
+tavern) is recorded in the spec too, so a rebuild reproduces it (D3).
 
 ## The layout spec
 
@@ -129,9 +132,34 @@ e.g. poor residential).
 ### 3. Global
 
 `seed`, `population` (target), `extent` (town size or "fit"), `default_district`,
-`symmetry` (`none` / `mirror: {axis}` / `rotational: {n}`), `style` (map
-palette; see Rendering), and the existing `TownParameters` people-side fields
-(wealth, magic, aggression…) which this spec doesn't change.
+`symmetry` (`none` / `mirror: {axis}` / `rotational: {n}`), and the existing
+`TownParameters` people-side fields (wealth, magic, aggression…) which this
+spec doesn't change. No `style` field yet: structured towns use today's
+settlemaker style until the engine works (D2).
+
+### 4. Edits — construction after the build (D3)
+
+An ordered `edits` list: every construction operation applied to the built
+town (today's `construction.py`: `add_buildings`, `place_building`,
+`demolish_building`, `resize_building`, `reshape_building`) with its
+arguments. A build is structure → fill → replay `edits` in order. Every
+operation is already deterministic given DB + call, so the same spec + seed
+gives the same town *including* its later construction.
+
+- Nobody writes edits by hand: a construction call on a structured town
+  appends itself to the stored spec (the `construction_edits` log already
+  records each call; it becomes the spec's edits list).
+- Building ids don't survive a rebuild, so an edit names its target by a
+  stable reference, written down at call time: a landmark's element id
+  (`{"landmark": "sacred_heart"}`), or for any other building a point inside
+  it (`{"at": [x, y]}`). `near` places are already names.
+- Changing the structure (moving a wall, resizing a district) and rebuilding
+  replays the edits on the new layout. An edit whose target is gone (its
+  point now falls in a street) or that no longer fits is skipped and listed
+  in the fidelity report, never dropped silently.
+- The social sim's `place_building` calls are recorded the same way. A
+  structural rebuild of a sim-owned town is refused, as `advance_town` is
+  today, since the sim's people point at building ids.
 
 ### The reference example as a spec (abridged)
 
@@ -193,7 +221,7 @@ narrative ──(agent, using docs/narrative-layout.md)──▶ layout spec
    a district into slivers); scale sanity vs. population. Errors block;
    warnings go into the fidelity report.
 4. **Fill** — districts and filler territory become blocks, streets and
-   buildings (see Filling).
+   buildings (see Filling); then the spec's `edits` are replayed in order.
 5. **Render** — the town's SVG in the existing map style (see Rendering).
 6. **Persist** — the existing `districts`/`buildings`/`water_features`/
    `road_*` tables (so `town_db`'s people pipeline, `town_relationships`, the
@@ -276,11 +304,11 @@ not) is available from Phase 1 at no extra cost and is reported as such.
   work for random towns; for structured towns the spec is the source of
   truth, and the narrative-parameters doc points to `narrative-layout.md`
   for structural language.
-- **`construction.py` edits:** work unchanged on structured towns (same
-  tables + SVG groups). Rebuilding from a changed spec regenerates the whole
-  layout; edits made after the previous build are **not** replayed
-  automatically in v1 (building ids aren't stable across rebuilds) — the
-  agent is told, and can re-apply them. Owner decision D3.
+- **`construction.py` edits:** work on structured towns (same tables + SVG
+  groups), and on those towns each call is also appended to the spec's
+  `edits` and replayed on every rebuild (layer 4). Needs one change in
+  `construction.py`: record a stable target reference alongside the
+  building id. Random towns keep today's behaviour.
 - **People pipeline, relationships, viewer:** unchanged — they read the same
   tables.
 
@@ -290,9 +318,8 @@ not) is available from Phase 1 at no extra cost and is reported as such.
   talks to the generator as a separate process over JSON.
 - Running the fork on a server and serving maps creates no source-publishing
   obligation (GPL, not AGPL); shipping it to browsers or as a download does.
-  Plan: keep the fork public on GitHub regardless, and offer the structured
-  entry point upstream to settlemaker's author — accepted upstream means no
-  fork to maintain.
+  Plan: keep the fork public on GitHub regardless. Offering the structured
+  entry point upstream to settlemaker's author is on hold (D4).
 - Option B, if ever needed, would be MIT.
 
 ## Phases
@@ -302,7 +329,7 @@ not) is available from Phase 1 at no extra cost and is reported as such.
 | **0 — Spike** (2–3 days) | Fork settlemaker; feed one hand-made region (a circle) as patches of one ward type; render | Owner looks at the render: does settlemaker's filling inside a foreign region look as good as its own towns? Go/no-go for Option A |
 | **1 — Spec + structure** | JSON Schema, shape library, resolver, validator, fidelity report; structure-only render (walls, water, roads, landmarks, district outlines on fields) | Reference example's *structure* renders correctly; validator catches a set of broken specs |
 | **2 — Structured filling** | Fork's structured entry point: districts filled, streets routed to fixed roads/gates, landmarks inserted, bridges over moats | Reference example fully generated and filled; owner visual sign-off |
-| **3 — Integration** | Persist to existing tables + `layout_spec`; people pipeline, viewer, construction edits on structured towns; agent docs (`narrative-layout.md`) + preview PNG tool | Generate the reference example *from its narrative* end-to-end via the agent; residents, viewer, edits all work |
+| **3 — Integration** | Persist to existing tables + `layout_spec`; people pipeline, viewer, construction edits on structured towns, recorded into the spec's `edits` and replayed on rebuild; agent docs (`narrative-layout.md`) + preview PNG tool | Generate the reference example *from its narrative* end-to-end via the agent; residents, viewer, edits all work; rebuilding after edits gives the same town, and after a structural change replays the edits (skips reported) |
 | **4 — Symmetry + breadth** | True mirror symmetry in the filler; more ward/landmark types; pattern library growth | Palifas (symmetric rebuild) narrative reproduced; 5 further narratives from the owner reproduced "more or less" |
 
 Each phase ends with an owner checkpoint, per this project's standing rule to
@@ -312,7 +339,7 @@ show visual work before building on it.
 
 - Unit: each shape primitive and relation; resolver ordering and cycle
   detection; validator cases; spec → geometry snapshots.
-- Determinism: same spec + seed → byte-identical DB and SVG.
+- Determinism: same spec + seed → byte-identical DB and SVG, edits included.
 - Golden narratives: a small set of narrative → spec → town fixtures (the
   reference example first), checked structurally (three walls, moats
   connected to the river, a temple whose footprint is the heart) not by
@@ -335,11 +362,19 @@ show visual work before building on it.
 
 - **D1 — Filling engine:** go with Option A (settlemaker fork), gated on the
   Phase 0 spike? *(recommended: yes)*
+  <Feedback> Yes. 
+  **Decided:** Option A; Phase 0 spike next.
 - **D2 — Style:** structured towns use today's settlemaker map style exactly,
   or is a distinct style acceptable/wanted?
+  <Feedback> I would work on style after we have the engine running properly. 
+  **Decided:** today's settlemaker style; style deferred until the engine works.
 - **D3 — Edits vs. rebuilds:** is it acceptable in v1 that rebuilding from
   an edited spec drops construction edits made after the last build (agent
   re-applies them), or should edits be expressed in the spec itself from
   the start?
+  <Feedback> Edits should be expressed from the start
+  **Decided:** edits are part of the spec (layer 4) and replayed on rebuild.
 - **D4 — Upstream:** OK to offer the structured entry point to settlemaker's
   author as a pull request (public fork either way)?
+  <Feedback> I would wait on this. 
+  **Decided:** on hold; fork stays public.

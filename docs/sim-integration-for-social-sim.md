@@ -2,8 +2,7 @@
 
 > Written 2026-10-11 from the TownShape side, in answer to
 > `social-sim-demo/docs/townshape-brief.md`. Everything below is on TownShape
-> branch `sim-integration` (built on `town-construction`); use that branch,
-> or `main` once both are merged. Interfaces are listed in TownShape's
+> `main` (PRs #11 and #12). Interfaces are listed in TownShape's
 > `CONTRACTS.md` under "Consumed by the social sim".
 
 ## What TownShape built (brief items 1-5)

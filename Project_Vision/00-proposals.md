@@ -27,7 +27,7 @@ detail. Keep it in sync whenever an entry's status changes.
 | ID | Title | Layer | Status |
 |---|---|---|---|
 | [P001](#p001--integrate-existing-open-source-watabou-style-generators-instead-of-building-bespoke) | Integrate existing open-source watabou-style generators instead of building bespoke | generation (cross-cutting) | Addressed (Phases 1-2); Phase 3 deferred |
-| [P002](#p002--the-towns-physical-structure-should-follow-whatever-the-narrative-describes) | The town's physical structure should follow whatever the narrative describes | generation (cross-cutting) | Planned — design spec written, awaiting owner decisions D1-D4 |
+| [P002](#p002--the-towns-physical-structure-should-follow-whatever-the-narrative-describes) | The town's physical structure should follow whatever the narrative describes | generation (cross-cutting) | Planned — D1-D4 decided; Phase 0 spike next |
 | [P003](#p003--the-social-sim-drives-the-towns-people-and-growth-townshape-provides-the-town) | The social sim drives the town's people and growth; TownShape provides the town | cross-cutting | Addressed on TownShape's side; sim side pending |
 
 ## Status values
@@ -134,7 +134,7 @@ a while") — not started, not scheduled.
 
 ## P002 — The town's physical structure should follow whatever the narrative describes
 
-**Status:** Planned — design spec written, awaiting owner decisions D1-D4
+**Status:** Planned — D1-D4 decided 2026-10-11; Phase 0 spike next
 **Layer:** generation (cross-cutting — touches settlemaker integration, construction edits, agent docs)
 **Date:** 2026-10-10
 
@@ -177,16 +177,19 @@ by a few knobs.
   its existing style; the agent reviews a render + fidelity report and
   revises. P001's lesson applies: don't re-implement the *filling*, which is
   what TownShape's own pipeline did badly.
-- **Open owner decisions:** D1 filling engine (settlemaker fork, gated on the
-  spike), D2 map style, D3 what happens to construction edits when a spec is
-  rebuilt, D4 offering the entry point upstream.
+- **Owner decisions (2026-10-11, answered in the spec):** D1 settlemaker
+  fork, gated on the Phase 0 spike: yes. D2 style: later, once the engine
+  runs; today's style until then. D3 construction edits are expressed in the
+  spec from the start: the spec gained an `edits` layer, replayed on every
+  rebuild, with targets named by landmark id or a point instead of a
+  building id. D4 offering the entry point upstream: on hold.
 
 **Resolution:** <open>
 
 
 ## P003 — The social sim drives the town's people and growth; TownShape provides the town
 
-**Status:** Addressed on TownShape's side (branch `sim-integration`); sim side pending
+**Status:** Addressed on TownShape's side (merged to `main`, PR #12); sim side pending
 **Layer:** cross-cutting (schema, simulation, construction, viewer)
 **Date:** 2026-10-11
 
@@ -221,6 +224,6 @@ integrate").
 - Not built until asked: farmsteads for the sim's new farms, a neighbour-tie
   cap for big towns, a batch `place_buildings`.
 
-**Resolution:** TownShape side addressed 2026-10-11 (branch
-`sim-integration`). Next: the sim's `create_town`/load/save, then an
+**Resolution:** TownShape side addressed 2026-10-11 (PR #12, merged to
+`main`). Next: the sim's `create_town`/load/save, then an
 end-to-end run checked in the viewer.
