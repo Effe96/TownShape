@@ -497,3 +497,16 @@ def test_place_building_grows_the_town_once_its_wards_are_full(tmp_path):
     conn.close()
     with pytest.raises(ValueError):
         place_building(db_path, "seed", "dragon_lair", 1)
+
+
+def test_place_building_grows_onto_fields_without_sowing_new_ones(tmp_path):
+    db_path = _make_town(tmp_path)
+    fields_before = set(_farmland(db_path))
+    for _ in range(30):  # the road ribbon fills up first; ~25 in, houses reach the fields
+        place_building(db_path, "seed", "residence", 8)
+    conn = connect(db_path)
+    edits = [json.loads(p) for (p,) in conn.execute("SELECT params FROM construction_edits")]
+    conn.close()
+    assert any(e["converted_district_ids"] or e["trimmed_district_ids"] for e in edits)  # it did build on fields
+    assert all(e["new_field_district_ids"] == [] for e in edits)
+    assert set(_farmland(db_path)) <= fields_before

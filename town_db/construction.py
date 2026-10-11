@@ -524,6 +524,7 @@ def add_buildings(
     building_type: str = "residence",
     svg_path: Optional[str] = None,
     near: Optional[Union[int, str]] = None,
+    resow: bool = True,
 ) -> List[int]:
     """Build up to `count` new `building_type` buildings outside the town's
     existing built-up area, and return their ids (fewer than `count` if the
@@ -547,7 +548,10 @@ def add_buildings(
     "Built-up area" = every generation-time non-farmland district, the walls
     and every building, so new construction never lands in a plaza, park or
     inside the walls -- it extends the town outward, onto its fields, which
-    are trimmed or converted and re-sown further out."""
+    are trimmed or converted and re-sown further out.
+
+    resow=False: fields are still trimmed or converted, but no new ones are
+    sown -- for callers (place_building) whose own sim decides where farms go."""
     if count < 1:
         raise ValueError("count must be >= 1")
     if where not in PLACEMENT_MODES:
@@ -826,7 +830,7 @@ def add_buildings(
         replaced_plot_ds = {d: trimmed[d_id] for d_id in trimmed for d in [plot_for(d_id)] if d}
 
         fields = []
-        if lost_area and plot_area:
+        if resow and lost_area and plot_area:
             occupied = unary_union(list(polys.values()) + [cleared, walls] + footprints)
             fields = _new_fields(occupied, unary_union([water, road_union.buffer(FIELD_GAP)]),
                                  lost_area, plot_area, centre, rng)
@@ -935,7 +939,7 @@ def place_building(db_path: str, seed, building_type: str, capacity: int,
     the preferred district if one fits there, else in the nearest lived-in
     ward that has one, facing its nearest street. Settlemaker packs its
     wards, so gaps run out; then the town grows outward as add_buildings
-    does, toward the preferred district. Either way it's drawn into the SVG
+    does, toward the preferred district, without sowing new fields. Either way it's drawn into the SVG
     and logged in construction_edits."""
     if capacity < 0:
         raise ValueError("capacity must be >= 0")
@@ -956,7 +960,8 @@ def place_building(db_path: str, seed, building_type: str, capacity: int,
     conn.close()
 
     near = f"district {preferred_district_id}" if preferred_district_id is not None else None
-    ids = add_buildings(db_path, 1, building_type=building_type, svg_path=svg_path, near=near)
+    # No re-sown fields: the sim founds its own farms.
+    ids = add_buildings(db_path, 1, building_type=building_type, svg_path=svg_path, near=near, resow=False)
     if not ids:
         return None
     conn = connect(db_path)
