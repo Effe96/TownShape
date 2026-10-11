@@ -36,6 +36,7 @@ const BUILDING_TYPE_COLORS = {
   warehouse: "#8b7355",
   workshop: "#708090",
   garden: "#2e7d32",
+  ruin: "#b8ad94",
 };
 const GENERIC_BUILDING_COLOR = "#555555";
 
@@ -47,6 +48,82 @@ const ROAD_STYLE = {
 
 function buildingColor(buildingType) {
   return BUILDING_TYPE_COLORS[buildingType] || GENERIC_BUILDING_COLOR;
+}
+
+// Landmark/commercial types get an emoji pin drawn at the building's center
+// in every render mode. Bulk types (residence, manor, farmstead, workshop,
+// garden) get none -- there are hundreds of them. ponytail: native emoji
+// glyphs, look varies per OS font; swap for an SVG sprite sheet if that matters.
+const BUILDING_TYPE_ICONS = {
+  temple: "⛪",
+  town_hall: "🏛️",
+  school: "🏫",
+  university: "🎓",
+  garrison: "🏰",
+  guard_post: "🛡️",
+  arcane_shop: "🔮",
+  harbormaster_office: "⚓",
+  healer: "⚕️",
+  tavern: "🍺",
+  shop: "🪙",
+  blacksmith: "⚒️",
+  market_stall: "🧺",
+  dock: "⛵",
+  warehouse: "📦",
+};
+// Population-capped to a handful per town, so they stay visible at any zoom.
+// Everything else only appears once its footprint is ICON_MIN_SCREEN_PX wide.
+const ALWAYS_VISIBLE_ICONS = new Set(["temple", "town_hall", "school", "university", "garrison", "harbormaster_office"]);
+const ICON_MIN_SCREEN_PX = 8;
+
+// Settlemaker buildings store width/height as 0 and carry their real shape
+// in footprint, so size from the footprint's bounding box when there is one.
+function buildingWorldSize(building) {
+  if (!building.footprint) return Math.sqrt(building.width * building.height);
+  const xs = building.footprint.map((p) => p[0]);
+  const ys = building.footprint.map((p) => p[1]);
+  return Math.sqrt((Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys)));
+}
+
+// Icon types the viewer switched off by clicking their legend row.
+// Remembered per browser; storage may be unavailable (private mode), in
+// which case the toggles just last for the session.
+const hiddenIconTypes = new Set();
+try {
+  JSON.parse(localStorage.getItem("townViewerHiddenIcons") || "[]").forEach((t) => hiddenIconTypes.add(t));
+} catch (e) {
+  // ignore -- start with every icon shown
+}
+
+function toggleIconType(buildingType) {
+  if (hiddenIconTypes.has(buildingType)) hiddenIconTypes.delete(buildingType);
+  else hiddenIconTypes.add(buildingType);
+  try {
+    localStorage.setItem("townViewerHiddenIcons", JSON.stringify([...hiddenIconTypes]));
+  } catch (e) {
+    // ignore
+  }
+  draw();
+  renderLegend();
+}
+
+function drawBuildingIcons() {
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const building of mapData.buildings) {
+    const icon = BUILDING_TYPE_ICONS[building.building_type];
+    if (!icon || hiddenIconTypes.has(building.building_type)) continue;
+    const screenSize = buildingWorldSize(building) * view.scale;
+    if (screenSize < ICON_MIN_SCREEN_PX && !ALWAYS_VISIBLE_ICONS.has(building.building_type)) continue;
+    const size = Math.min(Math.max(screenSize * 0.8, 12), 24);
+    const { sx, sy } = worldToScreen(building.x, building.y);
+    ctx.beginPath();
+    ctx.arc(sx, sy, size * 0.65, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.fill();
+    ctx.font = `${size}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.fillText(icon, sx, sy);
+  }
 }
 
 let mapData = { districts: [], buildings: [], water_features: [], roads: { nodes: [], edges: [] }, local_bounds: null };
@@ -207,8 +284,21 @@ function draw() {
     }
     ctx.globalAlpha = 1;
 
+    for (const road of mapData.svgRoads || []) {
+      ctx.beginPath();
+      road.points.forEach(([x, y], i) => {
+        const { sx, sy } = worldToScreen(x, y);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.strokeStyle = ROAD_STYLE.artery.color;
+      ctx.lineWidth = Math.max(1, road.width * view.scale * 0.6);
+      ctx.stroke();
+    }
+
     const roadNodeById = new Map((mapData.roads?.nodes || []).map((n) => [n.id, n]));
-    for (const edge of mapData.roads?.edges || []) {
+    // The SVG already carries every road incl. construction streets; the DB
+    // road graph is only drawn for towns without one.
+    for (const edge of mapData.svgRoads?.length ? [] : mapData.roads?.edges || []) {
       const from = roadNodeById.get(edge.from_node_id);
       const to = roadNodeById.get(edge.to_node_id);
       if (!from || !to) continue;
@@ -247,6 +337,8 @@ function draw() {
       }
     }
   }
+
+  drawBuildingIcons();
 
   for (const buildingId of highlightedBuildingIds) {
     const building = mapData.buildings.find((b) => b.id === buildingId);
@@ -299,6 +391,13 @@ function loadMap() {
               draw();
               return;
             }
+            // Settlemaker towns keep their roads (and construction's side
+            // streets) only in the SVG -- same coordinates as the DB -- so the
+            // flat modes draw them from here.
+            mapData.svgRoads = [...svgEl.querySelectorAll("#roads path.casing")].map((p) => ({
+              points: (p.getAttribute("d").match(/-?[\d.]+,-?[\d.]+/g) || []).map((xy) => xy.split(",").map(Number)),
+              width: Number(p.getAttribute("stroke-width")) || 1,
+            }));
             const vb = (svgEl.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
             if (vb.length === 4) {
               svgViewBox = { minX: vb[0], minY: vb[1], width: vb[2], height: vb[3] };
@@ -524,12 +623,35 @@ function selectResident(residentId) {
 // paints -- a "Zones" key while looking at settlemaker's own art (or a
 // "Buildings" key while looking at the zones fill) described colors that
 // were never on screen. One legend, one mode, always in sync.
+function iconRowClass(buildingType) {
+  return hiddenIconTypes.has(buildingType) ? "row toggle off" : "row toggle";
+}
+
+document.getElementById("legend").addEventListener("click", (e) => {
+  const row = e.target.closest("[data-icon-type]");
+  if (row) toggleIconType(row.dataset.iconType);
+});
+document.getElementById("legend").addEventListener("keydown", (e) => {
+  const row = e.target.closest("[data-icon-type]");
+  if (row && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    toggleIconType(row.dataset.iconType);
+    document.querySelector(`[data-icon-type="${row.dataset.iconType}"]`)?.focus();
+  }
+});
+
 function renderLegend() {
   const legend = document.getElementById("legend");
   const mode = effectiveRenderMode();
 
+  const buildingTypesPresent = [...new Set(mapData.buildings.map((b) => b.building_type))].sort();
+
   if (mode === "settlemaker") {
-    legend.innerHTML = "";
+    const rows = buildingTypesPresent
+      .filter((bt) => BUILDING_TYPE_ICONS[bt])
+      .map((bt) => `<div class="${iconRowClass(bt)}" data-icon-type="${bt}" role="button" tabindex="0" aria-pressed="${!hiddenIconTypes.has(bt)}" title="Click to hide/show these icons"><span class="icon">${BUILDING_TYPE_ICONS[bt]}</span>${bt}</div>`)
+      .join("");
+    legend.innerHTML = rows ? `<div><strong>Landmarks</strong></div>${rows}` : "";
     return;
   }
 
@@ -542,9 +664,10 @@ function renderLegend() {
     return;
   }
 
-  const buildingTypesPresent = [...new Set(mapData.buildings.map((b) => b.building_type))].sort();
   const rows = buildingTypesPresent
-    .map((bt) => `<div class="row"><span class="swatch" style="background:${buildingColor(bt)}"></span>${bt}</div>`)
+    .map((bt) => BUILDING_TYPE_ICONS[bt]
+      ? `<div class="${iconRowClass(bt)}" data-icon-type="${bt}" role="button" tabindex="0" aria-pressed="${!hiddenIconTypes.has(bt)}" title="Click to hide/show these icons"><span class="swatch" style="background:${buildingColor(bt)}"></span><span class="icon">${BUILDING_TYPE_ICONS[bt]}</span>${bt}</div>`
+      : `<div class="row"><span class="swatch" style="background:${buildingColor(bt)}"></span><span class="icon"></span>${bt}</div>`)
     .join("");
   legend.innerHTML = `<div><strong>Buildings</strong></div>${rows || "<div class=\"row hint\">none</div>"}`;
 }

@@ -12,6 +12,107 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-10-10 — Frodo — build near a named place; resizing keeps a cathedral's cloister
+
+`add_buildings(..., near=...)` (+ `--near`): `resolve_place` turns a building
+id/name/type, "<compass> gate" (from the SVG's `#walls` gate lines; SVG is
+Y-down so bearing -> (sin, -cos)), water ("river", "coast"...) or a glyph
+("mill", "well") into a geometry; placement then orders/caps by distance to
+it instead of the town centre, lane slots are judged a lane's depth out (so
+the side facing the place wins), and lanes steer toward it
+(`STREET_STEER`), running until they arrive (<= `STREET_MAX_REACH`). First
+version without steering/run-until-arrival put "near the mill" houses
+~300px off on the nearest road, because no road reached the mill.
+
+`resize_building` on a multi-piece building (merged cathedral) now scales
+each drawn piece with the whole and clips it to the new outline, so the
+cloister courtyard and piece divisions survive; absorbed lots become extra
+pieces. Multi-piece matching coverage threshold dropped 80% -> 60%: a
+courtyard is part of the outline but no piece covers it.
+
+## 2026-10-09 — Frodo — building edits: demolish / ruin / resize / reshape
+
+`town_db/construction.py` gained `demolish_building` (cleared ->
+`demolished`, or `ruin=True` -> `ruin` drawn faded/dashed), `resize_building`
+and `reshape_building` (rectangle/square/round), + `scripts/edit_building.py`.
+Physical layer only: demolished rows are kept (capacity 0) so resident /
+workplace references stay valid; the viewer's map query and add_buildings
+both skip `demolished`. Settlemaker buildings carry no id in the SVG, so
+edits find a building's drawn shape by geometry (best IoU >= 0.9, searched
+in #buildings/#landmarks/#greens; measured 557/561 on a real town -- the 4
+misses were park lawns, hence #greens). Growth is clipped to the building's
+district minus roads/walls/water/neighbours (unbuffered: settlemaker
+buildings share walls); `absorb_neighbors` builds over whole same-district
+neighbour lots. Found and fixed: settlemaker's cathedral ward is ~5-15 pieces (all
+drawn in #landmarks as class "cathedral"), one typed `temple`, the rest
+civic `workshop` infill (or stray `shop` POIs). `parse_geojson` now merges a
+cathedral ward into ONE `temple` building (`MERGED_WARD_BUILDING_TYPE`,
+union footprint, outer outline only); construction edits match a building
+to several drawn pieces (`_svg_tags_for`) and redraw it as one outline --
+which loses the cloister courtyard. Towns generated before this keep the
+split cathedral.
+
+## 2026-10-09 — Frodo — layout parameters: river direction, citadel, road bearings
+
+`TownParameters` gained `river_bearings`, `has_citadel`, `road_bearings`
+(all compass degrees, 0 = N clockwise), plumbed through `town_db` /
+`town_shaper` / `settlemaker_bridge` and recorded in
+`generation_parameters` (new columns with defaults). Bearing-set rivers
+cross near the centre and meander half as much as random ones. Frames:
+town_shaper is Y-up (bearing -> (sin, cos)); settlemaker is Y-down
+(bearing -> (sin, -cos)); the water rescale's Y flip makes them agree.
+
+`citadel` exposed settlemaker's `castle` ward type, which the parser had
+deliberately left unmapped: now `ZoneType.CIVIC` with buildings typed
+`garrison` (`WARD_INFILL_BUILDING_TYPE`). Road bearings: settlemaker puts
+gates within a few degrees of each request, but the outer road path
+follows field edges and can end 20-40 deg off; in one sampled case (river
++ two bearings) it routed both requests along one road. Treat bearings as
+"which gates exist".
+
+## 2026-10-09 — Frodo — construction edits: `add_buildings` + edit log
+
+New `town_db/construction.py` (+ `scripts/add_buildings.py`,
+`docs/narrative-construction.md`): physical-layer-only edits on an existing
+town, deliberately decoupled from residents and `advance_town` — the "why"
+(newcomers needing housing etc.) lives in a separate project that will call
+in. `add_buildings(db, count, where="roads"|"perimeter", building_type)`
+places footprints outside the built-up area (non-farmland districts + walls
++ buildings), sized from the town's own buildings, and appends them to the
+SVG's `#buildings`/`#shadows` groups so settlemaker's stylesheet draws them
+natively. Every edit is logged in a new `construction_edits` table
+(created on first edit, `IF NOT EXISTS`, not in `schema.py`).
+
+Gotchas: settlemaker towns persist **no roads or walls** to the DB
+(`road_nodes`/`road_edges` are empty) — placement parses them from the SVG.
+SVG coords = DB footprint coords (same local frame). Also found
+`demo_riverport_town.svg` is stale vs its `.db` (Sep 16 vs Sep 23) — its
+overlay is misaligned; regenerate it before using it as a demo.
+
+Follow-up same day: growth is now ribbons capped at 1.6 town radii +
+**side streets** (branching through lane gaps reserved every 20 units along
+every road/street, written into the SVG `#roads` as casing/core paths, read
+back as roads next call) instead of ring/cluster accretion. Fields touched
+by new houses/streets convert to `poor_residential` (plot removed from the
+SVG) and are re-sown as Voronoi plots outside the farmland belt; the frame
+widens when needed (viewBox, the two frame `<rect>`s and `town_state` svg
+bounds are updated together -- they must stay identical). "Core" (no-build
+area) = generation-time non-farmland districts minus districts converted by
+earlier edits (read from `construction_edits.params`). Later the same day:
+streets made deliberately irregular (wandering, oblique, varied width,
+joining other roads; terraced, gable-mixed frontage) after feedback that
+straight perpendicular lanes "look like modern American living areas";
+fields are now trimmed (cut-off part -> new `poor_residential` district)
+and only converted when >50% lost; streets also go to `road_nodes`/
+`road_edges`; flat viewer modes draw roads parsed from the SVG. Settlemaker's
+landscape glyphs (`#symbols`/`#canopy`/`#marks` `<use>`s, `#greens`) are
+obstacles, parsed from the SVG; new non-residential buildings are sized as
+1.4x a typical house (settlemaker's own tavern lots are ~5x a house).
+
+Also: viewer building-type emoji icons (`BUILDING_TYPE_ICONS` in
+`town_viewer/static/app.js`). Settlemaker buildings store width/height as
+0, so anything sizing a building must use its `footprint`.
+
 ## 2026-09-01 — Frodo — dead-code/stdlib cleanup, PR #10 merged
 
 Ran `/ponytail:ponytail-audit` (repo-wide over-engineering/dead-code scan,

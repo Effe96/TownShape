@@ -1,4 +1,5 @@
 import pytest
+from shapely.geometry import Polygon as ShapelyPolygon
 
 from settlemaker_bridge.parse_geojson import _curate_village_economy, parse_settlemaker_geojson
 from town_shaper.buildings import BUILDING_HOME_CAPACITY, JOB_VACANCIES_BY_BUILDING_TYPE
@@ -77,8 +78,8 @@ def test_skippable_ward_types_produce_no_district():
 
 
 def test_unmapped_ward_type_raises_loudly():
-    geojson = {"features": [_ward("castle", SQUARE)]}
-    with pytest.raises(ValueError, match="castle"):
+    geojson = {"features": [_ward("dragon_lair", SQUARE)]}
+    with pytest.raises(ValueError, match="dragon_lair"):
         parse_settlemaker_geojson(geojson, seed="s")
 
 
@@ -396,3 +397,44 @@ def test_parse_village_geojson_default_target_population_curates_nothing():
     geojson = _village_geojson([_village_building(SQUARE, 6)])
     _districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
     assert buildings[0].building_type == "residence"
+
+
+def test_castle_ward_is_civic_land_with_garrison_buildings():
+    # Decided 2026-10-09, when TownParameters.has_citadel first let a castle
+    # ward through to the parser.
+    geojson = {"features": [_ward("castle", SQUARE), _building("castle", SQUARE, "b1")]}
+    districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert districts[0].zone_type == ZoneType.CIVIC
+    assert buildings[0].building_type == "garrison"
+    assert len(buildings[0].vacancies) == sum(n for _, n in JOB_VACANCIES_BY_BUILDING_TYPE["garrison"])
+
+
+def test_park_lawns_stay_gardens_even_with_a_shop_poi_on_them():
+    # Settlemaker pins `shop` POIs on some park lawn wedges; they're lawns,
+    # not shops.
+    geojson = {"features": [_ward("park", SQUARE), _building("park", SQUARE, "b1"), _poi("shop", "park", "b1", "p1")]}
+    _districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    assert buildings[0].building_type == "garden"
+
+
+def test_cathedral_pieces_merge_into_one_temple():
+    # Settlemaker draws its cathedral as one landmark split into several
+    # building features, POIs scattered over them (here: a stray shop).
+    left = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]
+    right = [[10.0, 0.0], [20.0, 0.0], [20.0, 10.0], [10.0, 10.0], [10.0, 0.0]]
+    ward = [[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [0.0, 10.0], [0.0, 0.0]]
+    geojson = {"features": [
+        _ward("cathedral", ward),
+        _building("cathedral", left, "b1"), _building("cathedral", right, "b2"),
+        _poi("shop", "cathedral", "b2", "p1"),
+        _ward("merchant", SQUARE_2), _building("merchant", SQUARE_2, "b3"),
+    ]}
+    districts, buildings = parse_settlemaker_geojson(geojson, seed="s")
+    temples = [b for b in buildings if b.district_id == districts[0].id]
+    assert len(temples) == 1 and districts[0].buildings == temples
+    temple = temples[0]
+    assert temple.building_type == "temple"
+    assert abs(ShapelyPolygon(temple.footprint).area - 200.0) < 0.5
+    assert len(temple.vacancies) == sum(n for _, n in JOB_VACANCIES_BY_BUILDING_TYPE["temple"])
+    # Other wards untouched, order kept.
+    assert [b.building_type for b in buildings] == ["temple", "workshop"]

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Tuple
 
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION
 
@@ -16,6 +16,12 @@ class TownParameters:
     has_port: bool = False
     magic_prevalence: float = 0.0
     aggression: float = 0.0
+    # Layout: compass bearings in degrees (0 = north, clockwise).
+    # river_bearings[i] is where river i flows in from (it leaves opposite);
+    # road_bearings are the directions approach roads arrive from.
+    has_citadel: bool = False
+    river_bearings: Tuple[float, ...] = ()
+    road_bearings: Tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         if self.target_population <= 0:
@@ -34,3 +40,8 @@ class TownParameters:
             raise ValueError("magic_prevalence must be between 0.0 and 1.0")
         if not (0.0 <= self.aggression <= 1.0):
             raise ValueError("aggression must be between 0.0 and 1.0")
+        if len(self.river_bearings) > self.num_rivers:
+            raise ValueError("river_bearings has more entries than num_rivers")
+        for bearing in tuple(self.river_bearings) + tuple(self.road_bearings):
+            if not (0.0 <= bearing < 360.0):
+                raise ValueError("bearings must be in [0, 360)")

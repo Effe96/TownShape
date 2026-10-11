@@ -20,6 +20,10 @@ HAS_COASTLINE = False
 HAS_PORT = False
 MAGIC_PREVALENCE = 0.0
 AGGRESSION = 0.0
+# Layout -- compass degrees, 0 = north, clockwise (see docs/narrative-town-parameters.md)
+HAS_CITADEL = False
+RIVER_BEARINGS = ()   # e.g. (45,) = river from the northeast to the southwest
+ROAD_BEARINGS = ()    # e.g. (0, 90) = roads arrive from the north and the east
 
 DB_PATH = "my_town.db"
 DERIVE_RELATIONSHIPS = True
@@ -37,6 +41,9 @@ if __name__ == "__main__":
         has_port=HAS_PORT,
         magic_prevalence=MAGIC_PREVALENCE,
         aggression=AGGRESSION,
+        has_citadel=HAS_CITADEL,
+        river_bearings=tuple(RIVER_BEARINGS),
+        road_bearings=tuple(ROAD_BEARINGS),
     )
 
     generate_town_from_parameters(params, DB_PATH)

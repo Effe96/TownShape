@@ -31,3 +31,15 @@ def test_port_harbour_size_is_large_for_a_big_population():
     large = build_azgaar_burg_input("s", 10000, has_port=True)
     assert small["harbourSize"] == "small"
     assert large["harbourSize"] == "large"
+
+
+def test_citadel_and_road_bearings_pass_through():
+    burg = build_azgaar_burg_input("s", 5000, has_citadel=True, road_bearings=(0, 90.5))
+    assert burg["citadel"] is True
+    assert burg["roadBearings"] == [0.0, 90.5]
+
+
+def test_no_road_bearings_leaves_roads_to_settlemaker():
+    burg = build_azgaar_burg_input("s", 5000)
+    assert burg["citadel"] is False
+    assert "roadBearings" not in burg

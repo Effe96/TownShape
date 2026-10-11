@@ -86,3 +86,24 @@ def test_generate_water_features_coastline_fully_covers_one_map_edge():
         features = generate_water_features(seed, bounds, num_rivers=0, has_coastline=True)
         coastline_polygon = features[0].polygon
         assert any(coastline_polygon.covers(edge) for edge in edges), f"seed {seed_index}: no edge fully covered"
+
+
+def test_river_bearing_sets_the_entry_side_and_crosses_to_the_opposite_one():
+    import math
+    from shapely.geometry import Point
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    for seed, bearing in [(s, b) for s in range(5) for b in (0.0, 45.0, 90.0, 200.0)]:
+        (river,) = generate_water_features(("town", seed), bounds, num_rivers=1, river_bearings=(bearing,))
+        rad = math.radians(bearing)
+        # Y-up frame: a compass bearing points along (sin, cos).
+        entry = (95 * math.sin(rad), 95 * math.cos(rad))
+        assert river.polygon.distance(Point(entry)) < 25
+        assert river.polygon.distance(Point(-entry[0], -entry[1])) < 25
+        assert river.polygon.distance(Point(0, 0)) < 25  # within a quarter of the half-width of the centre
+
+
+def test_rivers_beyond_the_bearing_list_stay_random():
+    bounds = (-100.0, -100.0, 100.0, 100.0)
+    with_bearing = generate_water_features(("town", 1), bounds, num_rivers=2, river_bearings=(45.0,))
+    without = generate_water_features(("town", 1), bounds, num_rivers=2)
+    assert with_bearing[1].polygon.equals(without[1].polygon)

@@ -14,6 +14,18 @@ replayed forward in time (`advance_town`) or edited mid-campaign
 (kill/injure a resident, declare a disease event) without breaking that
 consistency.
 
+**Direction (2026-10-10, P002):** the town's *physical* shape should follow
+the narrative too — not just knobs on a random generator, but whatever
+structure the narrative describes ("three concentric round walls, each with
+a moat fed by a redirected river, a heart-shaped church at the centre"),
+within stated boundaries. An agent turns narrative into a *layout spec*
+(shapes, walls, water, roads, districts, landmarks); the engine builds that
+structure and fills the rest procedurally, then the agent reviews the render
+and revises. Design: `docs/superpowers/specs/2026-10-10-narrative-layout-engine-design.md`.
+Already shipped toward this: physical construction edits on an existing town
+(`town_db/construction.py`) and narrative layout knobs (river/road bearings,
+citadel).
+
 ## How this folder is organized
 
 [`00-proposals.md`](00-proposals.md) is the inbox: file a new change
@@ -25,7 +37,7 @@ One file per stack layer:
 
 | File | Covers | Main code |
 |---|---|---|
-| [`01-generation-layer.md`](01-generation-layer.md) | Procedural spatial generation: districts, water, roads, block/lot subdivision, building footprints | `town_shaper/` |
+| [`01-generation-layer.md`](01-generation-layer.md) | Procedural spatial generation: districts, water, roads, block/lot subdivision, building footprints; construction edits on an existing town; the planned narrative layout engine | `town_shaper/`, `settlemaker_bridge/`, `town_db/construction.py` |
 | [`02-simulation-layer.md`](02-simulation-layer.md) | Population, economy, history simulation, relationships, narrative-parameter mapping | `town_db/`, `town_relationships/`, `town_narrative/` |
 | [`03-visualization-layer.md`](03-visualization-layer.md) | Static map rendering and the interactive web viewer | `town_db/render.py`, `town_viewer/` |
 

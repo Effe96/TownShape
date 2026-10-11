@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import date, timedelta
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence
 
 from town_shaper.assignment import DEFAULT_RICH_PROPORTION
 from town_shaper.generate import generate_town
@@ -64,6 +64,9 @@ def generate_town_database(
     magic_prevalence: float = 0.0,
     aggression: float = 0.0,
     svg_path: Optional[str] = None,
+    has_citadel: bool = False,
+    river_bearings: Sequence[float] = (),
+    road_bearings: Sequence[float] = (),
 ) -> None:
     town = generate_town(
         seed, target_population,
@@ -74,6 +77,9 @@ def generate_town_database(
         has_coastline=has_coastline,
         has_port=has_port,
         magic_prevalence=magic_prevalence,
+        has_citadel=has_citadel,
+        river_bearings=river_bearings,
+        road_bearings=road_bearings,
     )
 
     if svg_path is None:

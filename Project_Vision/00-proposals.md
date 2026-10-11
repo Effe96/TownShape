@@ -27,6 +27,7 @@ detail. Keep it in sync whenever an entry's status changes.
 | ID | Title | Layer | Status |
 |---|---|---|---|
 | [P001](#p001--integrate-existing-open-source-watabou-style-generators-instead-of-building-bespoke) | Integrate existing open-source watabou-style generators instead of building bespoke | generation (cross-cutting) | Addressed (Phases 1-2); Phase 3 deferred |
+| [P002](#p002--the-towns-physical-structure-should-follow-whatever-the-narrative-describes) | The town's physical structure should follow whatever the narrative describes | generation (cross-cutting) | Planned — design spec written, awaiting owner decisions D1-D4 |
 
 ## Status values
 
@@ -129,3 +130,54 @@ original vision but never integrated — that step is exactly Phase 3, still
 deliberately deferred per `docs/superpowers/plans/2026-09-08-settlemaker-integration.md`
 ("revisit only as its own proposal once Phase 2 has shipped and been lived with for
 a while") — not started, not scheduled.
+
+## P002 — The town's physical structure should follow whatever the narrative describes
+
+**Status:** Planned — design spec written, awaiting owner decisions D1-D4
+**Layer:** generation (cross-cutting — touches settlemaker integration, construction edits, agent docs)
+**Date:** 2026-10-10
+
+**Request:**
+As well as the random generation of the town, the agent should be able to
+edit it based on narrative input — e.g. a river crossing from northeast to
+southwest with the town symmetrical about it; a very large quadrangular
+castle in the middle; star-shaped walls. And new buildings and houses should
+be able to be built organically, often on the outer perimeter. Later
+clarified: those were only examples — "the point I am trying to drive is
+that the tool should be able to service more or less whatever narrative
+description it is given (within some boundaries). So if the narration says
+that, for example, 'the town is composed of three concentric round walls,
+every one with its moat which is a redirected river, and within the central
+one there a church in the shape of a heart', the tool should be more or less
+able to replicate this."
+
+**Why:** the end goal (P001's Notes) is an agent building a town from
+narrative; settlemaker is a closed random generator that can only be nudged
+by a few knobs.
+
+**Notes:**
+- Scope agreed with the owner: physical construction and visualization only —
+  not the simulated causes (newcomers needing housing etc.), which a separate
+  project of the owner's will provide and integrate with.
+- **Shipped first (2026-10-09/10, branch `town-construction`):** construction
+  edits on an existing town (`town_db/construction.py`: organic growth along
+  roads and side streets, field conversion/re-sowing, demolish/ruin/resize/
+  reshape, build near a named place); layout knobs for random towns
+  (`river_bearings`, `has_citadel`, `road_bearings`); viewer icons/toggles.
+  These serve "edit the town from narrative" but not arbitrary structure.
+- **Why a feature-by-feature approach can't meet the clarified request:**
+  structure (concentric walls, moats) must exist *before* settlemaker fills a
+  town, and no finite feature list covers free narrative.
+- **Design:** `docs/superpowers/specs/2026-10-10-narrative-layout-engine-design.md`
+  — a compositional *layout spec* (shapes + elements: wall, water, road,
+  district, open space, landmark, fields; relational placement; symmetry)
+  written by the agent; TownShape builds the structure, settlemaker (via a
+  fork with a "structured" entry point, gated on a 2-3 day spike) fills it in
+  its existing style; the agent reviews a render + fidelity report and
+  revises. P001's lesson applies: don't re-implement the *filling*, which is
+  what TownShape's own pipeline did badly.
+- **Open owner decisions:** D1 filling engine (settlemaker fork, gated on the
+  spike), D2 map style, D3 what happens to construction edits when a spec is
+  rebuilt, D4 offering the entry point upstream.
+
+**Resolution:** <open>

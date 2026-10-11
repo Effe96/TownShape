@@ -269,7 +269,11 @@ slice 1), before any implementation started.
 
 ### Gap: town's physical footprint (building stock) is fixed at generation, can't grow or shrink
 
-**Status:** Deferred — explicitly raised and set aside during the capability
+**Status:** Partially addressed 2026-10-09 — the *construction* half exists
+(`town_db/construction.add_buildings`, see `docs/narrative-construction.md`),
+deliberately not wired into `advance_town`; the demand side (who needs the
+buildings) is owned by a separate project. Demolition/abandonment not built.
+Original note: deferred — explicitly raised and set aside during the capability
 2 design discussion, to come back to later.
 
 `town_shaper` lays out districts and buildings once, at town creation. As

@@ -6,6 +6,7 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.ops import unary_union
 
 from town_shaper.buildings import BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS, JOB_VACANCIES_BY_BUILDING_TYPE
 from town_shaper.generate import BUILDING_ID_STRIDE
@@ -57,10 +58,39 @@ WARD_TYPE_TO_ZONE_TYPE: Dict[str, ZoneType] = {
     # park gets its own ZoneType, infilled as "garden" below, not folded
     # into civic.
     "park": ZoneType.PARK,
+    # Decided 2026-10-09, when TownParameters.has_citadel first let a castle
+    # ward through: a castle is civic land, and its buildings are a garrison
+    # (WARD_INFILL_BUILDING_TYPE below), not generic civic "workshop" infill.
+    "castle": ZoneType.CIVIC,
 }
+
+# Ward types whose plain (non-POI) buildings aren't their zone's generic
+# infill.
+WARD_INFILL_BUILDING_TYPE: Dict[str, str] = {
+    "castle": "garrison",
+}
+
+# Ward types settlemaker draws as ONE landmark split into many building
+# features (its cathedral ward: ~5-15 pieces, all drawn in #landmarks as
+# class "cathedral", with POIs scattered over them -- one "cathedral", the
+# odd "shop"). Each such ward becomes a single building of this type whose
+# footprint is the union of the pieces, so it is one temple with one set of
+# jobs, not one temple plus a pile of civic "workshop"s. Found 2026-10-09
+# when resizing "the temple" grew one piece of its own cathedral.
+MERGED_WARD_BUILDING_TYPE: Dict[str, str] = {
+    "cathedral": "temple",
+}
+# Gaps between a merged ward's pieces up to this size are closed when
+# unioning them, so slivers between pieces don't split the footprint.
+MERGE_GAP_TOLERANCE = 0.1
+
+# Ward types whose "buildings" aren't buildings, so any POI settlemaker pins
+# on them is ignored. A park's building features are its lawn wedges (the
+# green triangles), yet settlemaker still attaches `shop` POIs to some --
+# found 2026-10-09 as shop icons drawn on a park.
+POI_IGNORING_WARD_TYPES = {"park"}
 # Not buildable area -- skipped, never raise. Everything else unmapped
-# (castle, park, and -- discovered while implementing this, not in the
-# spec's original table -- military) raises loudly per the plan's Phase 1
+# raises loudly per the plan's Phase 1
 # task 3, so an actual generated town surfaces whether they show up in
 # practice before Phase 2 has to decide their fate for real.
 SKIPPABLE_WARD_TYPES = {"empty", "water"}
@@ -294,6 +324,8 @@ def parse_settlemaker_geojson(
     buildings: List[Building] = []
 
     current_district: Optional[District] = None
+    current_ward_type: Optional[str] = None
+    ward_type_by_district: Dict[int, str] = {}
     next_district_id = 0
 
     poi_by_building_id: Dict[str, Dict[str, Any]] = {
@@ -329,6 +361,8 @@ def parse_settlemaker_geojson(
             next_district_id += 1
             districts.append(district)
             current_district = district
+            current_ward_type = ward_type
+            ward_type_by_district[district.id] = ward_type
             continue
 
         if layer == "building":
@@ -340,12 +374,13 @@ def parse_settlemaker_geojson(
             cx, cy = _centroid(ring)
             building_id = current_district.id * BUILDING_ID_STRIDE + len(current_district.buildings)
 
-            poi = poi_by_building_id.get(props.get("building_id"))
+            poi = None if current_ward_type in POI_IGNORING_WARD_TYPES else poi_by_building_id.get(props.get("building_id"))
             building_type = None
             if poi is not None:
                 building_type = POI_KIND_TO_BUILDING_TYPE.get(poi["kind"])
             if building_type is None:
-                building_type = INFILL_BUILDING_TYPE_BY_ZONE[current_district.zone_type]
+                building_type = WARD_INFILL_BUILDING_TYPE.get(
+                    current_ward_type, INFILL_BUILDING_TYPE_BY_ZONE[current_district.zone_type])
 
             vacancies = [
                 JobVacancy(building_id=building_id, occupation=occupation)
@@ -373,4 +408,41 @@ def parse_settlemaker_geojson(
         # comment), and walls are re-derived from district zone_type, not
         # from settlemaker's wall geometry (Data Model / Rendering sections).
 
+    _merge_landmark_wards(districts, buildings, ward_type_by_district, seed, target_population)
     return districts, buildings
+
+
+def _merge_landmark_wards(districts, buildings, ward_type_by_district, seed, target_population) -> None:
+    """Mutates in place: each district whose ward type is in
+    MERGED_WARD_BUILDING_TYPE keeps one building -- its first piece's id,
+    the union of all its pieces as footprint (outer outline; a cloister
+    courtyard inside is filled), typed per the table."""
+    for district in districts:
+        building_type = MERGED_WARD_BUILDING_TYPE.get(ward_type_by_district.get(district.id))
+        if building_type is None or not district.buildings:
+            continue
+        pieces = [ShapelyPolygon(b.footprint).buffer(0) for b in district.buildings if b.footprint]
+        merged = unary_union([p.buffer(MERGE_GAP_TOLERANCE) for p in pieces]).buffer(-MERGE_GAP_TOLERANCE)
+        parts = [g for g in getattr(merged, "geoms", [merged]) if not g.is_empty]
+        outline = max(parts, key=lambda g: g.area)
+        ring = [tuple(pt) for pt in list(outline.exterior.coords)[:-1]]
+        first = district.buildings[0]
+        cx, cy = _centroid(ring)
+        temple = Building(
+            id=first.id,
+            district_id=district.id,
+            district_zone_type=district.zone_type,
+            x=cx, y=cy,
+            building_type=building_type,
+            capacity=_residential_capacity(building_type, target_population),
+            name=_building_name(seed, building_type, first.id),
+            footprint=ring,
+            vacancies=[
+                JobVacancy(building_id=first.id, occupation=occupation)
+                for occupation, count in JOB_VACANCIES_BY_BUILDING_TYPE[building_type]
+                for _ in range(count)
+            ],
+        )
+        dropped = {id(b) for b in district.buildings[1:]}
+        buildings[:] = [temple if b is first else b for b in buildings if id(b) not in dropped]
+        district.buildings = [temple]

@@ -66,6 +66,24 @@ rather than silently guessing.
   resident casualties among poor adults and guard/soldier-occupation
   residents specifically.
 
+- **`river_bearings`** (default `()`) — compass bearing in degrees
+  (`0` = north, clockwise: `45` NE, `90` E, `180` S, `270` W) that each
+  river flows *in from*; it leaves on the opposite side, crossing through
+  the middle of town (bearing-set rivers meander half as much as random
+  ones so they stay on the town). "A river from northeast to southwest" is
+  `45`. One entry per river, in order; at most `num_rivers` entries, and
+  rivers past the list keep a random course. Direction along the axis only
+  matters as a label — `45` and `225` draw the same course.
+- **`has_citadel`** (default `false`) — a castle/citadel: settlemaker
+  places a walled castle ward (typically against the town wall), whose
+  buildings become a `garrison`. Settlemaker can drop it if it can't fit
+  one; it then reports a degraded flag rather than failing.
+- **`road_bearings`** (default `()` = settlemaker chooses) — compass
+  bearings the approach roads arrive from. Settlemaker puts a gate within a
+  few degrees of each; outside the walls the road then follows field edges,
+  so its far end can sit tens of degrees off the bearing. Treat it as
+  "which gates exist", not a precise road course.
+
   There is no `stress` input field — it's a **derived** value, not
   something you set. After generating a town, call
   `town_db.stats.compute_stress(db_path)` to get a `0.0`-`1.0` readout
@@ -92,6 +110,14 @@ rather than silently guessing.
 | "coastal", "seaside", "on the coast/sea" | `has_coastline` | `true` |
 | (no coastal cue) | `has_coastline` | `false` (default) |
 | "port town", "trading port", "harbor" | `has_port` | `true` — also set `has_coastline=true` as the implied water source, unless the narrative specifies a river port instead |
+| "a river from the northeast to the southwest" | `river_bearings` | `(45,)` (with `num_rivers=1`) |
+| "the river flows north–south through town" | `river_bearings` | `(0,)` |
+| (river, no direction given) | `river_bearings` | `()` (default — random course) |
+| "a castle", "a citadel", "the lord's keep", "fortress town" | `has_citadel` | `true` |
+| (no castle cue) | `has_citadel` | `false` (default) |
+| "the north road and the east road", "roads from the north and east" | `road_bearings` | `(0, 90)` |
+| "a single road leads in from the west" | `road_bearings` | `(270,)` |
+| (no road cue) | `road_bearings` | `()` (default — settlemaker chooses) |
 | "arcane", "wizards on every corner", "high magic" | `magic_prevalence` | 0.3 – 0.6 |
 | "no magic", "mundane", "magic is rare/forbidden here" | `magic_prevalence` | 0.0 (explicit absence stated) |
 | (no magic cue either way) | `magic_prevalence` | 0.05 – 0.1 (low, not zero — most fantasy settings have *some* ambient magic even when the narrative doesn't call it out; reserve `0.0` for when the text explicitly says magic is absent/forbidden/mundane) |

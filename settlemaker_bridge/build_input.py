@@ -2,11 +2,10 @@
 
 Per the design's Data Model / Risks sections: fields TownShape has no
 current equivalent for (`culture`, `elevation`, `temperature`, `trade`,
-`biome`, `citadel`, `roadBearings`) are left unset rather than guessed --
-`town_narrative` gaining opinions about them is a separate, future
-proposal.
+`biome`) are left unset rather than guessed. `citadel` and `roadBearings`
+come from TownParameters.has_citadel / road_bearings.
 """
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 # Settlemaker's own "big city" line (AzgaarBurgInput.coreCapacity's default,
 # azgaar-input.d.ts) -- reused here rather than inventing a new threshold.
@@ -21,6 +20,8 @@ def build_azgaar_burg_input(
     seed: Any,
     target_population: int,
     has_port: bool = False,
+    has_citadel: bool = False,
+    road_bearings: Sequence[float] = (),
 ) -> Dict[str, Any]:
     """The population/port-derived fields only -- coastlineGeometry is
     attached separately by pipeline.generate_via_settlemaker, once the
@@ -41,7 +42,9 @@ def build_azgaar_burg_input(
         "name": str(seed),
         "population": target_population,
         "port": has_port,
-        "citadel": False,
+        # Settlemaker may still drop it if it can't fit one (it reports
+        # that as a degraded flag rather than failing).
+        "citadel": has_citadel,
         # No TownParameters equivalent yet for any of these three -- default
         # to the walled/plaza/temple look this project's own renderer already
         # assumes (town_db.render.WALLED_ZONE_TYPES draws a wall around civic/
@@ -53,6 +56,11 @@ def build_azgaar_burg_input(
         "shanty": False,
         "capital": False,
     }
+    if road_bearings:
+        # Compass degrees, 0 = north, clockwise -- settlemaker's own
+        # convention (azgaar-input.js maps a bearing to (sin, -cos) in its
+        # Y-down frame, i.e. north is up on the map).
+        burg["roadBearings"] = [float(b) for b in road_bearings]
     if has_port:
         burg["harbourSize"] = "large" if target_population >= LARGE_HARBOUR_MIN_POPULATION else "small"
     return burg
