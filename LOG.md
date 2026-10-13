@@ -26,6 +26,8 @@ contract in `CONTRACTS.md`. Choices made:
   map draws one dot per (building, kind) sized by count, killings on top of thefts;
   riots tint their district; legend toggles kinds and filters a year range. Unknown
   kinds draw grey.
+- What the sim must do to fill it: `docs/for-social-sim-town-events-2026-10-13.md`
+  (the sim's own agent changes the sim; TownShape sessions don't).
 - The `building-footprints` worktree under `.claude/worktrees/` is orphaned (its
   `.git/worktrees` entry is gone) and older than main; it has no `SIM_SCHEMA_SQL`, so no
   overlap.
