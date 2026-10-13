@@ -126,7 +126,112 @@ function drawBuildingIcons() {
   }
 }
 
-let mapData = { districts: [], buildings: [], water_features: [], roads: { nodes: [], edges: [] }, local_bounds: null };
+// The social sim's events (town_events). kind is an open list, so unknown
+// kinds still draw, in EVENT_FALLBACK_COLOR. Kinds listed later draw on top,
+// so the rare killings aren't buried under the thefts.
+const EVENT_COLORS = {
+  theft: "#e0a800",
+  riot: "#ff6a00",
+  group_killing: "#8b0000",
+  hired_assassination: "#6a0dad",
+  killing: "#e00000",
+};
+const EVENT_FALLBACK_COLOR = "#333333";
+const eventFilter = { hiddenKinds: new Set(), fromYear: null, toYear: null };
+
+function eventKindOrder(kind) {
+  return Object.keys(EVENT_COLORS).indexOf(kind);  // unknown kinds: -1, drawn first
+}
+
+function visibleEvents() {
+  return mapData.events.filter((e) => {
+    const year = parseInt(e.date, 10);
+    return !eventFilter.hiddenKinds.has(e.kind)
+      && (eventFilter.fromYear == null || year >= eventFilter.fromYear)
+      && (eventFilter.toYear == null || year <= eventFilter.toYear);
+  });
+}
+
+function drawEvents() {
+  const events = visibleEvents();
+  // Riots: tint and outline their district.
+  for (const district of mapData.districts) {
+    if (!events.some((e) => e.district_id === district.id && e.building_id == null)) continue;
+    drawPolygon(district.polygon, "rgba(255, 106, 0, 0.15)", EVENT_COLORS.riot);
+  }
+  // Buildings: one dot per (building, kind), sized by how many.
+  const counts = new Map();
+  for (const e of events) {
+    if (e.building_id == null) continue;
+    const key = `${e.building_id}|${e.kind}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const buildingById = new Map(mapData.buildings.map((b) => [b.id, b]));
+  const dots = [...counts].map(([key, n]) => {
+    const [id, kind] = key.split("|");
+    return { building: buildingById.get(Number(id)), kind, n };
+  }).filter((d) => d.building);
+  dots.sort((a, b) => eventKindOrder(a.kind) - eventKindOrder(b.kind));
+  for (const { building, kind, n } of dots) {
+    const { sx, sy } = worldToScreen(building.x, building.y);
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.min(3 + 2 * Math.sqrt(n), 14), 0, 2 * Math.PI);
+    ctx.fillStyle = EVENT_COLORS[kind] || EVENT_FALLBACK_COLOR;
+    ctx.globalAlpha = 0.75;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function renderEventFilter() {
+  const panel = document.getElementById("event-filter");
+  const kinds = [...new Set(mapData.events.map((e) => e.kind))].sort();
+  if (!kinds.length) { panel.innerHTML = ""; return; }
+  const years = mapData.events.map((e) => parseInt(e.date, 10));
+  const minYear = Math.min(...years), maxYear = Math.max(...years);
+  const rows = kinds.map((k) => {
+    const n = mapData.events.filter((e) => e.kind === k).length;
+    const off = eventFilter.hiddenKinds.has(k);
+    return `<div class="row toggle${off ? " off" : ""}" data-event-kind="${k}" role="button" tabindex="0" aria-pressed="${!off}"><span class="swatch" style="background:${EVENT_COLORS[k] || EVENT_FALLBACK_COLOR}"></span>${k.replace(/_/g, " ")} (${n})</div>`;
+  }).join("");
+  panel.innerHTML = `<div><strong>Events</strong></div>${rows}
+    <div class="row">Years <input id="event-from" type="number" min="${minYear}" max="${maxYear}" placeholder="${minYear}" value="${eventFilter.fromYear ?? ""}">
+    – <input id="event-to" type="number" min="${minYear}" max="${maxYear}" placeholder="${maxYear}" value="${eventFilter.toYear ?? ""}"></div>`;
+  const onYears = () => {
+    const from = document.getElementById("event-from").value;
+    const to = document.getElementById("event-to").value;
+    eventFilter.fromYear = from === "" ? null : Number(from);
+    eventFilter.toYear = to === "" ? null : Number(to);
+    draw();
+  };
+  document.getElementById("event-from").addEventListener("input", onYears);
+  document.getElementById("event-to").addEventListener("input", onYears);
+}
+
+function toggleEventKind(kind) {
+  if (eventFilter.hiddenKinds.has(kind)) eventFilter.hiddenKinds.delete(kind);
+  else eventFilter.hiddenKinds.add(kind);
+  renderEventFilter();
+  draw();
+  document.querySelector(`[data-event-kind="${kind}"]`)?.focus();
+}
+
+document.getElementById("event-filter").addEventListener("click", (e) => {
+  const row = e.target.closest("[data-event-kind]");
+  if (row) toggleEventKind(row.dataset.eventKind);
+});
+document.getElementById("event-filter").addEventListener("keydown", (e) => {
+  const row = e.target.closest("[data-event-kind]");
+  if (row && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    toggleEventKind(row.dataset.eventKind);
+  }
+});
+
+let mapData = { districts: [], buildings: [], water_features: [], roads: { nodes: [], edges: [] }, local_bounds: null, events: [] };
 const view = { scale: 1, offsetX: 0, offsetY: 0 };
 
 const svgLayer = document.getElementById("svg-layer");
@@ -339,6 +444,7 @@ function draw() {
   }
 
   drawBuildingIcons();
+  drawEvents();
 
   for (const buildingId of highlightedBuildingIds) {
     const building = mapData.buildings.find((b) => b.id === buildingId);
@@ -413,6 +519,7 @@ function loadMap() {
       }
       draw();
       renderLegend();
+      renderEventFilter();
     });
 }
 
@@ -504,10 +611,17 @@ function renderBuildingDetail(building) {
     <div class="detail-row"><span class="label">Capacity:</span> ${building.capacity}</div>
     <h4>Residents (${building.residents.length})</h4>
     ${rows || "<p class=\"hint\">Nobody lives or works here.</p>"}
+    ${building.events.length ? `<h4>What happened here (${building.events.length})</h4>${building.events.map(eventRow).join("")}` : ""}
   `;
   panel.querySelectorAll(".linked-name[data-resident-id]").forEach((el) => {
     el.addEventListener("click", () => selectResident(parseInt(el.dataset.residentId, 10)));
   });
+}
+
+function eventRow(e) {
+  const who = (p) => `<span class="linked-name" data-resident-id="${p.id}">${p.name}</span>`;
+  const people = [e.actor && `by ${who(e.actor)}`, e.target && `to ${who(e.target)}`].filter(Boolean).join(" ");
+  return `<div class="detail-row">${e.date} <span class="label" style="color:${EVENT_COLORS[e.kind] || EVENT_FALLBACK_COLOR}">${e.kind.replace(/_/g, " ")}</span> ${people}${e.detail ? ` — ${e.detail}` : ""}</div>`;
 }
 
 function selectBuilding(buildingId) {

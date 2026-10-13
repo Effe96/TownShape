@@ -39,6 +39,12 @@ telling its side):
   `ensure_sim_schema(conn)`, `sim_has_run(conn)`; `advance_town`/`derive_relationships` raise
   `SimOwnedTownError` once `sim_state` has a row. A resident with a `departures` row has left
   town alive. Causes of death, occupations and relationship types are open lists.
+- `town_events` (in `SIM_SCHEMA_SQL`; brief: `social-sim-demo/docs/townshape-brief-events-2026-10-13.md`) —
+  `id, event_date, kind, building_id, district_id, actor_resident_id, target_resident_id, detail`;
+  only `event_date` and `kind` are NOT NULL. Sim-written only (deletes and rewrites every save, like
+  `departures`); TownShape only reads it, in the viewer. One place per row: `building_id`, or
+  `district_id` when there's no single building (riots), or neither when off the map. `kind` is an
+  open list (no CHECK). Separate from `skirmish_events`, which stays TownShape's own (`advance_town`).
 - `town_db.names.name_new_resident(seed, resident_id, race, gender, family_name=None) -> (first, last)`.
 - `town_db.construction.place_building(db_path, seed, building_type, capacity,
   preferred_district_id=None) -> Optional[int]`.

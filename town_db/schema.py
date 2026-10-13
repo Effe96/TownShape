@@ -230,6 +230,21 @@ CREATE TABLE IF NOT EXISTS departures (
     reason TEXT NOT NULL
 );
 
+-- Things that happened somewhere in town (social-sim-demo/docs/
+-- townshape-brief-events-2026-10-13.md). One place per row: a building, or a
+-- district when there's no single building (riots); both NULL when it
+-- happened off the map. kind is an open list, like deaths.cause.
+CREATE TABLE IF NOT EXISTS town_events (
+    id INTEGER PRIMARY KEY,
+    event_date TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    building_id INTEGER REFERENCES buildings(id),
+    district_id INTEGER REFERENCES districts(id),
+    actor_resident_id INTEGER REFERENCES residents(id),
+    target_resident_id INTEGER REFERENCES residents(id),
+    detail TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sim_state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

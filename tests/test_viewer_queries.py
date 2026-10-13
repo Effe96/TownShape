@@ -436,3 +436,44 @@ def test_get_resident_detail_works_before_relationships_are_derived(tmp_path):
 
     assert mira["first_name"] == "Mira"
     assert mira["relationships"] == [] and mira["shopping"] == []
+
+
+def test_town_events_show_on_the_map_and_in_their_building_newest_first(tmp_path):
+    # The social sim writes town_events; the viewer marks placed ones on the
+    # map and lists a building's own events, with who did what to whom.
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+    conn = connect(db_path)
+    conn.executemany(
+        "INSERT INTO town_events (event_date, kind, building_id, district_id, actor_resident_id, "
+        "target_resident_id, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("1320-03-01", "theft", 3, None, 2, 1, "not noticed"),
+            ("1321-07-15", "killing", 3, None, 1, 2, "2 saw it"),
+            ("1322-01-01", "riot", None, 2, None, None, None),
+            ("1323-01-01", "theft", None, None, 3, 4, None),  # off the map
+        ],
+    )
+    data = get_map_data(conn)
+    shop = get_building_detail(conn, 3)
+    temple = get_building_detail(conn, 1)
+    conn.close()
+
+    assert [(e["kind"], e["building_id"], e["district_id"]) for e in data["events"]] == [
+        ("theft", 3, None), ("killing", 3, None), ("riot", None, 2),
+    ]
+    assert [e["kind"] for e in shop["events"]] == ["killing", "theft"]
+    assert shop["events"][0]["actor"] == {"id": 1, "name": "Mira Stonebrook"}
+    assert shop["events"][0]["target"] == {"id": 2, "name": "Tomas Stonebrook"}
+    assert shop["events"][0]["detail"] == "2 saw it"
+    assert temple["events"] == []
+
+
+def test_viewer_opens_a_town_from_before_town_events(tmp_path):
+    db_path = str(tmp_path / "town.db")
+    build_full_town(db_path)
+    conn = connect(db_path)
+    conn.execute("DROP TABLE town_events")
+    assert get_map_data(conn)["events"] == []
+    assert get_building_detail(conn, 3)["events"] == []
+    conn.close()

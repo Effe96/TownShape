@@ -404,3 +404,17 @@ def test_generate_town_database_persists_building_footprint_polygons(tmp_path):
         rings = points if isinstance(points[0][0], list) else [points]
         for ring in rings:
             assert len(ring) >= 3
+
+
+def test_ensure_sim_schema_adds_town_events_to_an_older_town(tmp_path):
+    from town_db.schema import ensure_sim_schema
+
+    conn = connect(str(tmp_path / "town.db"))
+    create_schema(conn)
+    conn.execute("DROP TABLE town_events")
+    ensure_sim_schema(conn)
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(town_events)")]
+    assert columns == [
+        "id", "event_date", "kind", "building_id", "district_id",
+        "actor_resident_id", "target_resident_id", "detail",
+    ]

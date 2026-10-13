@@ -12,6 +12,24 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-10-13 — Frodo — `town_events`: where the sim's killings, thefts and riots happened
+
+Per `social-sim-demo/docs/townshape-brief-events-2026-10-13.md`. The brief's suggested
+table taken as is, in `SIM_SCHEMA_SQL` (so `ensure_sim_schema` adds it to older towns);
+contract in `CONTRACTS.md`. Choices made:
+- `event_date`, `kind` NOT NULL; no CHECK on `kind` or on "one place per row" — the sim
+  owns its rules.
+- `skirmish_events` stays separate: it is TownShape's generation history, written by
+  `advance_town`, which the sim locks out anyway. Folding it in would mix two writers in
+  one table the sim wipes on every save.
+- Viewer: building panel lists its events newest first (with actor/target links);
+  map draws one dot per (building, kind) sized by count, killings on top of thefts;
+  riots tint their district; legend toggles kinds and filters a year range. Unknown
+  kinds draw grey.
+- The `building-footprints` worktree under `.claude/worktrees/` is orphaned (its
+  `.git/worktrees` entry is gone) and older than main; it has no `SIM_SCHEMA_SQL`, so no
+  overlap.
+
 ## 2026-10-10 — Frodo — TownShape's side of the social-sim integration
 
 Per `social-sim-demo/docs/townshape-brief.md` (branch `sim-integration`):

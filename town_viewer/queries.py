@@ -50,6 +50,14 @@ def get_map_data(conn: sqlite3.Connection) -> Dict[str, Any]:
         "districts": districts, "buildings": buildings, "water_features": water_features,
         "roads": {"nodes": road_nodes, "edges": road_edges},
         "local_bounds": _read_local_bounds(conn),
+        # The social sim's killings, thefts and riots; off-map ones have no place to mark.
+        "events": [] if not _has_table(conn, "town_events") else [
+            {"date": r[0], "kind": r[1], "building_id": r[2], "district_id": r[3]}
+            for r in conn.execute(
+                "SELECT event_date, kind, building_id, district_id FROM town_events "
+                "WHERE building_id IS NOT NULL OR district_id IS NOT NULL"
+            )
+        ],
     }
 
 
@@ -82,6 +90,21 @@ def get_building_detail(conn: sqlite3.Connection, building_id: int) -> Optional[
         )
     ]
     building["residents"] = residents
+    building["events"] = [] if not _has_table(conn, "town_events") else [
+        {
+            "date": r[0], "kind": r[1], "detail": r[2],
+            "actor": {"id": r[3], "name": r[4]} if r[3] is not None else None,
+            "target": {"id": r[5], "name": r[6]} if r[5] is not None else None,
+        }
+        for r in conn.execute(
+            "SELECT e.event_date, e.kind, e.detail, e.actor_resident_id, a.first_name || ' ' || a.last_name, "
+            "e.target_resident_id, t.first_name || ' ' || t.last_name FROM town_events e "
+            "LEFT JOIN residents a ON a.id = e.actor_resident_id "
+            "LEFT JOIN residents t ON t.id = e.target_resident_id "
+            "WHERE e.building_id = ? ORDER BY e.event_date DESC, e.id DESC",
+            (building_id,),
+        )
+    ]
     return building
 
 
