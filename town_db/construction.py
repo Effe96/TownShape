@@ -44,10 +44,15 @@ from shapely.ops import nearest_points, polygonize, unary_union
 from shapely.prepared import prep
 
 from town_db.schema import connect
-from town_shaper.buildings import BUILDING_HOME_CAPACITY, JOB_VACANCIES_BY_BUILDING_TYPE
+from town_shaper.buildings import BUILDING_HOME_CAPACITY, BUILDING_NAME_POOLS, JOB_VACANCIES_BY_BUILDING_TYPE
 from town_shaper.seeding import rng_for
 
 PLACEMENT_MODES = ("roads", "perimeter")
+
+# New buildings of these types are drawn as landmarks, with settlemaker's
+# landmark class for the type (the viewer's always-visible icon set).
+LANDMARK_CLASSES = {"temple": "cathedral", "garrison": "castle", "town_hall": "", "school": "",
+                    "university": "", "harbormaster_office": ""}
 
 # Clearance kept around every existing building, wall and road edge. New
 # houses stand almost wall-to-wall with each other (TERRACE_GAP), the way
@@ -506,13 +511,44 @@ def _insert_building(conn, building_id, district_id, zone, building_type, capaci
     d = math.dist(corners[1], corners[2])
     angle = math.atan2(corners[1][1] - corners[0][1], corners[1][0] - corners[0][0])
     centroid = shape.centroid
+    pool = BUILDING_NAME_POOLS.get(building_type)
+    name = None
+    if pool:
+        taken = {n for (n,) in conn.execute("SELECT name FROM buildings WHERE name IS NOT NULL")}
+        name = rng_for("building_name", building_id).choice([n for n in pool if n not in taken] or pool)
     conn.execute(
         "INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, name, "
-        "width, height, rotation, footprint) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)",
+        "width, height, rotation, footprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (building_id, district_id, zone, building_type, centroid.x, centroid.y,
-         capacity, w, d, angle, json.dumps(corners)),
+         capacity, name, w, d, angle, json.dumps(corners)),
     )
     return _path_d(corners) + "Z"
+
+
+def _draw_new(svg: str, building_id: int, building_type: str, path: str) -> str:
+    """Draw a new building into the SVG the way settlemaker draws its own:
+    landmark types in #landmarks (darker fill), a temple with its church
+    mark on top; everything else as a plain house in #buildings."""
+    shadow = [f'<path d="{path}"/>']
+    if building_type not in LANDMARK_CLASSES or _svg_group(svg, "landmarks")[0] < 0:
+        return _svg_insert(_svg_insert(svg, "buildings", [f'<path data-building-id="{building_id}" d="{path}"/>']),
+                           "shadows", shadow)
+    css = LANDMARK_CLASSES[building_type]
+    css = f' class="{css}"' if css else ""
+    svg = _svg_insert(svg, "landmarks", [f'<path data-building-id="{building_id}"{css} d="{path}"/>'])
+    svg = _svg_insert(svg, "shadows", shadow)
+    if building_type == "temple" and 'id="glyph-sm-mark-church"' in svg:
+        shape = Polygon(_points(path))
+        c = shape.centroid
+        corners = list(shape.minimum_rotated_rectangle.exterior.coords)
+        short_side = min(math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2]))
+        # Settlemaker's own rule (scene/build-scene.js): 0.55 x the church's
+        # short side, at least 2 units, on a 32-unit glyph.
+        scale = max(2.0, short_side * 0.55) / 32
+        svg = _svg_insert(svg, "marks", [
+            f'<use data-building-id="{building_id}" href="#glyph-sm-mark-church" transform="translate({c.x:.2f},{c.y:.2f}) '
+            f'scale({scale:.4f}) rotate(0) translate(-16,-16)"/>'])
+    return svg
 
 
 # --- the edit ----------------------------------------------------------------
@@ -842,15 +878,14 @@ def add_buildings(
 
         next_id = conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM buildings").fetchone()[0]
         new_ids = []
-        svg_buildings, svg_shadows = [], []
+        drawn_new = []
         for offset, shape in enumerate(placed):
             building_id = next_id + offset
             district_id = min(polys, key=lambda d_id: polys[d_id].distance(shape.centroid))
             path = _insert_building(conn, building_id, district_id, zones[district_id], building_type,
                                     BUILDING_HOME_CAPACITY.get(building_type, 0), shape)
             new_ids.append(building_id)
-            svg_buildings.append(f'<path data-building-id="{building_id}" d="{path}"/>')
-            svg_shadows.append(f'<path d="{path}"/>')
+            drawn_new.append((building_id, path))
 
         # Streets go into the DB road graph too (settlemaker's own roads
         # never did), so consumers other than the SVG can see them.
@@ -910,8 +945,8 @@ def add_buildings(
                                          for s, w in streets], before='<path class="core"')
         svg = _svg_insert(svg, "roads", [f'<path class="core" d="{_path_d(s.coords)}" stroke-width="{w * 0.7:.2f}"/>'
                                          for s, w in streets])
-        svg = _svg_insert(svg, "buildings", svg_buildings)
-        svg = _svg_insert(svg, "shadows", svg_shadows)
+        for building_id, path in drawn_new:
+            svg = _draw_new(svg, building_id, building_type, path)
         if new_frame:
             svg = _set_svg_frame(svg, raw_frame, new_frame)
         with open(svg_path, "w", encoding="utf-8") as f:
@@ -1034,8 +1069,7 @@ def _infill(conn, svg: str, seed, building_type: str, capacity: int,
                 if prepared_region.contains(shape) and not blocked.intersects(shape):
                     path = _insert_building(conn, building_id, d_id, zone, building_type, capacity, shape)
                     if svg:
-                        svg = _svg_insert(svg, "buildings", [f'<path data-building-id="{building_id}" d="{path}"/>'])
-                        svg = _svg_insert(svg, "shadows", [f'<path d="{path}"/>'])
+                        svg = _draw_new(svg, building_id, building_type, path)
                     return building_id, svg
     return None, svg
 
@@ -1157,7 +1191,8 @@ def _demolish(conn, svg: str, building_id: int, ruin: bool) -> str:
         else:
             svg = svg.replace(tag + "\n", "", 1).replace(tag, "", 1)
         svg = _svg_drop_shadow(svg, d)
-    return svg
+    # A placed temple's church mark goes with it.
+    return re.sub(rf'<use data-building-id="{building_id}"[^>]*/>\n?', "", svg)
 
 
 def _save(conn, svg_path: str, svg: str) -> None:

@@ -6,7 +6,8 @@ import shutil
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
-from town_db.construction import add_buildings, place_building
+from town_db.construction import add_buildings, demolish_building, place_building
+from town_shaper.buildings import BUILDING_NAME_POOLS
 from town_db.schema import connect, create_schema
 
 # A 40x40 walled core around the origin, one road leaving east, and a ring of
@@ -484,6 +485,26 @@ def test_place_building_avoids_houses_only_drawn_on_the_map(tmp_path):
         '<g id="buildings">', f'<g id="buildings"><path class="slum" d="{drawn}"/>'), encoding="utf-8")
     (shape,) = _footprints(db_path, [place_building(db_path, "seed", "residence", 8, preferred_district_id=1)])
     assert not shape.intersects(where_it_went)
+
+
+def test_place_building_draws_a_temple_as_a_named_church_landmark(tmp_path):
+    db_path = _make_town(tmp_path)
+    _add_core_houses(db_path)
+    svg_file = tmp_path / "town.svg"
+    svg_file.write_text(svg_file.read_text(encoding="utf-8").replace(
+        "</svg>", '<symbol id="glyph-sm-mark-church"/><g id="landmarks"></g>\n<g id="marks"></g>\n</svg>'),
+        encoding="utf-8")
+    building_id = place_building(db_path, "seed", "temple", 0, preferred_district_id=1)
+    svg = svg_file.read_text(encoding="utf-8")
+    assert f'<path data-building-id="{building_id}" class="cathedral"' in svg.split('<g id="landmarks">')[1]
+    assert f'<use data-building-id="{building_id}" href="#glyph-sm-mark-church"' in svg
+    conn = connect(db_path)
+    (name,) = conn.execute("SELECT name FROM buildings WHERE id = ?", (building_id,)).fetchone()
+    conn.close()
+    assert name in BUILDING_NAME_POOLS["temple"]
+
+    demolish_building(db_path, building_id)
+    assert f'data-building-id="{building_id}"' not in svg_file.read_text(encoding="utf-8")
 
 
 def test_place_building_grows_the_town_once_its_wards_are_full(tmp_path):
