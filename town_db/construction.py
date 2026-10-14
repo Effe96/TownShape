@@ -58,6 +58,10 @@ LANDMARK_CLASSES = {"temple": "cathedral", "garrison": "castle", "town_hall": ""
 # houses stand almost wall-to-wall with each other (TERRACE_GAP), the way
 # medieval street frontage was built up, not detached with yards.
 BUILDING_GAP = 0.4
+# A neighbour squeezed by a growing building must keep this share of its area.
+SQUEEZE_MIN_KEEP = 0.6
+# Growing with claim_empty_lots never builds over these, empty or not.
+UNCLAIMABLE_ZONES = {"farmland_edge", "park"}
 TERRACE_GAP = 0.12
 WALL_CLEARANCE = 2.0
 # Fallback house size (local units) for a town with no residence footprints
@@ -538,17 +542,19 @@ def _draw_new(svg: str, building_id: int, building_type: str, path: str) -> str:
     svg = _svg_insert(svg, "landmarks", [f'<path data-building-id="{building_id}"{css} d="{path}"/>'])
     svg = _svg_insert(svg, "shadows", shadow)
     if building_type == "temple" and 'id="glyph-sm-mark-church"' in svg:
-        shape = Polygon(_points(path))
-        c = shape.centroid
-        corners = list(shape.minimum_rotated_rectangle.exterior.coords)
-        short_side = min(math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2]))
-        # Settlemaker's own rule (scene/build-scene.js): 0.55 x the church's
-        # short side, at least 2 units, on a 32-unit glyph.
-        scale = max(2.0, short_side * 0.55) / 32
-        svg = _svg_insert(svg, "marks", [
-            f'<use data-building-id="{building_id}" href="#glyph-sm-mark-church" transform="translate({c.x:.2f},{c.y:.2f}) '
-            f'scale({scale:.4f}) rotate(0) translate(-16,-16)"/>'])
+        svg = _svg_insert(svg, "marks", [_church_mark(building_id, Polygon(_points(path)))])
     return svg
+
+
+def _church_mark(building_id: int, shape: Polygon) -> str:
+    """A placed temple's church mark, sized by settlemaker's own rule
+    (scene/build-scene.js): 0.55 x the church's short side, at least 2
+    units, on a 32-unit glyph."""
+    c = shape.centroid
+    corners = list(shape.minimum_rotated_rectangle.exterior.coords)
+    scale = max(2.0, min(math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2])) * 0.55) / 32
+    return (f'<use data-building-id="{building_id}" href="#glyph-sm-mark-church" '
+            f'transform="translate({c.x:.2f},{c.y:.2f}) scale({scale:.4f}) rotate(0) translate(-16,-16)"/>')
 
 
 # --- the edit ----------------------------------------------------------------
@@ -1242,12 +1248,51 @@ def _geom_d(geometry) -> str:
                    for g in getattr(geometry, "geoms", [geometry]) if isinstance(g, Polygon) and not g.is_empty)
 
 
+def _store_footprint(conn, building_id: int, shape: Polygon) -> List[List[float]]:
+    """Write a new outline into a building's row; returns its coords."""
+    corners = list(shape.minimum_rotated_rectangle.exterior.coords)[:4]
+    width, depth = math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2])
+    angle = math.atan2(corners[1][1] - corners[0][1], corners[1][0] - corners[0][0])
+    coords = [list(pt) for pt in shape.exterior.coords[:-1]]
+    conn.execute(
+        "UPDATE buildings SET footprint = ?, x = ?, y = ?, width = ?, height = ?, rotation = ? WHERE id = ?",
+        (json.dumps(coords), shape.centroid.x, shape.centroid.y, width, depth, angle, building_id))
+    return coords
+
+
+def _store_district(conn, district_id: int, shape) -> None:
+    parts = [shape] if shape.geom_type == "Polygon" else list(getattr(shape, "geoms", []))
+    rings = [[list(pt) for pt in p.exterior.coords[:-1]] for p in parts if p.geom_type == "Polygon" and p.area > 0.01]
+    conn.execute("UPDATE districts SET polygon = ? WHERE id = ?", (json.dumps(rings), district_id))
+
+
+def _redraw_outline(svg: str, drawn: List[Tuple[str, str]], coords) -> str:
+    """The first drawn piece becomes the new outline; any others (a merged
+    cathedral's) go."""
+    if not drawn:
+        return svg
+    (tag, d), rest = drawn[0], drawn[1:]
+    new_d = _path_d(coords) + "Z"
+    svg = svg.replace(tag, tag.replace(f'd="{d}"', f'd="{new_d}"'), 1)
+    start, end = _svg_group(svg, "shadows")
+    if start >= 0:
+        svg = svg[:start] + svg[start:end].replace(f'<path d="{d}"/>', f'<path d="{new_d}"/>', 1) + svg[end:]
+    for other_tag, other_d in rest:
+        svg = _svg_drop_shadow(svg.replace(other_tag + "\n", "", 1).replace(other_tag, "", 1), other_d)
+    return svg
+
+
 def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbors, keep_original, svg_path,
-             piece_transform=None):
+             piece_transform=None, squeeze_neighbors=False, claim_empty_lots=False):
     """Shared body of resize/reshape: replace a building's footprint with
     `target_of(footprint)`, clipped to what's free -- its own district,
     minus roads, walls, water and (unless absorb_neighbors, in which case
     same-district neighbours it overlaps are demolished) other buildings.
+    With squeeze_neighbors, a neighbour in the way instead gives up the
+    part the building grows into, if it keeps SQUEEZE_MIN_KEEP of its area.
+    With claim_empty_lots, it may also grow onto adjacent plots (districts)
+    with no buildings on them, fields and parks aside; the land it takes
+    moves into its own district.
 
     A building drawn as several pieces (a merged cathedral) is redrawn
     piece by piece when `piece_transform` is given -- each piece moved like
@@ -1266,9 +1311,19 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
         roads = unary_union([line.buffer(w / 2 + BUILDING_GAP)
                              for line, w in _svg_lines(svg, "roads", "casing") if w > 0])
         walls = unary_union([line.buffer(WALL_CLEARANCE) for line, _ in _svg_lines(svg, "walls")])
-        allowed = district.union(footprint).difference(unary_union([water, roads, walls]))
+        empty_lots = []
+        if claim_empty_lots:
+            for lot_id, zone, polygon in conn.execute(
+                    "SELECT id, zone_type, polygon FROM districts d WHERE id != ? AND NOT EXISTS "
+                    "(SELECT 1 FROM buildings b WHERE b.district_id = d.id AND b.building_type != ?)",
+                    (district_id, DEMOLISHED)):
+                lot = unary_union([Polygon(part).buffer(0) for part in json.loads(polygon) if len(part) >= 3])
+                if zone not in UNCLAIMABLE_ZONES and lot.intersects(district.buffer(BUILDING_GAP)):
+                    empty_lots.append((lot_id, lot))
+        allowed = unary_union([district, footprint] + [lot for _, lot in empty_lots]).difference(
+            unary_union([water, roads, walls]))
 
-        absorbed, absorbed_lots, others = [], [], []
+        absorbed, absorbed_lots, others, squeezable = [], [], [], []
         for n_id, n_district, *n_geometry in conn.execute(
                 "SELECT id, district_id, x, y, width, height, rotation, footprint FROM buildings "
                 "WHERE id != ? AND building_type != ?", (building_id, DEMOLISHED)):
@@ -1280,6 +1335,8 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
             if absorb_neighbors and n_district == district_id and shape.intersection(target).area > 0.01:
                 absorbed.append(n_id)
                 absorbed_lots.append(shape)
+            elif squeeze_neighbors and shape.difference(target).area >= SQUEEZE_MIN_KEEP * shape.area:
+                squeezable.append((n_id, shape))
             else:
                 others.append(shape)
         for n_id in absorbed:
@@ -1296,14 +1353,26 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
         if result is None or result.area < 0.5:
             raise ValueError(f"no room to rebuild building {building_id} like that")
         result = Polygon(result.exterior).simplify(0.05)
+        coords = _store_footprint(conn, building_id, result)
 
-        corners = list(result.minimum_rotated_rectangle.exterior.coords)[:4]
-        width, depth = math.dist(corners[0], corners[1]), math.dist(corners[1], corners[2])
-        angle = math.atan2(corners[1][1] - corners[0][1], corners[1][0] - corners[0][0])
-        coords = [list(pt) for pt in result.exterior.coords[:-1]]
-        conn.execute(
-            "UPDATE buildings SET footprint = ?, x = ?, y = ?, width = ?, height = ?, rotation = ? WHERE id = ?",
-            (json.dumps(coords), result.centroid.x, result.centroid.y, width, depth, angle, building_id))
+        claimed = []
+        for lot_id, lot in empty_lots:
+            if lot.intersection(result).area > 0.01:
+                district = district.union(lot.intersection(result))
+                _store_district(conn, lot_id, lot.difference(result))
+                claimed.append(lot_id)
+        if claimed:
+            _store_district(conn, district_id, district)
+
+        squeezed = []
+        for n_id, shape in squeezable:
+            kept = _largest(shape.difference(result).buffer(0))
+            if kept is None or kept.area >= shape.area - 0.01:
+                continue
+            kept = Polygon(kept.exterior).simplify(0.05)
+            drawn = _svg_tags_for(svg, shape) if svg else []
+            svg = _redraw_outline(svg, drawn, _store_footprint(conn, n_id, kept))
+            squeezed.append(n_id)
 
         drawn = _svg_tags_for(svg, footprint) if svg else []
         if len(drawn) > 1 and piece_transform is not None:
@@ -1329,21 +1398,16 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
                 svg = _svg_insert(svg, "landmarks" if _svg_group(svg, "landmarks")[0] >= 0 else "buildings",
                                   [first_tag.replace(f'd="{first_d}"', f'd="{extra_d}"')])
                 svg = _svg_insert(svg, "shadows", [f'<path d="{extra_d}"/>'])
-        elif drawn:
-            # The first drawn piece becomes the new outline; any others (a
-            # merged cathedral's) go.
-            (tag, d), rest = drawn[0], drawn[1:]
-            new_d = _path_d(coords) + "Z"
-            svg = svg.replace(tag, tag.replace(f'd="{d}"', f'd="{new_d}"'), 1)
-            start, end = _svg_group(svg, "shadows")
-            if start >= 0:
-                svg = svg[:start] + svg[start:end].replace(f'<path d="{d}"/>', f'<path d="{new_d}"/>', 1) + svg[end:]
-            for other_tag, other_d in rest:
-                svg = _svg_drop_shadow(svg.replace(other_tag + "\n", "", 1).replace(other_tag, "", 1), other_d)
+        else:
+            svg = _redraw_outline(svg, drawn, coords)
 
-        outcome = {"building_id": building_id, "absorbed": absorbed,
+        # A placed temple's mark follows its new outline.
+        svg = re.sub(rf'<use data-building-id="{building_id}"[^>]*/>',
+                     lambda _: _church_mark(building_id, Polygon(coords)), svg)
+
+        outcome = {"building_id": building_id, "absorbed": absorbed, "squeezed": squeezed, "claimed_lots": claimed,
                    "area_factor_achieved": round(result.area / footprint.area, 3)}
-        _log(conn, operation, dict(params, **outcome), [building_id] + absorbed)
+        _log(conn, operation, dict(params, **outcome), [building_id] + absorbed + squeezed)
     except Exception:
         conn.close()
         raise
@@ -1352,15 +1416,20 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
 
 
 def resize_building(db_path: str, building_id: int, area_factor: float,
-                    absorb_neighbors: bool = False, svg_path: Optional[str] = None) -> dict:
+                    absorb_neighbors: bool = False, svg_path: Optional[str] = None,
+                    squeeze_neighbors: bool = False, claim_empty_lots: bool = False) -> dict:
     """Grow (area_factor > 1) or shrink (< 1) a building about its centre,
     keeping its shape. Growth stays inside its district and off roads,
     walls and water, and stops at neighbouring buildings -- unless
     absorb_neighbors, which lets it take over (build across the whole lot
     of) every same-district neighbour it overlaps; they're demolished, and
-    the result can exceed the request. Returns {"building_id", "absorbed",
+    the result can exceed the request. squeeze_neighbors instead shrinks
+    each neighbour in the way (it keeps its residents) as long as it keeps
+    SQUEEZE_MIN_KEEP of its area. claim_empty_lots lets it grow onto
+    adjacent plots with no buildings (not fields or parks). Returns
+    {"building_id", "absorbed", "squeezed", "claimed_lots",
     "area_factor_achieved"}: in a packed block growth can fall well short
-    of the request without absorb_neighbors."""
+    of the request without one of those."""
     if area_factor <= 0:
         raise ValueError("area_factor must be positive")
     scale = math.sqrt(area_factor)
@@ -1371,23 +1440,29 @@ def resize_building(db_path: str, building_id: int, area_factor: float,
         return affinity.scale(fp, scale, scale, origin=fp.centroid)
 
     return _rebuild(db_path, building_id, grow,
-                    "resize_building", {"area_factor": area_factor, "absorb_neighbors": absorb_neighbors},
+                    "resize_building", {"area_factor": area_factor, "absorb_neighbors": absorb_neighbors,
+                                        "squeeze_neighbors": squeeze_neighbors,
+                                        "claim_empty_lots": claim_empty_lots},
                     absorb_neighbors, keep_original=area_factor >= 1, svg_path=svg_path,
-                    piece_transform=lambda piece: affinity.scale(piece, scale, scale, origin=origin["centre"]))
+                    piece_transform=lambda piece: affinity.scale(piece, scale, scale, origin=origin["centre"]),
+                    squeeze_neighbors=squeeze_neighbors, claim_empty_lots=claim_empty_lots)
 
 
 def reshape_building(db_path: str, building_id: int, shape: str, area_factor: float = 1.0,
-                     absorb_neighbors: bool = False, svg_path: Optional[str] = None) -> dict:
+                     absorb_neighbors: bool = False, svg_path: Optional[str] = None,
+                     squeeze_neighbors: bool = False, claim_empty_lots: bool = False) -> dict:
     """Rebuild a building as a "rectangle", "square" or "round" footprint of
     `area_factor` times its current area, same centre, aligned with its
     long side; clipped like resize_building (so a big round tower in a
     packed block may come out flattened against its neighbours unless
-    absorb_neighbors)."""
+    absorb_neighbors, squeeze_neighbors or claim_empty_lots)."""
     if shape not in RESHAPES:
         raise ValueError(f"shape must be one of {RESHAPES}")
     if area_factor <= 0:
         raise ValueError("area_factor must be positive")
     return _rebuild(db_path, building_id, lambda fp: _shaped(fp, shape, fp.area * area_factor),
                     "reshape_building",
-                    {"shape": shape, "area_factor": area_factor, "absorb_neighbors": absorb_neighbors},
-                    absorb_neighbors, keep_original=False, svg_path=svg_path)
+                    {"shape": shape, "area_factor": area_factor, "absorb_neighbors": absorb_neighbors,
+                     "squeeze_neighbors": squeeze_neighbors, "claim_empty_lots": claim_empty_lots},
+                    absorb_neighbors, keep_original=False, svg_path=svg_path, squeeze_neighbors=squeeze_neighbors,
+                    claim_empty_lots=claim_empty_lots)

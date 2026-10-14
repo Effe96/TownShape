@@ -6,7 +6,7 @@ import shutil
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
-from town_db.construction import add_buildings, demolish_building, place_building
+from town_db.construction import SQUEEZE_MIN_KEEP, add_buildings, demolish_building, place_building, reshape_building
 from town_shaper.buildings import BUILDING_NAME_POOLS
 from town_db.schema import connect, create_schema
 
@@ -290,6 +290,45 @@ def test_enlarging_stops_at_a_neighbour_unless_it_absorbs_it(tmp_path):
     assert Polygon(json.loads(_row(db_path2, 2)[3])).buffer(1e-6).contains(Polygon(HOUSE_B))
 
 
+def test_enlarging_can_squeeze_a_neighbour_instead(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    outcome = resize_building(db_path, 2, 2.0, squeeze_neighbors=True)
+    assert outcome["squeezed"] == [3] and outcome["absorbed"] == []
+    grown = Polygon(json.loads(_row(db_path, 2)[3]))
+    b_type, _, _, footprint = _row(db_path, 3)
+    squeezed = Polygon(json.loads(footprint))
+    assert b_type == "residence"  # still standing, just smaller
+    assert SQUEEZE_MIN_KEEP * Polygon(HOUSE_B).area <= squeezed.area < Polygon(HOUSE_B).area
+    assert grown.intersection(squeezed).area < 1e-6
+    assert outcome["area_factor_achieved"] > 1.9
+    svg = (tmp_path / "town.svg").read_text(encoding="utf-8")
+    assert svg.count("M-8.00,-8.00") == 0  # B redrawn at its new size
+
+
+def test_enlarging_can_claim_an_empty_lot_next_door(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    conn = connect(db_path)
+    # A sits on a lot of exactly its size; an empty lot lies west of it.
+    conn.execute("INSERT INTO districts VALUES (50, 'poor_residential', ?)", (json.dumps([HOUSE_A]),))
+    conn.execute("INSERT INTO districts VALUES (51, 'poor_residential', ?)",
+                 (json.dumps([[[-16, -9], [-12, -9], [-12, -5], [-16, -5]]]),))
+    conn.execute("UPDATE buildings SET district_id = 50 WHERE id = 2")
+    conn.commit()
+    conn.close()
+    assert resize_building(db_path, 2, 2.0)["area_factor_achieved"] == 1.0
+
+    outcome = resize_building(db_path, 2, 2.0, claim_empty_lots=True)
+    assert outcome["claimed_lots"] == [51]
+    assert outcome["area_factor_achieved"] > 1.2
+    grown = Polygon(json.loads(_row(db_path, 2)[3]))
+    conn = connect(db_path)
+    lots = {d_id: unary_union([Polygon(r) for r in json.loads(p)])
+            for d_id, p in conn.execute("SELECT id, polygon FROM districts WHERE id IN (50, 51)")}
+    conn.close()
+    assert lots[50].buffer(1e-6).contains(grown)  # the land it took is now its own lot's
+    assert lots[51].intersection(grown).area < 1e-6
+
+
 def test_shrinking_keeps_the_shape_about_its_centre(tmp_path):
     db_path = _town_with_pair(tmp_path)
     outcome = resize_building(db_path, 2, 0.5)
@@ -502,6 +541,13 @@ def test_place_building_draws_a_temple_as_a_named_church_landmark(tmp_path):
     (name,) = conn.execute("SELECT name FROM buildings WHERE id = ?", (building_id,)).fetchone()
     conn.close()
     assert name in BUILDING_NAME_POOLS["temple"]
+
+    def mark_scale():
+        return float(re.search(rf'data-building-id="{building_id}" href="#glyph-sm-mark-church"[^>]*scale\(([\d.]+)\)',
+                               svg_file.read_text(encoding="utf-8")).group(1))
+    before = mark_scale()
+    reshape_building(db_path, building_id, "square", area_factor=9)
+    assert mark_scale() > before  # the cross grows with the church
 
     demolish_building(db_path, building_id)
     assert f'data-building-id="{building_id}"' not in svg_file.read_text(encoding="utf-8")
