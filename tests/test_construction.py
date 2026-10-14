@@ -329,6 +329,27 @@ def test_enlarging_can_claim_an_empty_lot_next_door(tmp_path):
     assert lots[51].intersection(grown).area < 1e-6
 
 
+def test_enlarging_onto_a_field_needs_claim_fields_and_trims_the_plot(tmp_path):
+    db_path = _make_town(tmp_path)
+    conn = connect(db_path)
+    # A temple on its own lot against field district 2's east edge (x = -52).
+    conn.execute("INSERT INTO districts VALUES (60, 'civic', ?)",
+                 (json.dumps([[[-52, -70], [-51, -70], [-51, -66], [-52, -66]]]),))
+    conn.execute("INSERT INTO buildings (id, district_id, zone_type, building_type, x, y, capacity, footprint) "
+                 "VALUES (9, 60, 'civic', 'temple', -51.5, -68, 0, ?)",
+                 (json.dumps([[-52, -69], [-51, -69], [-51, -67], [-52, -67]]),))
+    conn.commit()
+    conn.close()
+    assert 2 not in resize_building(db_path, 9, 9.0, claim_empty_lots=True)["claimed_lots"]
+
+    outcome = resize_building(db_path, 9, 9.0, claim_fields=True)
+    assert 2 in outcome["claimed_lots"]
+    grown = Polygon(json.loads(_row(db_path, 9)[3]))
+    assert grown.intersection(Polygon(FIELDS[0])).area > 1
+    svg = (tmp_path / "town.svg").read_text(encoding="utf-8")
+    assert 'class="plot" d="M-70,-70L-52,-70L-52,-52L-70,-52Z"' not in svg  # the field's drawing was trimmed
+
+
 def test_shrinking_keeps_the_shape_about_its_centre(tmp_path):
     db_path = _town_with_pair(tmp_path)
     outcome = resize_building(db_path, 2, 0.5)
