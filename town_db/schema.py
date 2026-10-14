@@ -165,6 +165,7 @@ CREATE TABLE generation_parameters (
     magic_prevalence REAL NOT NULL,
     aggression REAL NOT NULL,
     has_citadel INTEGER NOT NULL DEFAULT 0,
+    has_walls INTEGER NOT NULL DEFAULT 1,
     river_bearings TEXT NOT NULL DEFAULT '[]',
     road_bearings TEXT NOT NULL DEFAULT '[]'
 );

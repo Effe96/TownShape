@@ -20,6 +20,7 @@ class TownParameters:
     # river_bearings[i] is where river i flows in from (it leaves opposite);
     # road_bearings are the directions approach roads arrive from.
     has_citadel: bool = False
+    has_walls: bool = True
     river_bearings: Tuple[float, ...] = ()
     road_bearings: Tuple[float, ...] = ()
 

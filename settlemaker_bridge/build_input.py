@@ -3,7 +3,7 @@
 Per the design's Data Model / Risks sections: fields TownShape has no
 current equivalent for (`culture`, `elevation`, `temperature`, `trade`,
 `biome`) are left unset rather than guessed. `citadel` and `roadBearings`
-come from TownParameters.has_citadel / road_bearings.
+come from TownParameters.has_citadel / road_bearings, `walls` from has_walls.
 """
 from typing import Any, Dict, Sequence
 
@@ -21,6 +21,7 @@ def build_azgaar_burg_input(
     target_population: int,
     has_port: bool = False,
     has_citadel: bool = False,
+    has_walls: bool = True,
     road_bearings: Sequence[float] = (),
 ) -> Dict[str, Any]:
     """The population/port-derived fields only -- coastlineGeometry is
@@ -45,12 +46,12 @@ def build_azgaar_burg_input(
         # Settlemaker may still drop it if it can't fit one (it reports
         # that as a degraded flag rather than failing).
         "citadel": has_citadel,
-        # No TownParameters equivalent yet for any of these three -- default
-        # to the walled/plaza/temple look this project's own renderer already
+        "walls": has_walls,
+        # No TownParameters equivalent yet for these -- default to the
+        # plaza/temple look this project's own renderer already
         # assumes (town_db.render.WALLED_ZONE_TYPES draws a wall around civic/
         # merchant/rich_residential/port unconditionally; BUILDING_TYPES_BY_ZONE's
         # civic weights already include a temple at 0.25).
-        "walls": True,
         "plaza": True,
         "temple": True,
         "shanty": False,

@@ -74,6 +74,10 @@ rather than silently guessing.
   `45`. One entry per river, in order; at most `num_rivers` entries, and
   rivers past the list keep a random course. Direction along the axis only
   matters as a label — `45` and `225` draw the same course.
+- **`has_walls`** (default `true`) — whether settlemaker rings the town
+  with a defensive wall (towers and gates). `false` gives an open,
+  unwalled town; gates then don't exist, so placing buildings "near the
+  north gate" won't resolve.
 - **`has_citadel`** (default `false`) — a castle/citadel: settlemaker
   places a walled castle ward (typically against the town wall), whose
   buildings become a `garrison`. Settlemaker can drop it if it can't fit
@@ -115,6 +119,8 @@ rather than silently guessing.
 | (river, no direction given) | `river_bearings` | `()` (default — random course) |
 | "a castle", "a citadel", "the lord's keep", "fortress town" | `has_citadel` | `true` |
 | (no castle cue) | `has_citadel` | `false` (default) |
+| "unwalled", "open town", "no walls", "sprawling village" | `has_walls` | `false` |
+| (no wall cue) | `has_walls` | `true` (default) |
 | "the north road and the east road", "roads from the north and east" | `road_bearings` | `(0, 90)` |
 | "a single road leads in from the west" | `road_bearings` | `(270,)` |
 | (no road cue) | `road_bearings` | `()` (default — settlemaker chooses) |

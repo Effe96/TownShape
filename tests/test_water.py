@@ -1,4 +1,4 @@
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Polygon
 
 from town_shaper.seeding import rng_for
 from town_shaper.water import RIVER_WIDTH, _EDGES, _point_on_edge, generate_water_features
@@ -39,16 +39,16 @@ def test_generate_water_features_is_deterministic():
         assert f1.polygon.equals(f2.polygon)
 
 
-def test_generate_water_features_river_polygons_stay_within_bounds():
+def test_generate_water_features_rivers_run_on_past_the_bounds_at_both_ends():
+    # The map drawn around a town is wider than its bounds, so a river must
+    # not stop at their edge: both ends carry on well outside them.
     bounds = (-100.0, -100.0, 100.0, 100.0)
+    box = Polygon.from_bounds(*bounds)
     features = generate_water_features(("town", 1), bounds, num_rivers=5, has_coastline=False)
     for feature in features:
-        minx, miny, maxx, maxy = feature.polygon.bounds
-        margin = RIVER_WIDTH  # waypoints are room-aware and never reach bounds, so buffering (radius <= RIVER_WIDTH/2) is the only source of overshoot past the exact edge point
-        assert minx >= bounds[0] - margin
-        assert miny >= bounds[1] - margin
-        assert maxx <= bounds[2] + margin
-        assert maxy <= bounds[3] + margin
+        outside = feature.polygon.difference(box)
+        assert len(getattr(outside, "geoms", [outside])) == 2  # one piece off each end
+        assert all(piece.distance(box) == 0 and piece.length > 2 * 200 for piece in outside.geoms)
 
 
 def test_generate_water_features_rivers_are_reliably_curved_across_seeds():

@@ -43,43 +43,27 @@ turned "settlemaker's SVG paints zero water" into real, visible water on
 every case in a sweep of population 2000/3000/6000/8000 x 3 seeds x
 {river-only, coastline-only, both} = 36/36.
 
-**Why the persisted water is scaled and positioned a second time, after the
-real call, instead of just reusing the dry-run-scaled version.** The dry
-call's frame is only ever a *prediction* of the real call's frame, used
-because `coastlineGeometry` must be supplied before the real call exists to
-measure -- and the prediction is wrong on both axes, not just one: handing
-settlemaker a real coastline measurably shifts where it lays out the burg's
-mesh (a population-8000 coastal town moved its frame's center by ~42 units)
-*and* shrinks it (measured on the same town: dry radius 127.1, real radius
-104.8 -- 17.5% smaller). A first version of this fix only corrected the
-center, reusing the dry run's scale for the persisted water -- that made
-port buildings' *position* relative to the water roughly right, while the
-water polygon itself stayed sized for a frame 17.5% bigger than the one it
-was actually being placed into, so it visibly overspilled onto dry land.
-Fixed by recomputing the persisted water from `water_features` (the
-original, unscaled town_shaper polygons) a second time, scaled by the
-*real* call's own local_radius and centered on the *real* call's own
-center -- the dry-run-scaled version is now used for exactly one thing,
-the coastlineGeometry input, and never returned.
+**Why the persisted water is exactly the water settlemaker was given.**
+The dry call's frame is only a *prediction* of the real call's: handing
+settlemaker a coastline shifts and shrinks its mesh (a population-8000
+coastal town moved its frame's center by ~42 units and its radius from
+127.1 to 104.8). An earlier version re-scaled and re-centred the persisted
+water onto the real frame -- but settlemaker draws coastlineGeometry as
+given and lays its mesh out around it, so that copy landed off the drawn
+river entirely (measured 2026-10-14: 0% overlap on three towns). The
+persisted water is now the coastlineGeometry input itself, cut to the map
+frame (rivers run on well past it -- town_shaper.water.RIVER_RUN_OFF).
 
-**Two more corrections, both downstream of the same root cause: predicting
-`coastlineGeometry` from the dry call is a real scale/position, not a
-perfect one, so nothing downstream of it can just trust it blindly.**
+**Two more corrections, both downstream of the same root cause: the
+coastlineGeometry scale comes from the dry call's predicted frame, not the
+real one, so nothing downstream of it can just trust it blindly.**
 
-1. **Water is clipped to real land, not just repositioned.** Even correctly
-   scaled and centered, `town_shaper`'s coastline "sea box" (deliberately
-   oversized -- see `town_shaper.water._generate_coastline`) is shaped
-   relative to `compute_town_bounds`' own square frame, which has no
-   guaranteed relationship to settlemaker's actual (independently sized)
-   burg footprint. Measured directly: with position+scale corrected but
-   *not* clipped, 197 of 356 non-port buildings on a real town ended up
-   geometrically inside the water polygon -- a strictly worse visible bug
-   than the original misalignment, because now the water polygon was
-   honestly positioned right on top of buildings that are not, in fact,
-   underwater. Fixed by subtracting every district's real polygon (known
-   only after the real call) from the water polygon -- water can never
-   visually cover a building or district, regardless of how good or bad
-   the scale/position prediction was for this particular town.
+1. **Water is no longer clipped to land.** It used to be, while the
+   persisted copy was re-positioned off the drawn river (197 of 356
+   buildings once landed inside it). Now that it *is* the drawn water,
+   no building sits under it (0 of ~390 on two towns, 2026-10-14), and
+   clipping only chopped rivers apart where settlemaker's farm patches
+   (larger than the fields it draws) reach under them.
 2. **PORT-zone districts whose classification the water clip disagrees
    with get reclassified.** `coastlineGeometry`'s imprecision doesn't only
    affect where we draw water -- it's also the input settlemaker itself
@@ -152,13 +136,6 @@ def _local_radius_from_bounds(local_bounds: dict) -> float:
     return min(width, height) / 2.0
 
 
-def _center_of_bounds(local_bounds: dict) -> Tuple[float, float]:
-    return (
-        (local_bounds["min_x"] + local_bounds["max_x"]) / 2.0,
-        (local_bounds["min_y"] + local_bounds["max_y"]) / 2.0,
-    )
-
-
 def _scale_water_features(
     water_features: List[WaterFeature], town_bounds_half: float, local_radius: float,
 ) -> List[WaterFeature]:
@@ -202,62 +179,6 @@ def _coastline_rings(water_features: List[WaterFeature]) -> List[List[Dict[str, 
     return [[{"x": x, "y": y} for x, y in list(ring.coords)[:-1]]
             for polygon in polygons if not polygon.is_empty
             for ring in [polygon.exterior, *polygon.interiors]]
-
-
-def _translate_water_features(
-    water_features: List[WaterFeature], dx: float, dy: float,
-) -> List[WaterFeature]:
-    """Shift already-scaled water features by (dx, dy) in the same frame
-    their coordinates already live in. Used to correct for the real
-    (with-coastline) settlemaker call landing its burg mesh at a different
-    center than the dry (no-water) call used to derive the scale in
-    _scale_water_features -- see generate_via_settlemaker's docstring."""
-    if dx == 0.0 and dy == 0.0:
-        return water_features
-    translated: List[WaterFeature] = []
-    for feature in water_features:
-        rings = _water_feature_rings(feature)
-        exterior = [(x + dx, y + dy) for x, y in rings[0]]
-        holes = [[(x + dx, y + dy) for x, y in ring] for ring in rings[1:]]
-        translated.append(WaterFeature(
-            id=feature.id, kind=feature.kind,
-            polygon=ShapelyPolygon(exterior, holes=holes),
-        ))
-    return translated
-
-
-def _clip_water_to_land(
-    water_features: List[WaterFeature], districts: List[District],
-) -> List[WaterFeature]:
-    """Subtract every district's real polygon from each water feature, so
-    water can never visually cover a building or district regardless of
-    how accurate the scale/position prediction in _scale_water_features
-    turned out to be for this particular town -- see this module's
-    docstring. A feature that comes out fully covered by land is dropped;
-    one that splits into several disjoint pieces keeps only the largest
-    (the others are slivers too small to read as water on the map)."""
-    if not districts:
-        return water_features
-    # .buffer(0) repairs self-intersecting ward polygons before unioning --
-    # same idiom settlemaker_bridge.parse_geojson._centroid already relies
-    # on for the same underlying reason (settlemaker's emitted ward
-    # geometry isn't always simple).
-    land = unary_union([
-        ShapelyPolygon(part).buffer(0) for district in districts for part in district.polygon_parts
-        if len(part) >= 3
-    ])
-    if land.is_empty:
-        return water_features
-
-    clipped: List[WaterFeature] = []
-    for feature in water_features:
-        remaining = feature.polygon.difference(land)
-        if remaining.is_empty:
-            continue
-        if isinstance(remaining, MultiPolygon):
-            remaining = max(remaining.geoms, key=lambda p: p.area)
-        clipped.append(WaterFeature(id=feature.id, kind=feature.kind, polygon=remaining))
-    return clipped
 
 
 def _reclassify_landlocked_port_districts(
@@ -307,6 +228,7 @@ def generate_via_settlemaker(
     has_coastline: bool = False,
     has_port: bool = False,
     has_citadel: bool = False,
+    has_walls: bool = True,
     river_bearings: Sequence[float] = (),
     road_bearings: Sequence[float] = (),
 ) -> Tuple[List[District], List[Building], List[WaterFeature], str, Dict[str, float]]:
@@ -329,7 +251,8 @@ def generate_via_settlemaker(
     )
 
     burg = build_azgaar_burg_input(
-        seed, target_population, has_port=has_port, has_citadel=has_citadel, road_bearings=road_bearings,
+        seed, target_population, has_port=has_port, has_citadel=has_citadel, has_walls=has_walls,
+        road_bearings=road_bearings,
     )
     settlemaker_seed = _settlemaker_seed(seed)
 
@@ -362,13 +285,20 @@ def generate_via_settlemaker(
     local_bounds = result["geojson"]["metadata"]["local_bounds"]
 
     if water_features:
-        real_radius = _local_radius_from_bounds(local_bounds)
-        real_center = _center_of_bounds(local_bounds)
-        persisted_water_features = _scale_water_features(water_features, town_bounds_half, real_radius)
-        persisted_water_features = _translate_water_features(
-            persisted_water_features, real_center[0], real_center[1],
-        )
-        persisted_water_features = _clip_water_to_land(persisted_water_features, districts)
+        # Persist exactly the water settlemaker was given: it draws
+        # coastlineGeometry as-is (and lays its mesh out around it), so any
+        # re-scaled/re-centred copy lands off the drawn river -- measured
+        # 2026-10-14: 0% overlap on three towns. Cut to the map frame, since
+        # rivers run on well past it (town_shaper.water.RIVER_RUN_OFF).
+        frame = ShapelyPolygon.from_bounds(local_bounds["min_x"], local_bounds["min_y"],
+                                           local_bounds["max_x"], local_bounds["max_y"])
+        persisted_water_features = []
+        for f in input_water_features:
+            inside = f.polygon.intersection(frame)
+            if isinstance(inside, MultiPolygon):
+                inside = max(inside.geoms, key=lambda part: part.area)
+            if isinstance(inside, ShapelyPolygon) and not inside.is_empty:
+                persisted_water_features.append(WaterFeature(id=f.id, kind=f.kind, polygon=inside))
         _reclassify_landlocked_port_districts(
             districts, persisted_water_features, PORT_DISTRICT_WATER_ADJACENCY_TOLERANCE,
         )

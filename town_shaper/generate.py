@@ -28,6 +28,7 @@ def generate_town(
     has_port: bool = False,
     magic_prevalence: float = 0.0,
     has_citadel: bool = False,
+    has_walls: bool = True,
     river_bearings: Sequence[float] = (),
     road_bearings: Sequence[float] = (),
 ) -> Town:
@@ -47,7 +48,7 @@ def generate_town(
         seed, target_population,
         area_per_resident_multiplier=area_per_resident_multiplier,
         num_rivers=num_rivers, has_coastline=has_coastline, has_port=has_port,
-        has_citadel=has_citadel, river_bearings=river_bearings, road_bearings=road_bearings,
+        has_citadel=has_citadel, has_walls=has_walls, river_bearings=river_bearings, road_bearings=road_bearings,
     )
 
     households = generate_households(seed, target_population)

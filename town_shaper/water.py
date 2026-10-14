@@ -22,6 +22,10 @@ RIVER_BEARING_OFFSET = 0.05
 # ...and meanders this much less than a random river, so "crosses the town"
 # stays true: the full meander can carry a river off the walled core.
 RIVER_BEARING_MEANDER = 0.5
+# Rivers run on straight past both ends by this many bounds-widths: the
+# map settlemaker draws is wider than the bounds (fields), and a river that
+# stops at the bounds' edge would end mid-field. The SVG clips it at the frame.
+RIVER_RUN_OFF = 2.0
 
 _EDGES = ["north", "south", "east", "west"]
 
@@ -73,7 +77,7 @@ def _bearing_endpoints(bearing_deg: float, bounds: Tuple[float, float, float, fl
     return ends[0], ends[1]
 
 
-def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, width: float, bounds: Tuple[float, float, float, float], meander: float = 1.0) -> Polygon:
+def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, width: float, bounds: Tuple[float, float, float, float], meander: float = 1.0, run_off: float = 0.0) -> Polygon:
     dx = end[0] - start[0]
     dy = end[1] - start[1]
     length = math.hypot(dx, dy)
@@ -108,7 +112,16 @@ def _curved_strip(start: Tuple[float, float], end: Tuple[float, float], rng, wid
     # waypoint -- a river zigzags between straight segments instead of
     # curving. Chaikin-smoothed the same way artery roads are.
     smoothed = chaikin_smooth(points, iterations=3)
+    if run_off:
+        smoothed = [_run_on(smoothed[1], smoothed[0], run_off)] + list(smoothed) + [_run_on(smoothed[-2], smoothed[-1], run_off)]
     return LineString(smoothed).buffer(width / 2.0)
+
+
+def _run_on(before: Tuple[float, float], end: Tuple[float, float], distance: float) -> Tuple[float, float]:
+    """The point `distance` on past `end`, continuing the before->end heading."""
+    dx, dy = end[0] - before[0], end[1] - before[1]
+    length = math.hypot(dx, dy) or 1.0
+    return (end[0] + dx / length * distance, end[1] + dy / length * distance)
 
 
 def _generate_coastline(seed, bounds: Tuple[float, float, float, float]) -> Polygon:
@@ -165,7 +178,8 @@ def generate_water_features(
             start_edge, end_edge = rng.sample(_EDGES, 2)
             start = _point_on_edge(start_edge, bounds, rng)
             end = _point_on_edge(end_edge, bounds, rng)
-        polygon = _curved_strip(start, end, rng, RIVER_WIDTH, bounds, meander)
+        run_off = RIVER_RUN_OFF * max(bounds[2] - bounds[0], bounds[3] - bounds[1])
+        polygon = _curved_strip(start, end, rng, RIVER_WIDTH, bounds, meander, run_off)
         features.append(WaterFeature(id=feature_id, kind="river", polygon=polygon))
         feature_id += 1
 

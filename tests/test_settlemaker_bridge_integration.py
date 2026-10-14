@@ -116,3 +116,25 @@ def test_no_building_ever_ends_up_inside_the_water_polygon():
         if any(wf.polygon.contains(Point(b.x, b.y)) for wf in water_features)
     ]
     assert underwater == []
+
+
+def test_persisted_water_is_the_water_drawn_on_the_map_and_reaches_its_edges():
+    # Regression (2026-10-14): the persisted water was re-scaled/re-centred
+    # onto settlemaker's real frame, but settlemaker draws coastlineGeometry
+    # as given -- the stored river overlapped the drawn one 0%. And rivers
+    # stopped at town_shaper's bounds, ending mid-field on the drawn map.
+    import re
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    _districts, _buildings, water_features, svg, b = generate_via_settlemaker("river-edge-test", 4000, num_rivers=1)
+    section = svg[svg.index('<g id="water"'):]
+    section = section[:section.index("</g>")]
+    drawn = unary_union([Polygon([tuple(map(float, xy.split(","))) for xy in re.findall(r"-?[\d.]+,-?[\d.]+", d)])
+                         .buffer(0) for d in re.findall(r'<path class="fill" d="([^"]+)"', section)])
+    frame = Polygon.from_bounds(b["min_x"], b["min_y"], b["max_x"], b["max_y"])
+    drawn = drawn.intersection(frame)
+    stored = unary_union([wf.polygon for wf in water_features])
+    assert stored.intersection(drawn).area > 0.95 * drawn.area
+    touches = drawn.intersection(frame.exterior.buffer(1.0))
+    assert len(getattr(touches, "geoms", [touches])) >= 2  # in at one edge, out at another

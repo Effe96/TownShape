@@ -39,6 +39,11 @@ def test_citadel_and_road_bearings_pass_through():
     assert burg["roadBearings"] == [0.0, 90.5]
 
 
+def test_walls_default_on_and_can_be_turned_off():
+    assert build_azgaar_burg_input("s", 5000)["walls"] is True
+    assert build_azgaar_burg_input("s", 5000, has_walls=False)["walls"] is False
+
+
 def test_no_road_bearings_leaves_roads_to_settlemaker():
     burg = build_azgaar_burg_input("s", 5000)
     assert burg["citadel"] is False

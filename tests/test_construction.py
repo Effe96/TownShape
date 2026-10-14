@@ -350,6 +350,34 @@ def test_enlarging_onto_a_field_needs_claim_fields_and_trims_the_plot(tmp_path):
     assert 'class="plot" d="M-70,-70L-52,-70L-52,-52L-70,-52Z"' not in svg  # the field's drawing was trimmed
 
 
+def test_enlarging_stops_at_a_windmill(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    svg_file = tmp_path / "town.svg"
+    svg_file.write_text(svg_file.read_text(encoding="utf-8").replace(
+        '<g id="symbols">', '<g id="symbols"><use href="#glyph-sm-mill-wind" transform="translate(-14.00,-7.00) '
+        'scale(0.0500) rotate(0) translate(-32,-32)"/>'), encoding="utf-8")
+    resize_building(db_path, 2, 4.0)
+    grown = Polygon(json.loads(_row(db_path, 2)[3]))
+    assert grown.area > Polygon(HOUSE_A).area
+    assert grown.distance(Point(-14, -7)) > 1.6  # clear of the mill's 1.6-radius glyph
+
+
+def test_resizing_a_generated_cathedral_adopts_its_church_mark(tmp_path):
+    db_path = _town_with_pair(tmp_path)
+    conn = connect(db_path)
+    conn.execute("UPDATE buildings SET building_type = 'temple' WHERE id = 2")
+    conn.commit()
+    conn.close()
+    svg_file = tmp_path / "town.svg"
+    svg_file.write_text(svg_file.read_text(encoding="utf-8").replace("</svg>", (
+        '<g id="marks"><use href="#glyph-sm-mark-church" transform="translate(-10.00,-7.00) scale(0.0625) '
+        'rotate(0) translate(-16,-16)"/></g>\n</svg>')), encoding="utf-8")
+    resize_building(db_path, 2, 4.0, squeeze_neighbors=True)
+    mark = re.search(r'<use data-building-id="2" href="#glyph-sm-mark-church"[^>]*scale\(([\d.]+)\)',
+                     svg_file.read_text(encoding="utf-8"))
+    assert mark and float(mark.group(1)) > 0.0625
+
+
 def test_shrinking_keeps_the_shape_about_its_centre(tmp_path):
     db_path = _town_with_pair(tmp_path)
     outcome = resize_building(db_path, 2, 0.5)
@@ -416,8 +444,16 @@ def _landmark_shapes(svg_file):
             for d in re.findall(r'<path[^>]*\sd="([^"]+)"', section)]
 
 
+def _set_type(db_path, building_id, building_type):
+    conn = connect(db_path)
+    conn.execute("UPDATE buildings SET building_type = ? WHERE id = ?", (building_type, building_id))
+    conn.commit()
+    conn.close()
+
+
 def test_resizing_a_multi_piece_building_keeps_its_courtyard(tmp_path):
     db_path, svg_file = _town_with_cloister(tmp_path)
+    _set_type(db_path, 5, "garrison")  # a church's pieces merge instead -- see the next test
     resize_building(db_path, 5, 1.5)
     shapes = _landmark_shapes(svg_file)
     assert len(shapes) == 4                                     # still four ranges...
@@ -425,6 +461,18 @@ def test_resizing_a_multi_piece_building_keeps_its_courtyard(tmp_path):
     assert unary_union(shapes).area > 1.3 * (64 - 16)           # and bigger
     demolish_building(db_path, 5, ruin=True)
     assert svg_file.read_text(encoding="utf-8").count('class="ruin"') == 4
+
+
+def test_resizing_a_multi_piece_church_draws_one_building_round_its_courtyard(tmp_path):
+    db_path, svg_file = _town_with_cloister(tmp_path)
+    resize_building(db_path, 5, 1.5)
+    svg = svg_file.read_text(encoding="utf-8")
+    (tag,) = re.findall(r'<path class="cathedral"[^>]*/>', svg[svg.index('<g id="landmarks">'):])
+    assert 'fill-rule="evenodd"' in tag
+    outer, courtyard = [Polygon([tuple(map(float, xy.split(","))) for xy in re.findall(r"-?[\d.]+,-?[\d.]+", ring)])
+                        for ring in re.search(r'\sd="([^"]+)"', tag).group(1).split("Z")[:2]]
+    assert courtyard.contains(Point(-8, -14)) and outer.contains(courtyard)  # one building, courtyard open
+    assert outer.area - courtyard.area > 1.3 * (64 - 16)                    # and bigger
 
 
 def test_reshaping_a_multi_piece_building_redraws_one_outline(tmp_path):

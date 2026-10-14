@@ -12,6 +12,24 @@ Entry template — copy for each new entry:
 needs to know before they proceed.>
 -->
 
+## 2026-10-14 — Frodo — persisted water = drawn water; rivers reach the map edge; has_walls
+
+- `generate_via_settlemaker` now persists exactly the coastlineGeometry it
+  sent settlemaker (cut to the frame). The old real-frame re-scale/re-centre
+  put the stored river 0% on the drawn one (three towns), so construction
+  avoided water that wasn't there. The land clip (`_clip_water_to_land`) is
+  gone too: it only chopped rivers apart where farm patches reach under
+  them; no building sits under the drawn river (0 of ~390, two towns).
+- Rivers run on `RIVER_RUN_OFF` bounds-widths past both ends
+  (`town_shaper.water`), so they no longer stop mid-field. Changes every
+  river town's layout for a given seed.
+- `TownParameters.has_walls` (default true) -> settlemaker `walls`; stored
+  in `generation_parameters.has_walls`.
+- Resize/reshape: options `squeeze_neighbors`, `claim_empty_lots`,
+  `claim_fields`; growth avoids mills/wells/trees/orchards; a temple's
+  pieces merge into one outline (courtyard kept as an evenodd hole) and its
+  church mark — settlemaker's own included — follows its size.
+
 ## 2026-10-13 — Frodo — `town_events`: where the sim's killings, thefts and riots happened
 
 Per `social-sim-demo/docs/townshape-brief-events-2026-10-13.md`. The brief's suggested

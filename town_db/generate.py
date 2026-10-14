@@ -65,6 +65,7 @@ def generate_town_database(
     aggression: float = 0.0,
     svg_path: Optional[str] = None,
     has_citadel: bool = False,
+    has_walls: bool = True,
     river_bearings: Sequence[float] = (),
     road_bearings: Sequence[float] = (),
 ) -> None:
@@ -78,6 +79,7 @@ def generate_town_database(
         has_port=has_port,
         magic_prevalence=magic_prevalence,
         has_citadel=has_citadel,
+        has_walls=has_walls,
         river_bearings=river_bearings,
         road_bearings=road_bearings,
     )

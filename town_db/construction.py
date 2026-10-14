@@ -1267,17 +1267,26 @@ def _store_district(conn, district_id: int, shape) -> None:
     conn.execute("UPDATE districts SET polygon = ? WHERE id = ?", (json.dumps(rings), district_id))
 
 
-def _redraw_outline(svg: str, drawn: List[Tuple[str, str]], coords) -> str:
-    """The first drawn piece becomes the new outline; any others (a merged
-    cathedral's) go."""
+def _rings_d(shape: Polygon) -> str:
+    """Path data for a polygon with its holes (drawn with fill-rule evenodd)."""
+    return "".join(_path_d(list(ring.coords)[:-1]) + "Z" for ring in [shape.exterior, *shape.interiors])
+
+
+def _redraw_outline(svg: str, drawn: List[Tuple[str, str]], coords, new_d: Optional[str] = None) -> str:
+    """The first drawn piece becomes the new outline (`new_d`, else
+    `coords`); any others (a merged cathedral's) go."""
     if not drawn:
         return svg
     (tag, d), rest = drawn[0], drawn[1:]
-    new_d = _path_d(coords) + "Z"
-    svg = svg.replace(tag, tag.replace(f'd="{d}"', f'd="{new_d}"'), 1)
+    new_d = new_d or _path_d(coords) + "Z"
+    new_tag = tag.replace(f'd="{d}"', f'd="{new_d}"')
+    if new_d.count("M") > 1 and "fill-rule" not in new_tag:
+        new_tag = new_tag.replace("/>", ' fill-rule="evenodd"/>')
+    svg = svg.replace(tag, new_tag, 1)
     start, end = _svg_group(svg, "shadows")
     if start >= 0:
-        svg = svg[:start] + svg[start:end].replace(f'<path d="{d}"/>', f'<path d="{new_d}"/>', 1) + svg[end:]
+        shadow = f'<path d="{new_d}" fill-rule="evenodd"/>' if new_d.count("M") > 1 else f'<path d="{new_d}"/>'
+        svg = svg[:start] + svg[start:end].replace(f'<path d="{d}"/>', shadow, 1) + svg[end:]
     for other_tag, other_d in rest:
         svg = _svg_drop_shadow(svg.replace(other_tag + "\n", "", 1).replace(other_tag, "", 1), other_d)
     return svg
@@ -1324,8 +1333,13 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
                 if (zone not in unclaimable and (claim_empty_lots or zone == "farmland_edge")
                         and lot.intersects(district.buffer(BUILDING_GAP))):
                     empty_lots.append((lot_id, lot))
+        # Mills, wells, trees and orchards block growth too -- except what
+        # already sits on the building (its own church mark).
+        landscape = _svg_landscape(svg) if svg else Polygon()
+        landscape = unary_union([part.buffer(BUILDING_GAP) for part in getattr(landscape, "geoms", [landscape])
+                                 if not part.is_empty and not part.intersects(footprint)])
         allowed = unary_union([district, footprint] + [lot for _, lot in empty_lots]).difference(
-            unary_union([water, roads, walls]))
+            unary_union([water, roads, walls, landscape]))
 
         absorbed, absorbed_lots, others, squeezable = [], [], [], []
         for n_id, n_district, *n_geometry in conn.execute(
@@ -1387,7 +1401,15 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
             squeezed.append(n_id)
 
         drawn = _svg_tags_for(svg, footprint) if svg else []
-        if len(drawn) > 1 and piece_transform is not None:
+        if len(drawn) > 1 and piece_transform is not None and b_type == "temple":
+            # A church's pieces become one building -- drawn apart they read
+            # as separate buildings -- keeping any courtyard as a hole.
+            outline = Polygon(coords).buffer(0)
+            pieces = [piece_transform(Polygon(_points(d)).buffer(0)) for _, d in drawn] + absorbed_lots
+            merged = _largest(unary_union(pieces).intersection(outline).buffer(0.02).buffer(-0.02))
+            if merged is not None:
+                svg = _redraw_outline(svg, drawn, coords, new_d=_rings_d(merged))
+        elif len(drawn) > 1 and piece_transform is not None:
             outline = Polygon(coords).buffer(0)
             covered = []
             for tag, d in drawn:
@@ -1413,7 +1435,12 @@ def _rebuild(db_path, building_id, target_of, operation, params, absorb_neighbor
         else:
             svg = _redraw_outline(svg, drawn, coords)
 
-        # A placed temple's mark follows its new outline.
+        # A temple's mark follows its new outline -- settlemaker's own
+        # (untagged, sitting on the old outline) is adopted first.
+        if b_type == "temple":
+            for tag, x, y in re.findall(r'(<use href="#glyph-sm-mark-church" transform="translate\((-?[\d.]+),(-?[\d.]+)\)[^>]*/>)', svg):
+                if footprint.buffer(0.5).contains(Point(float(x), float(y))):
+                    svg = svg.replace(tag, tag.replace("<use ", f'<use data-building-id="{building_id}" ', 1), 1)
         svg = re.sub(rf'<use data-building-id="{building_id}"[^>]*/>',
                      lambda _: _church_mark(building_id, Polygon(coords)), svg)
 
